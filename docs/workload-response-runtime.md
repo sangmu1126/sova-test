@@ -2,6 +2,8 @@
 
 워크로드 대응 화면(`demo/response_scenarios`)의 9개 대응 유형을 실제 클러스터에서 실행하는 실행기다. 화면은 단계마다 서버에 정확한 명령을 보내고, 서버는 실행 결과를 실제 Kubernetes·HTTP·PostgreSQL 관측으로 확인한 뒤에만 다음 단계로 넘긴다. 확인하지 못한 효과는 보류(`held`)하고 자동으로 다시 실행하지 않는다.
 
+이 문서의 ‘명세’ ID는 [외부 통합 초안 추적표](spec-traceability.md)의 기준을 뜻한다. 저장소 자체 목표 명세 v2와 절 번호를 혼용하지 않는다. 아래 실측 수치는 과거 실행 요약이며 이번 문서 점검에서 클러스터를 재시험한 결과가 아니다.
+
 ## 두 가지 배치
 
 한 프로세스는 상태 폴더의 `settings.private.json`에 적힌 배치 하나만 쓴다.
@@ -39,7 +41,7 @@ flowchart LR
 - **EKS 쪽에서 이 Mac으로 오는 경로는 없다.** `host()`는 출발지에서 목적지로 가는 주소를 만들지 않는다.
 - **격리는 규칙만 바꾸고 선택자는 바꾸지 않는다.** 격리할 수 있는 출발지 역할(api, worker)은 공용 `namespace-boundary` 허용에서 처음부터 빠지고, 각자 자기 허용 정책(`allow-api`, `allow-worker`)만 적용받는다. 격리·발신 제한·복구는 이 정책의 규칙만 바꾼다. EKS VPC CNI 1.22의 정책 에이전트는 Pod가 어떤 정책의 선택자에서 빠질 때 그 정책의 허용 항목을 eBPF 맵에 남겼다. 그래서 차단 정책을 적용한 뒤에도 작업자가 새 연결을 받았고, 실행기가 이를 확인하지 못해 보류했다. 선택자를 옮기는 방식은 쓰지 않는다. 예전 방식의 `isolate-*` 정책은 첫 초기화 때 지우고, 초기화가 api·worker를 새 ReplicaSet으로 다시 띄워 남은 맵을 버린다.
 - **터널 허용 범위를 좁힌다.** 브리지 트래픽은 노드 주소에서 들어온다. 노드 IP(/32)만 허용한다. api 포트 허용은 `allow-api`의 정상 규칙 안에 있어서 격리하면 함께 빠지고, db 포트 허용은 고정된 `bridge-ingress`에 있다. VPC CNI에서는 Pod도 노드와 같은 서브넷 IP를 받으므로, 서브넷 범위로 허용하면 클러스터 안의 모든 Pod가 허용된다.
-- **터널 감시는 허용된 노드로만 연결한다.** 노드가 교체되면 연결할 노드가 없어 터널이 끊기고, 관측이 실패해 보류된다. `python3 -m local_response.hybrid --state $H/runtime --refresh-bridge`로 현재 노드를 다시 허용한다.
+- **터널 감시는 허용된 노드로만 연결한다.** 노드가 교체되면 연결할 노드가 없어 터널이 끊기고, 관측이 실패해 보류된다. `python3 -m local_response.hybrid --state "$SOVA_RESPONSE_STATE_ROOT/runtime" --refresh-bridge`로 현재 노드를 다시 허용한다.
 - **NetworkPolicy는 실제로 집행된다.** EKS에서는 VPC CNI의 network policy agent가, 로컬에서는 Calico가 집행한다. VPC CNI는 정책을 비동기로 적용하므로 수 초에서 1분 넘게 걸린다. 그래서 격리 뒤에는 실행 중인 Pod가 새 연결을 거부하는 것을 최대 45초까지 다시 확인한다. 복귀 뒤에는 진입점에서 터널을 거쳐 출발지에 닿는지를 최대 150초까지 다시 확인하고 나서 진행한다. 새 api Pod에 노드 주소 허용이 반영되기까지 45초를 넘긴 사례가 있었다. 정책을 쓴 것만으로는 집행으로 보지 않는다.
 - **충돌과 실패를 구분한다.** Deployment 변경은 `resourceVersion` test가 들어간 JSON Patch로 한다. 상태 갱신으로 test가 실패하면 아무것도 적용되지 않으므로, 다시 읽어 최대 3번 시도한다. exec로 만드는 효과는 자동으로 다시 실행하지 않는다. 보류 기록에는 kubectl 실패 종류(rejected, unauthorized, timeout, connection 등)만 남고 stderr는 남기지 않는다.
 - **판정은 각 클러스터 안에서 한다.** 출발지 HTTP·SQL 확인은 EKS 안의 probe가, 목적지·진입점 확인은 로컬 probe가 한다. 데이터 전환은 제어 호스트가 출발지 DB를 읽고 목적지 DB에 쓰는 제한된 stop-and-copy다(2,000행 상한). CDC나 무중단 복제를 주장하지 않는다.
@@ -48,25 +50,48 @@ flowchart LR
 
 ## 실행 순서
 
-실행기는 `cryptography`(Ed25519)와 팀 `sova-security` 계약(이 레포의 고정 의존 버전 0.11.1)을 쓴다. 전용 가상환경에 `cryptography==50.0.2`를 설치하고, `PYTHONPATH`에 `demo`와 `security/src`를 둔다. 아래 `python3`는 그 가상환경의 인터프리터를 뜻한다.
+### 기존 검증 환경과 준비 조건
+
+아래는 자원·이미지·DB·네트워크를 변경하는 **기존 전용 환경의 실행 절차**다. 문서 점검 명령이나 새 PC의 무인 설치 안내가 아니다. 다른 사람이 사용하는 클러스터에 그대로 실행하지 않는다.
+
+- 로컬 어댑터(`demo/local_response/kube.py`)는 Lima VM `sova-rke2-target`과 검증한 클러스터 UID `9de35591-57a3-4759-bd73-6340e2de0b61`에 고정돼 있다. 신규 장치는 같은 이름을 만들거나 UID 검사를 바꾸는 방식으로 대체하지 않는다. 별도 등록·환경 준비·재자격이 필요하다.
+- 소유 namespace UID, 두 클러스터의 신원, 등록 이미지, 상태 폴더, 승인자 키를 먼저 준비한다. `--local-state`는 이미 초기화한 로컬 배치의 상태다. 저장소 checkout만으로 이 자료가 생기지는 않는다.
+- 하이브리드는 승인된 개인 계정·역할·SSM 플러그인·Docker·Terraform·Lima·kubectl이 필요하다. 팀 공용 환경의 접속 설정을 재사용하지 않는다.
+- 아래 상태 경로는 모두 **절대 경로**다. Terraform의 backend 상태와 `TF_DATA_DIR`는 서로 다른 위치이며, 현재 작업 디렉터리를 바꿔도 같은 실행 상태를 가리켜야 한다.
+
+### 승인된 환경에서 실행
+
+실행기는 Ed25519와 팀 `sova-security` 계약(고정 소비 버전 0.11.1)을 쓴다. 저장소 루트 README의 설치 절차로 검토한 security source를 먼저 설치한다. 기록된 검증 환경의 cryptography 버전은 50.0.2이며, 임의 환경에 같은 버전만 설치한다고 실행 자격이 이어지지는 않는다. 아래 `python3`는 준비한 전용 가상환경의 인터프리터다. API 서버·터널 감시는 각각 별도 터미널에서 실행하고, 검증 명령을 같은 상태에 동시에 보내지 않는다.
 
 ```bash
-H=<개인 상태 폴더>   # 예: .local-notes/validation/hybrid-response-YYYYMMDD
-# 1. AWS 출발지 (개인 계정, 실행 전용)
-cd infra/aws-response-source
-TF_DATA_DIR=$H/terraform/.terraform terraform init -backend-config=path=$H/terraform/terraform.tfstate
-TF_DATA_DIR=$H/terraform/.terraform terraform apply -var-file=$H/terraform/run.auto.tfvars.json
+# 저장소 루트에서, 실제 준비한 절대 경로로 값을 바꾼다.
+SOVA_REPO_ROOT="$(pwd -P)"
+SOVA_RESPONSE_STATE_ROOT="/absolute/path/to/private/hybrid-response"
+SOVA_LOCAL_RESPONSE_STATE="/absolute/path/to/private/local-response/runtime"
+export PYTHONPATH="$SOVA_REPO_ROOT/demo${PYTHONPATH:+:$PYTHONPATH}"
+
+# 1. AWS 출발지 (승인된 개인 계정, 실행 전용)
+(
+  cd "$SOVA_REPO_ROOT/infra/aws-response-source"
+  TF_DATA_DIR="$SOVA_RESPONSE_STATE_ROOT/terraform/.terraform" terraform init \
+    -backend-config="path=$SOVA_RESPONSE_STATE_ROOT/terraform/terraform.tfstate" || exit 1
+  TF_DATA_DIR="$SOVA_RESPONSE_STATE_ROOT/terraform/.terraform" terraform apply \
+    -var-file="$SOVA_RESPONSE_STATE_ROOT/terraform/run.auto.tfvars.json"
+)
 # 2. 이미지 푸시 · 두 클러스터 배포 · DB 초기화
-cd ../../demo
-python3 -m local_response.hybrid --state $H/runtime \
-  --terraform-state $H/terraform/terraform.tfstate --local-state <local 배치 상태 폴더>
-# 3. SSM 터널 감시 (최대 12시간)
-SOVA_SSM_PLUGIN_DIR=<session-manager-plugin 폴더> python3 -m local_response.bridge --state $H/runtime --hours 8
+python3 -m local_response.hybrid --state "$SOVA_RESPONSE_STATE_ROOT/runtime" \
+  --terraform-state "$SOVA_RESPONSE_STATE_ROOT/terraform/terraform.tfstate" \
+  --local-state "$SOVA_LOCAL_RESPONSE_STATE"
+# 3. SSM 터널 감시 (별도 터미널, 위 변수·가상환경·PYTHONPATH 동일)
+SOVA_SSM_PLUGIN_DIR="/absolute/path/to/session-manager-plugin-directory" \
+  python3 -m local_response.bridge --state "$SOVA_RESPONSE_STATE_ROOT/runtime" --hours 8
 # 4. 9개 유형 순차 검증 (서버를 띄우기 전, 같은 잠금 사용)
-python3 -m local_response.qualify --state $H/runtime --security-drill-keys <승인자 폴더>
-# 5. 화면 서버와 화면 경로 검증
-python3 -m local_response.server --state $H/runtime --hours 8
-python3 -m local_response.http_qualify --state $H/runtime --until <ISO 시각>
+python3 -m local_response.qualify --state "$SOVA_RESPONSE_STATE_ROOT/runtime" \
+  --security-drill-keys "/absolute/path/to/approver-directory"
+# 5. 화면 서버 (별도 터미널)
+python3 -m local_response.server --state "$SOVA_RESPONSE_STATE_ROOT/runtime" --hours 8
+# 6. 화면 경로 검증 (서버 실행 중, 사람이 보내는 명령과 동시 실행하지 않음)
+python3 -m local_response.http_qualify --state "$SOVA_RESPONSE_STATE_ROOT/runtime" --until "<ISO 시각>"
 ```
 
 `run.auto.tfvars.json`에는 `account_id`, `operator_arn`, `operator_cidr`(EKS API 공개 접근을 허용할 운영자 /32), `run_id`, `expires_at`을 둔다. 커밋하지 않는다.
@@ -87,6 +112,8 @@ python3 -m local_response.http_qualify --state $H/runtime --until <ISO 시각>
 ## 증거
 
 상태 폴더에 남는다. 값이 아닌 판정만 기록한다.
+
+최신 실행기의 `qualification-*.json`, `http-qualification-*.json`, `support-record-*.json`과 WORM 업로드 원본은 비공개 상태에 보관하며 이 저장소에는 포함하지 않았다. 공개 문서로는 코드와 실측 요약을 확인할 수 있으나 원본 서명·전체 실행을 독립 재검증할 수는 없다. 공개된 `docs/evidence/*20261108.json`은 이전 무상태 시험의 요약이며 최신 9개 실행기의 원본을 대신하지 않는다. 외부 인수에는 비밀을 제외한 서명 봉투·공개 신뢰 anchor·producer·관측 시간·범위·검증 결과를 별도로 준비해야 한다.
 
 - `qualification-*.json`: 실행 커밋, 실행기 파일 해시, 두 클러스터 UID, 유형별 검사 결과
 - `http-qualification-*.json`: 화면 경로 반복 실행 결과(주기·유형·소요 시간·검사)
@@ -145,10 +172,10 @@ FAIL도 서명해 남긴다.
 
 ```bash
 # 승인자(운영자가 아닌 사람)의 키. 실행기 상태 밖에 둔다.
-python3 -m local_response.security_approver init --key-dir <승인자 폴더> --approver recovery-approver
-python3 -m local_response.security_approver register --state $H/runtime --approver recovery-approver --public-key <공개키>
+python3 -m local_response.security_approver init --key-dir "/absolute/path/to/approver-directory" --approver recovery-approver
+python3 -m local_response.security_approver register --state "$SOVA_RESPONSE_STATE_ROOT/runtime" --approver recovery-approver --public-key "<init가 출력한 공개키 hex>"
 # 콘솔: security hold suspected-compromise
-python3 -m local_response.security_approver approve --state $H/runtime --key-dir <승인자 폴더> --approver recovery-approver --reason contained-and-rotated
+python3 -m local_response.security_approver approve --state "$SOVA_RESPONSE_STATE_ROOT/runtime" --key-dir "/absolute/path/to/approver-directory" --approver recovery-approver --reason contained-and-rotated
 # 콘솔: security release <승인ID>
 ```
 
@@ -195,7 +222,7 @@ python3 -m local_response.security_approver approve --state $H/runtime --key-dir
 - **결과:** 유형별 검사 이름과 서명 증거 지문
 - **범위:** 시험한 한계, 제외 범위, 만료(7일), 무효화 조건
 
-기록도 실행기 키로 서명한다.
+기록도 실행기 키로 서명한다. 문서 커밋이나 후속 merge가 검증 producer를 대체하지 않는다. 기존 기록의 유효성은 현재 코드·프로필·만료를 실제로 다시 대조해야 한다.
 
 지원 선언(`SUPPORTED`)은 이 기록으로만 한다. 다음 경우에는 `NEEDS_EVIDENCE` 또는 `UNSUPPORTED`로 이유와 함께 표시한다(명세 AT-02, AT-03).
 
@@ -205,7 +232,7 @@ python3 -m local_response.security_approver approve --state $H/runtime --key-dir
 - 실행기 코드가 바뀌었다.
 
 ```bash
-python3 -m local_response.support --state $H/runtime --report $H/runtime/qualification-<id>.json
+python3 -m local_response.support --state "$SOVA_RESPONSE_STATE_ROOT/runtime" --report "$SOVA_RESPONSE_STATE_ROOT/runtime/qualification-<id>.json"
 ```
 
 ## 감사 보존(WORM)
@@ -216,7 +243,7 @@ python3 -m local_response.support --state $H/runtime --report $H/runtime/qualifi
   - 버킷은 버전 관리, 암호화, 공개 차단을 쓰고 TLS 연결만 받는다.
   - 쓰기 역할은 올리기, 읽기, 버전 삭제 시도만 할 수 있다. 보존 단축, 잠금 우회, 버킷 잠금·버전 관리·정책 변경은 명시적으로 거부한다.
   - IAM 역할과 버킷을 새로 만들므로 소유자 승인 뒤에만 적용한다. 2026-11-12 소유자 승인 뒤 적용했다.
-  - 적용 결과: 하이브리드 증거 194개, 로컬 증거 217개를 올렸다. 개인키, 토큰, 설정처럼 보이는 키는 0개였다.
+  - 2026-11-12 적용 결과: 하이브리드 증거 194개, 로컬 증거 217개를 올렸다. 개인키, 토큰, 설정처럼 보이는 키는 0개였다.
   - 쓰기 역할로 WORM 검사(`worm`)를 실행했다. 잠긴 버전 삭제와 보존 단축은 AccessDenied로 거부됐고, 버전 없는 삭제는 삭제 표식만 만들었으며, 원본 버전은 SHA-256까지 그대로였다. 검사가 만든 삭제 표식은 소유자가 지웠다.
 - `demo/audit_shipper`
   - `ship`은 허용 목록의 증거만 쓰기 역할로 올린다. 대상은 서명 봉투, 자격 기록, 검증 보고서, 해제 승인, 원장 JSONL(읽기 전용 추출)이다.
@@ -229,13 +256,19 @@ python3 -m local_response.support --state $H/runtime --report $H/runtime/qualifi
     - 원본 버전 다시 읽기
 
 ```bash
-cd infra/aws-response-audit   # 승인 뒤
-TF_DATA_DIR=$H/audit/.terraform terraform init -backend-config=path=$H/audit/terraform.tfstate
-TF_DATA_DIR=$H/audit/.terraform terraform apply -var-file=<account_id·operator_arn·run_id·expires_at>
-cd ../../demo
-python3 -m audit_shipper.ship --state $H/runtime --bucket <audit_bucket> --writer-role-arn <audit_writer_role_arn> --prefix hybrid-aws/runtime
-python3 -m audit_shipper.worm --state $H/runtime --bucket <audit_bucket> --writer-role-arn <audit_writer_role_arn>
+# 위 실행 절의 가상환경·PYTHONPATH·절대 상태 경로를 그대로 사용한다.
+(
+  cd "$SOVA_REPO_ROOT/infra/aws-response-audit"   # 승인 뒤
+  TF_DATA_DIR="$SOVA_RESPONSE_STATE_ROOT/audit/.terraform" terraform init \
+    -backend-config="path=$SOVA_RESPONSE_STATE_ROOT/audit/terraform.tfstate" || exit 1
+  TF_DATA_DIR="$SOVA_RESPONSE_STATE_ROOT/audit/.terraform" terraform apply \
+    -var-file="/absolute/path/to/approved-audit-vars.json"
+)
+python3 -m audit_shipper.ship --state "$SOVA_RESPONSE_STATE_ROOT/runtime" --bucket "<audit_bucket>" --writer-role-arn "<audit_writer_role_arn>" --prefix hybrid-aws/runtime
+python3 -m audit_shipper.worm --state "$SOVA_RESPONSE_STATE_ROOT/runtime" --bucket "<audit_bucket>" --writer-role-arn "<audit_writer_role_arn>"
 ```
+
+기본 보존 1일은 시험 당시의 조건이다. 과거 거부 시험은 현재 버전의 잔여 보존 기간·장기 보존·COMPLIANCE 모드 인수를 증명하지 않는다.
 
 ## 비용과 정리
 
@@ -253,7 +286,7 @@ python3 -m audit_shipper.worm --state $H/runtime --bucket <audit_bucket> --write
 정리 순서:
 
 1. 서버와 터널 감시를 멈춘다.
-2. `terraform destroy`를 실행한다. ECR 저장소는 `force_delete`로 함께 지워진다. EBS 볼륨은 StorageClass `Delete`라서 PVC와 함께 지워진다. 다만 PVC보다 클러스터가 먼저 지워지면 볼륨이 남을 수 있다. 그래서 destroy 전에 소유 namespace를 지우거나, 끝난 뒤 `RunId` 태그로 남은 볼륨을 찾아 지운다.
+2. `terraform destroy`를 실행한다. ECR 저장소는 `force_delete`로 함께 지워진다. EBS 볼륨은 StorageClass `Delete`라서 PVC와 함께 지워진다. 다만 PVC보다 클러스터가 먼저 지워지면 볼륨이 남을 수 있다. 그래서 destroy 전에 소유 namespace의 UID와 등록 자원을 대조해 정리한다. 이후 잔존 볼륨은 읽기 전용으로 찾고 AWS 계정·Terraform 상태·실행 등록의 자원 ID·소유권을 함께 확인한 뒤 별도 정리한다. `RunId` 태그나 이름 접두사만으로 삭제하지 않는다.
 3. 로컬의 `sova-hybrid-*` 네임스페이스와 PV는 데이터 보존을 위해 자동으로 지우지 않는다.
 
 ## 범위 밖

@@ -1,115 +1,101 @@
 # Sova
 
-[![Sova 워크로드 대응 콘솔](docs/assets/thumbnail.png)](docs/assets/thumbnail.png)
+[![Sova 워크로드 대응 콘솔](docs/assets/thumbnail.png)](docs/assets/workload-verification.md)
 
-**실제 검증 환경:** 2026년 11월 8일, 온프렘 Kubernetes 클러스터의 전용 무상태 시험앱에서 검증한 워크로드 지도입니다. 실제 HTTP 403·독립 감사 대조, 승인 후 원본 격리, Green 기동·응답 및 시험 경로 전환을 확인했습니다. 당시 저장한 화면이며 현재 실시간 상태나 AWS→온프렘 이전·운영 T10 완료를 뜻하지 않습니다. [검증 범위·코드·출처](docs/assets/workload-verification.md)
+**썸네일은 2026-11-08 실제 온프렘 전용 시험의 저장 화면이다.** 무상태 시험앱에서 HTTP 403·독립 감사 대조, 승인 후 격리·대체 기동·시험 경로 전환을 확인했다. 현재 실시간 상태, 팀 운영 T10 완료, AWS→온프렘 전체 이전의 증거로 사용하지 않는다. [캡처와 검증 출처](docs/assets/workload-verification.md)
 
-운영 중인 서비스를 다른 환경으로 이전하고, 기능·데이터·보안의 보존 여부를 검증하는 독립 제어 플랫폼.
+운영 서비스의 환경 이전과 보안 대응을 **계획 → 승인 → 실행 → 실제 관측 → 검증**으로 연결하는 개발·통합 검증 저장소다. 제품 목표는 기능·데이터·보호 수준과 남은 의존성을 함께 확인하는 것이다. 범용 앱의 무중단 이전이나 기업 운영 자격을 이미 확보했다는 뜻은 아니다.
 
-**조사 → 이전 계획 → 격리 리허설 → 승인 → 실행·복구 → 운영 관측**을 연결한다. Python은 제어면을 담당하고, 앱 실행의 첫 통합 대상은 Kubernetes다. k3s를 첫 검증 환경으로 삼는다.
+## 먼저 볼 문서
 
-## 팀 저장소와의 관계
+- [전체 문서 목차](docs/README.md): 목표 설계, 현재 실행 안내, 과거 검증을 구분한다.
+- [워크로드 대응 실행기](docs/workload-response-runtime.md): 실제 RKE2와 실행 전용 EKS를 사용하는 9개 대응 유형, 명령·승인·서명 증거·보류·감사 보존.
+- [명세 대비 추적표](docs/spec-traceability.md): 실환경·로컬·단위·미구현을 항목별로 구분한다.
+- [제어면 구현 현황](docs/implementation-status.md): `src/sova`의 도메인·PostgreSQL·port/adapter 연결 상태.
+- [프로덕션 목표 명세 v2](docs/sova-production-spec-v2.md): 목표 아키텍처. 구현·배포·검증 결과의 목록과는 다르다.
 
-이 저장소는 이상무의 개인 개발 프로토타입과 통합·시연 환경을 보존한다. 팀 최종 제품은 [platform](https://github.com/Softbank-Hackathon-Finals/platform)에서 개발하며, 검증된 보안 기능은 [security](https://github.com/Softbank-Hackathon-Finals/security)의 독립 패키지로 추출해 통합한다. 보안 핵심은 `sova-security` 패키지로 추출했으며, Sova의 기존 import는 설치한 패키지에 연결한다. 실제 작업 실행 조정기와 시험 환경 어댑터는 Sova에 남긴다. 팀 platform 통합 완료를 뜻하지 않는다.
+## 저장소와 책임
 
-초기 23개 커밋은 기존 로컬 작업물을 기능별로 나눠 재구성한 이력이다. 작성일은 기능별 파일의 최종 수정 시각을 사용했고, 실제 Git 커밋 시각은 별도로 유지했다. 원래의 점진적 개발 이력을 복원한 것은 아니다.
+| 저장소·경로 | 역할 | 구분해야 할 점 |
+|---|---|---|
+| 이 저장소의 `src/sova` | 공통 그래프·계획·실행 원장·환경 어댑터·통합 코드 | 코드·구성 요소 시험과 운영 인수를 구분한다. |
+| 이 저장소의 `demo` | 개인 시험 호스트·앱·클러스터 대응 실행기 | 개인 시험 승인은 팀 운영 승인이 아니다. |
+| [sova-security](https://github.com/Softbank-Hackathon-Finals/security) | 공통 정책·보안 보류·서명 근거·읽기 전용 판정 서비스 | 승인 발급이나 클라우드 변경 권한을 제공하지 않는다. |
+| [팀 platform](https://github.com/Softbank-Hackathon-Finals/platform) | 팀 최종 제품의 API·승인·실행·통합 | 이 저장소의 시험 성공을 팀 제품 전체 완료로 옮기지 않는다. |
 
-## 시작
+개인 계정의 포크와 팀 원본은 브랜치가 자동 동기화되지 않는다. 공개 `main`, 작업 브랜치, 검증한 코드 SHA와 실제 이미지 digest를 각각 확인한다. 이 문서의 대응 실행기는 `demo/local_response`가 있는 브랜치를 기준으로 한다. [문서 점검 기준](docs/documentation-review-2026-11-13.md)
 
-Python 3.11 이상을 사용한다. 다음 명령은 클라우드 자원을 생성하지 않는다.
+초기 23개 커밋은 기존 로컬 작업물을 기능별로 나눠 재구성한 이력이다. 작성일은 기능별 파일의 최종 수정 시각을 사용했고 실제 Git 커밋 시각은 별도로 유지했다. 원래의 점진적 개발 이력을 복원한 것은 아니다.
+
+## 실제 대응 경로와 한계
+
+| 실행 경로 | 제공하는 것 | 검증·지원 경계 |
+|---|---|---|
+| `demo/local_response`, `local` | 이 Mac RKE2의 출발지·목적지·제어 영역에서 9개 유형 실행 | 같은 클러스터 안의 실제 시험이다. AWS 이전으로 표시하지 않는다. |
+| 같은 실행기의 `hybrid-aws` | 실행 전용 개인 EKS → 이 Mac RKE2, 두 PostgreSQL·진입점 전환 | 등록한 경로의 제한된 stop-and-copy다. 2,000행 상한이며 CDC·무중단 자격이 아니다. |
+| `demo/onprem_response` | 이전 무상태 시험앱의 격리·대체·재검증·복귀 | [2026-11-08 인수 범위](docs/workload-response-acceptance.md). 고객 앱 전체·일반 공격 탐지로 확대하지 않는다. |
+| `demo/response_scenarios` 단독 서버 | 터미널 명령으로 진행하는 브라우저 시나리오 | 실제 실행 API가 없다. 실제 모드는 별도 `local_response.server`가 같은 UI 자산에 연결한다. |
+| `console` | 초기 React·TypeScript·Vite 콘솔 | 최신 대응 Studio와 다른 진입점이다. [기존 콘솔 안내](console/README.md) |
+
+9개 대응 유형은 구성 요소 격리, 연관 구간 부분 격리, 발신 차단, 자격 회전, 패치·검증 후 교체, 작업자 재기동, 수평 확장, 환경 이전, 이미지 롤백이다. 현재 명령은 제한된 전용 앱과 자원을 대상으로 한다. 공격 신호는 통제된 시험 입력이며 일반 사이버공격 자동 탐지나 모의해킹 결과가 아니다. 지도 이동은 관측을 표시하는 애니메이션이며 실제 패킷이나 VM의 물리적 이동을 뜻하지 않는다.
+
+패치 경로의 통제된 앱 결함 수정, 이미지 digest 교체, 레지스트리 재스캔을 구분한다. ECR 시험에서 발견한 잔여 취약점은 해소됐다고 표시하지 않는다. 로컬의 미실행 스캔도 PASS로 바꾸지 않는다. AI·Harbor 전체 패칭 흐름과 운영 인수는 별도다.
+
+과거 통과 횟수·지원 선언은 해당 코드·프로필·방향·기한에만 유효하다. 현재 서버 가동·자격·이미지 안전성은 과거 기록에서 추정하지 않는다.
+
+## 안전한 로컬 시작
+
+아래 배치는 두 저장소가 같은 상위 폴더에 있는 경우다.
+
+```text
+workspace/
+├── security/
+└── sova-test/       # 여기서 실행
+```
+
+Python 3.11 이상을 사용한다. 다음 명령은 패키지 설치와 오프라인 예제이며 클라우드 자원을 만들지 않는다.
 
 ```sh
 python3 -m venv .local-notes/venv
-# 먼저 팀 security 저장소를 ../team-bravo/security에 받고 설치한다.
-.local-notes/venv/bin/python -m pip install -e ../team-bravo/security
+.local-notes/venv/bin/python -m pip install -e ../security
 .local-notes/venv/bin/python -m pip install -e '.[dev]'
 .local-notes/venv/bin/sova example > .local-notes/example.json
 .local-notes/venv/bin/sova inspect .local-notes/example.json
-.local-notes/venv/bin/sova assess .local-notes/example.json --target-environment customer-k3s --target-backend kubernetes
+.local-notes/venv/bin/sova assess .local-notes/example.json \
+  --target-environment customer-k3s --target-backend kubernetes
 ```
 
-예제는 1시간 유효한 가상 등록이다. 결과는 **검토 제안**이며 배포 승인이나 실제 이전 성공이 아니다. Kubernetes 내보내기 파일도 범위를 지정해 읽을 수 있다. [입력 예제](examples/README.md)를 참고한다.
+설치 전에 `pyproject.toml`의 `sova-security==0.11.1`과 사용할 Security 코드·산출물의 출처를 확인한다. [패키지 소비 계약](https://github.com/Softbank-Hackathon-Finals/security/blob/main/docs/distribution.md). `.local-notes`와 비밀값은 커밋하지 않는다. 예제는 단기 가상 등록이며 운영 승인·실제 배포 결과가 아니다. [입력 예제](examples/README.md)
+
+실제 대응 실행기는 기존 소유 VM·클러스터 UID·namespace UID·고정 이미지·보호된 상태 등록이 필요하다. 일반 설치 명령만으로 새 PC에 준비되는 서비스가 아니다. 고정 대상을 다른 클러스터로 임의 치환하지 않는다. AWS 자원 생성·앱 쓰기 제한·역방향 데이터 복사·자원 삭제가 포함된 명령은 [실행 안내](docs/workload-response-runtime.md)의 대상과 영향을 먼저 확인한다.
 
 ## 구성
 
 ```text
-src/sova/
-  security/        # 보안 통제·비교·보류·게이트·증거·어댑터
-    domain/        # 설치한 보안 패키지로 연결하는 import 경로
-    application/   # 수집·비교·승인된 대응·검증
-    ports/         # 보안 저장소·근거 경계
-    adapters/      # 패키지 어댑터 연결·호스트 소유 응답 SQL
-    qualification/ # 등록된 로컬 k3s 전용 격리·권한 검증
-  domain/          # 공통 그래프·계획·검증 의무·실행 계약
-  application/     # 공통 접수·실행·복구·이전
-  ports/           # 공통 저장소·외부 실행·조사 경계
-  adapters/        # 공통 PostgreSQL·Kubernetes·Harbor 작업 준비
-  monitoring/      # 등록된 감시 작업·인증된 입력·고정 워커
-  interfaces/      # 플랫폼 CLI
-console/src/
-  features/security/  # 보안 화면과 시나리오 표시
-  features/migration/ # 환경 이전 화면
-  features/demo/      # 프로세스 실험 제어
-  components/         # 공통 지도·검증 범위 표시
-demo/              # 개인 시연 API·일회용 로그인·실험 실행기
-infra/             # 시연 환경 인프라와 실행 도구
-examples/          # 시험앱 및 비밀값 없는 등록·입력 예제
-integration/security/ # 팀 통합 시 필요한 공통 계약·의존성
-tests/security/    # 보안 단위·PostgreSQL 통합 시험
-tests/demo/        # 시연 API·콘솔·실험 실행 회귀
-tests/unit/        # 공통 제어면 단위 시험
-tests/integration/ # 공통 통합 시험과 공유 PostgreSQL fixture
+src/sova/                 공통 제어면, 호스트 실행 상태와 어댑터
+src/sova/security/        추출한 보안 모듈의 호환 import와 호스트 전용 연결
+console/                 초기 React 운영 콘솔
+demo/response_scenarios/  대응 Studio 자산·정적 시나리오·실제 모드 클라이언트
+demo/local_response/     로컬·하이브리드 실행기, 원장·관측·보류·서명 증거
+demo/onprem_response/    이전 온프렘 무상태 시험과 플랫폼 콘솔 연결
+demo/audit_shipper/      허용한 증거의 외부 보관·WORM 시험
+infra/                   시험 환경 IaC
+integration/security/    Security 생산자 고정값·소비 계약
+docs/                    설계·실행 안내·검증 기록
 ```
 
-프론트엔드는 `console/`, 시연 서버·실험 도구는 `demo/`를 사용한다. 예전 최상위 경로의 호환 링크는 제거했다. 이전 보안 Python import 경로는 동일한 모듈로 연결하며, 새 코드는 `sova.security.*`를 사용한다.
-
-팀 보안 통합의 시작점은 [통합 명세](integration/security/manifest.json)다. 보안 판정·저장소 어댑터는 독립 `sova-security` 패키지를 사용한다. 공통 scope·계획·증거는 패키지의 v1 경계 계약으로 연결하며 승인·작업 원장·실제 실행은 Sova가 담당한다. `qualification/`은 등록된 시험 환경 전용이며 일반 고객 환경의 프로덕션 어댑터로 간주하지 않는다. Harbor runner 구현은 기존 담당 경계를 유지한다.
-
-`demo/`는 개인 검증 경로다. 시연 HTTP API와 일회용 인증은 이곳에 있으며 팀 플랫폼의 인증·API와 연결할 때 별도로 조정한다. 새 제어면과의 연결 여부를 [구현 현황](docs/implementation-status.md)에 구분한다. [이전 프리뷰 안내](docs/preview-guide.md)의 과거 검증이 현재 서버 가동을 의미하지 않는다.
-
-워크로드 대응 화면의 9개 유형을 실제 클러스터에서 실행하는 경로는 [워크로드 대응 실제 실행기](docs/workload-response-runtime.md)를 따른다. 로컬 RKE2 하나로 도는 기준선과, 실행 전용 EKS 출발지에서 이 Mac의 RKE2 목적지로 가는 하이브리드 배치를 지원한다.
-
-등록한 Kubernetes API를 직접 조회하는 운영자 CLI는 [읽기 전용 조사 안내](docs/kubernetes-discovery.md)를 따른다. 전용 로컬 k3s에서 제한된 RBAC·격리 시험을 마쳤으며 기업 OIDC와 다중 환경 운영 자격은 아직 연결하지 않았다.
-
-## 설계
-
-`sova-security==0.11.1`의 T14·T33 오프라인 인수 준비는 `sova security-intake-plan`을
-사용한다. 기존 정본의 20개 full 시험과 제출 원문의 보고 상태를 정리하며 실제 클라우드
-검사·증거 인증·실행 승인으로 사용하지 않는다. [맥 인수 안내](docs/platform-security-handoff.md)를 따른다.
-
-두 보안 제안서의 패치·마이그레이션 검증 흐름은 설치한 `sova-security==0.11.1`의
-검사 프로필을 사용한다. [실행 예와 플랫폼 인계](docs/platform-security-handoff.md)에
-독립 패키지, 기존 실행기 연결, 원문 요구사항과 시험 범위를 정리했다.
-`sova security-program-catalog`, `sova security-program-example`,
-`sova security-program-check`로 로컬 진단을 실행할 수 있다.
-진단 JSON은 인증·승인·실제 클라우드 검사 결과가 아니다.
-
-실제 로컬 k3s의 보안 수집·보류·승인된 격리·대체 기동·경로 전환은 [검증 현황](docs/security-workload-validation.md)에 정리했다. 클라우드 간 이전·무중단·기업 인증 완료를 뜻하지 않는다.
-
-여섯 영역의 검증 계약과 데이터·보안·관측 경로를 구현 중이다. Harbor 실행 연동은 팀원 담당이다. [담당 경계](docs/team-boundaries.md) · [보안 실행 계약](docs/security-governance.md).
-
-[React 운영 콘솔](console/README.md)은 워크로드 지도와 보안 대응을 같은 인증 화면에 제공한다. 로컬 프로세스 실험과 k3s 실행은 별도 경로로 표시하며, 실제 관측·승인·미확인을 유지한다.
-
-- [상담 reference workload](examples/README.md#상담-reference-workload): 실제 PG·파일·WebSocket·멱등·OTel 시험
-- [보호 수준 비교](docs/protection-parity.md): 최소 보호 목적·근거·발행자 신뢰·실행 차단
-- [RDS 읽기 전용 조사](docs/aws-rds-security.md): 구현 범위와 실계정 미검증 항목
-
-- [기준 명세 v2](docs/sova-production-spec-v2.md): 제품 책임·서비스/배치 아키텍처·핵심 결정
-- [상세 설계](docs/design/README.md): 이전, 목적지 재현, AI·데이터 위치, 샌드박스, 비용·관측, 거버넌스
-- [구현 현황](docs/implementation-status.md) · [진행 순서와 완료 기준](docs/roadmap.md)
-- [편집 가능한 아키텍처 2장](docs/diagrams/sova-target-architecture.drawio)
+`src/sova/security`의 추출된 모듈은 설치한 `sova-security`를 재사용한다. 실제 승인·실행 원장과 어댑터 책임은 호스트에 남는다. [패키지·플랫폼 인계](docs/platform-security-handoff.md), [Harbor 담당 경계](docs/team-boundaries.md)
 
 ## 검증
+
+전용 가상환경을 준비한 뒤 필요한 범위의 검사를 실행한다.
 
 ```sh
 .local-notes/venv/bin/ruff check src tests demo
 .local-notes/venv/bin/python -m pytest -q
+node --test demo/response_scenarios/*.test.mjs
 ```
 
-일반 실행에서는 실제 PostgreSQL 시험이 건너뛰어질 수 있다. 전체 검증에는 **격리된 시험용 PostgreSQL**과 `SOVA_TEST_POSTGRES_DSN`이 필요하다. 운영 DB를 지정하지 않는다. [DB 시험 조건](docs/postgres-execution.md)을 따른다.
+실제 PostgreSQL 시험은 별도 격리 DB와 `SOVA_TEST_POSTGRES_DSN`이 필요하다. 운영 DB를 지정하지 않는다. 실제 클러스터 시험은 별도 등록·권한·자원과 효과를 요구하며 기본 단위 시험으로 대체하지 않는다. [PostgreSQL 시험 조건](docs/postgres-execution.md)
 
-Sky에서 확인한 구현은 이식 후보와 회귀 시나리오로 참조한다. Sova의 구현·운영 자격으로 합산하지 않는다. 개발기록·실행 등록·비밀값은 `.local-notes/`에 보관하며 게시하지 않는다.
-
-패키지 소유 SQL은 `sova.adapters.sql_resources.migration_sql`을 통해 읽는다. `operations` 상태·경로·완료 트랜잭션은 Sova 소유 SQL을 유지한다. source-tree SQL 링크로 외부 저장소를 참조하지 않는다.
-
-검증된 이미지 교체는 [Kubernetes 이미지 어댑터](docs/kubernetes-image-patch.md), 감시 작업·실패 경보와 운영 연결 조건은 [감시 워커](docs/security-monitoring.md)를 참고한다. 두 기능의 조립 시험과 외부 상시 운영 완료는 구분한다.
+Sky에서 확인한 동작, 팀 platform의 검증, 개인 대응 실행기의 검증을 합산하지 않는다. 실제 접속 주소·토큰·개인키·kubeconfig·DB·실행 상태는 공개 문서나 저장소에 올리지 않는다.

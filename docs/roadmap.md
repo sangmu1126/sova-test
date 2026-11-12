@@ -1,5 +1,7 @@
 # Sova 구현 순서와 수용 기준
 
+이 문서의 단계표는 **2026-11-02 제어면 로드맵**이다. 이후 별도 `demo/local_response` 실행기는 개인 EKS→이 Mac RKE2의 제한된 9개 대응 경로를 검증했다([실행 안내](workload-response-runtime.md), [명세 추적표](spec-traceability.md)). 아래 S4의 프리뷰 상태를 최신 실행기의 상태로 읽지 않는다. 이 후속 검증도 일반 앱·CDC·기업 인증·Harbor·HA/DR를 포함한 S0~S7 전체 완료를 뜻하지 않는다. 날짜별 연결 현황은 [구현 현황](implementation-status.md)을 따른다.
+
 현재 담당: **보안 거버넌스 우선**. Harbor 실행 연동은 팀원이 담당한다. [담당 경계](team-boundaries.md) · [거버넌스 구현](security-governance.md).
 
 2026-11-02 · 전체 목표는 명세 v2를 유지한다. 선행 검증 때문에 순서를 나누며 보류 항목을 삭제하지 않는다.

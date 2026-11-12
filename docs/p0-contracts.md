@@ -1,6 +1,6 @@
 # P0 실행 계약과 프리뷰 연결
 
-Sova의 도메인 모델과 외부 변경 경계를 독립 Python 패키지로 분리했다. 현재 어댑터 연결은 단일 운영자 프리뷰 범위다. PostgreSQL·기업 인증·분산 워커·고객 환경 agent를 구현한 상태는 아니다.
+Sova의 도메인 모델과 외부 변경 경계를 독립 Python 패키지로 분리한 **초기 P0 프리뷰 계약**이다. 아래 SQLite 연결은 그 단계의 범위다. 이후 [PostgreSQL 계획 저장](postgres-lifecycle.md)·[작업/outbox](postgres-outbox.md)·[실행 원장](postgres-execution.md)을 구현했으므로 PostgreSQL 자체가 미구현인 것으로 해석하지 않는다. 기업 인증·고객 환경 전체의 운영 자격은 별도이며, 날짜별 현황은 [구현 기록](implementation-status.md)을 따른다.
 
 ## 모듈 책임
 

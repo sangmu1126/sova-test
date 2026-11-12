@@ -1,6 +1,6 @@
 # Lifecycle의 PostgreSQL 저장
 
-계획·조사 snapshot·승인을 PostgreSQL에 보존하고, 저장된 계획과 승인을 읽어 기존 실행 계층에 전달한다. 현재 실행 효과 원장은 프리뷰의 SQLite를 유지한다. 웹 화면·기업 로그인·작업/outbox 전체를 PostgreSQL로 옮긴 단계는 아니다.
+계획·조사 snapshot·승인을 PostgreSQL에 보존하고, 저장된 계획과 승인을 읽어 기존 실행 계층에 전달한다. 이 문서는 최초 lifecycle 저장 단계의 계약이다. 당시 프리뷰의 효과 원장은 SQLite였으며, 이후 [PostgreSQL 작업/outbox](postgres-outbox.md)와 [실행 효과 원장](postgres-execution.md)을 별도로 구현했다. 모든 웹 화면·기업 로그인이 PostgreSQL 실행 경로로 전환됐다는 뜻은 아니다.
 
 ## 코드 경계
 

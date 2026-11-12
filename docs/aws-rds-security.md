@@ -52,6 +52,6 @@ SDK 클라이언트를 만들기 전과 각 호출 전에 인가한다. 고정�
 - `src/sova/domain/aws_security.py`: 등록·스냅샷 계약
 - `src/sova/adapters/aws_security_codec.py`: 엄격한 입력 schema
 - `src/sova/adapters/aws_rds_security.py`: 읽기 전용 SDK 수집
-- `tests/unit/test_aws_rds_security.py`: SDK 응답 대체물 시험
+- 추출 후 SDK 응답 대체물 시험의 정본: security의 [`tests/unit/test_aws_rds_security.py`](https://github.com/Softbank-Hackathon-Finals/security/blob/5b5be0e32c03c109ce55b21090e863a6a9bac079/tests/unit/test_aws_rds_security.py). 위 Sova 모듈 경로는 호환 import를 유지한다.
 
 설정 의미는 [AWS DescribeDBInstances](https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBInstances.html), TLS는 [RDS PostgreSQL SSL 안내](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/PostgreSQL.Concepts.General.SSL.html)를 기준으로 한다.

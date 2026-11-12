@@ -1,5 +1,7 @@
 # Sova 운영 콘솔
 
+이 디렉터리는 초기 **React 콘솔**이다. 최신 9개 대응 화면은 `demo/response_scenarios`, 실제 실행 서버는 `demo/local_response`이며 [실행 안내](../docs/workload-response-runtime.md)를 따른다. 아래 실행법과 검증 범위는 React 경로에 한정한다. [전체 화면·문서 구분](../docs/README.md)
+
 React·TypeScript·Vite·React Flow 기반의 로컬 운영자 화면이다. 기존 Python의 인증·정책·실행 판정을 사용한다.
 
 ## 실행 경로
