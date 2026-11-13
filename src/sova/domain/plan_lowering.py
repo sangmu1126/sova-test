@@ -28,6 +28,7 @@ EDGE_ENVIRONMENT = "edge"
 # while reading the source; their full read/write sets travel in parameters.
 _SIDE = {
     "stage_target": "target",
+    "verify_return_target": "target",
     "start_sync": "target",
     "check_cutover_ready": "platform",
     "pause_admission": "source",
@@ -53,6 +54,7 @@ _GATES = {
     "stale_route_probe": Gate.POSTFLIGHT,
     "measured_budget": Gate.POSTFLIGHT,
     "restore_drill": Gate.POSTFLIGHT,
+    "return_target_check": Gate.PREFLIGHT,
     "identity_leak_scan": Gate.REQUIREMENTS,
     "identity_mapping_check": Gate.DATA,
     "identity_flow_test": Gate.PROTECTION,

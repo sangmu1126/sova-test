@@ -67,7 +67,11 @@ class PostgresHandoffClaims:
         approval_id,
         approval_revision,
         claims,
+        supersedes=None,
     ):
+        """Record ``claims`` for an approved plan. ``supersedes`` names the forward
+        plan a failback replaces: its claims pass to the failback in this same
+        transaction, and only while its authority is FAILBACK_REQUIRED."""
         for value in (application_id, plan_id, approval_id):
             identifier(value)
         digest(plan_digest)
@@ -99,6 +103,8 @@ class PostgresHandoffClaims:
             ):
                 raise RepositoryConflict("Approval changed, revoked, or not for this plan")
             require_no_security_hold(conn, self.connect, self.tenant_id, application_id)
+            if supersedes is not None:
+                self._supersede(conn, application_id, digest(supersedes), plan_id)
             conflicts = []
             for text, mode in ordered:
                 conn.execute(
@@ -150,6 +156,28 @@ class PostgresHandoffClaims:
                 (self.tenant_id, application_id, plan_id, approval_id, approval_revision),
             )
             return len(ordered)
+
+    def _supersede(self, conn, application_id, forward_digest, plan_id):
+        forward = conn.execute(
+            """SELECT state FROM sova_control.handoff_authority
+            WHERE tenant_id=%s AND application_id=%s AND plan_digest=%s FOR UPDATE""",
+            (self.tenant_id, application_id, forward_digest),
+        ).fetchone()
+        if not forward or forward[0] != "FAILBACK_REQUIRED":
+            raise RepositoryConflict("Superseded handoff does not require failback")
+        conn.execute(
+            """UPDATE sova_control.handoff_claims
+            SET released_at=clock_timestamp(), released_by='failback-admission'
+            WHERE tenant_id=%s AND application_id=%s AND plan_digest=%s
+              AND released_at IS NULL""",
+            (self.tenant_id, application_id, forward_digest),
+        )
+        conn.execute(
+            """INSERT INTO sova_control.lifecycle_audit
+            (tenant_id,application_id,record_id,action,actor_id,revision)
+            VALUES(%s,%s,%s,'handoff_superseded',%s,1)""",
+            (self.tenant_id, application_id, plan_id, "failback-admission"),
+        )
 
     def release(self, *, application_id, plan_digest, actor_id):
         """End claims after the handoff completes or is safely abandoned.

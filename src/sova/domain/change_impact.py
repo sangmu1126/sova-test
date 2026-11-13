@@ -68,6 +68,7 @@ _OBSERVES = {
     "stale_route_probe": {"source", "edge"},
     "measured_budget": {"source", "target", "edge"},
     "restore_drill": {"target"},
+    "return_target_check": {"target"},
     "identity_leak_scan": {"target", "platform"},
     "identity_mapping_check": {"source", "target"},
     "identity_flow_test": {"target", "edge"},

@@ -64,9 +64,14 @@ def profiles():
     return source, target
 
 
-def build_world(now, *, contract=None, strategy="offline-copy", operations=None):
+def build_world(now, *, contract=None, strategy="offline-copy", operations=None,
+                reverse=False, environment="synthetic-source", uid_prefix="synthetic-uid-"):
+    """``reverse`` swaps the profiles and observes the unit where the forward
+    target runs it, as a failback (§19.3) would."""
     contract = contract or example_service_contract()
     source, target = profiles()
+    if reverse:
+        source, target = target, source
     operations = operations or required_operations(strategy) or ("copy_content",)
     manifest = CapabilityManifest(
         "pg-" + strategy, "1.0.0", "a" * 64, strategy, "1.0.0",
@@ -80,7 +85,8 @@ def build_world(now, *, contract=None, strategy="offline-copy", operations=None)
         "b" * 64, "c" * 64, "d" * 64, EvidenceGrade.LIVE,
     )
     snapshot = replace(
-        example_dependency_snapshot(now, contract),
+        example_dependency_snapshot(now, contract, environment=environment,
+                                    uid_prefix=uid_prefix),
         writer_inventory_complete=True,
         control_inventory_complete=True,
         unresolved_paths=(),

@@ -77,6 +77,7 @@ class AuthorityRecord:
     held_from: HandoffState | None = None
     hold_operation: str | None = None
     reason: str | None = None
+    predecessor: str | None = None  # forward compiled digest for a failback plan
 
     def __post_init__(self):
         for field in ("tenant_id", "application_id", "source_environment",
@@ -84,6 +85,8 @@ class AuthorityRecord:
             identifier(getattr(self, field), field)
         for field in ("unit_digest", "plan_digest", "compiled_digest"):
             digest(getattr(self, field))
+        if self.predecessor is not None:
+            digest(self.predecessor)
         if not isinstance(self.state, HandoffState):
             raise ContractError("Typed handoff state required")
         for field in ("revision", "epoch", "next_operation"):
@@ -131,6 +134,7 @@ class AuthorityRecord:
             "held_from": None if self.held_from is None else str(self.held_from),
             "hold_operation": self.hold_operation,
             "reason": self.reason,
+            "predecessor": self.predecessor,
         }
 
 
@@ -141,14 +145,22 @@ def _plan(revision):
 
 
 def start(revision, *, plan_digest):
-    """Open the authority record for an admitted plan, with the source active."""
+    """Open the authority record for an admitted plan, with the source active.
+
+    A failback plan's source is the forward target that currently holds
+    authority; its epoch continues above the forward record's so commands of
+    the forward generation stay stale (§15.6).
+    """
     plan = _plan(revision)
     digest(plan_digest)
     source = plan["environments"]["source"]
+    failback = plan.get("failback_of")
     return AuthorityRecord(
         plan["tenant_id"], plan["service_id"], plan["unit"]["unit_digest"], plan_digest,
         revision.digest, source, plan["environments"]["target"], 1,
-        HandoffState.SOURCE_ACTIVE, source, 1, 0, False, False,
+        HandoffState.SOURCE_ACTIVE, source,
+        1 if failback is None else failback["forward_epoch"] + 1, 0, False, False,
+        predecessor=None if failback is None else failback["forward_compiled_digest"],
     )
 
 
@@ -285,7 +297,7 @@ _FIELDS = (
     "tenant_id", "application_id", "unit_digest", "plan_digest", "compiled_digest",
     "source_environment", "target_environment", "revision", "state",
     "owner_environment", "epoch", "next_operation", "activation_possible",
-    "fence_verified", "held_from", "hold_operation", "reason",
+    "fence_verified", "held_from", "hold_operation", "reason", "predecessor",
 )
 
 

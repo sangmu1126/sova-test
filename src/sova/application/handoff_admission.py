@@ -9,6 +9,8 @@ not issue commands or an execution permit; the existing execution ledger
 remains that authority.
 """
 
+import json
+
 from sova.domain.change_impact import ImpactAssessment
 from sova.domain.contracts import ContractError, identifier, utc
 from sova.domain.plan_conflicts import lock_set
@@ -44,6 +46,7 @@ class HandoffAdmission:
         locks, unresolved = lock_set(revision)
         if unresolved:
             raise ContractError("Plan scope cannot be resolved to claim keys")
+        failback = json.loads(revision.canonical).get("failback_of")
         claimed = self.claims.acquire(
             application_id=application_id,
             plan_id=plan.plan_id,
@@ -52,6 +55,7 @@ class HandoffAdmission:
             approval_id=approval_id,
             approval_revision=stored.revision,
             claims=locks,
+            supersedes=None if failback is None else failback["forward_plan_digest"],
         )
         return {
             "schema_version": 1,

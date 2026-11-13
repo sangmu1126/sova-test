@@ -96,6 +96,29 @@ class PostgresHandoffAuthority:
              Jsonb(record.document)),
         )
 
+    def _require_failback_allowed(self, conn, record):
+        """A failback continues a forward handoff in FAILBACK_REQUIRED: its epoch
+        is higher, and no other failback of it is open or has taken authority."""
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                     ("sova.failback:" + record.predecessor,))
+        forward = conn.execute(
+            """SELECT document FROM sova_control.handoff_authority
+            WHERE tenant_id=%s AND application_id=%s AND compiled_digest=%s FOR UPDATE""",
+            (self.tenant_id, record.application_id, record.predecessor),
+        ).fetchone()
+        if not forward:
+            raise RepositoryConflict("Forward handoff authority not found")
+        forward = record_from_document(forward[0])
+        if forward.state != HandoffState.FAILBACK_REQUIRED or record.epoch <= forward.epoch:
+            raise RepositoryConflict("Forward handoff does not require this failback")
+        others = conn.execute(
+            """SELECT state FROM sova_control.handoff_authority
+            WHERE tenant_id=%s AND application_id=%s AND document->>'predecessor'=%s""",
+            (self.tenant_id, record.application_id, record.predecessor),
+        ).fetchall()
+        if any(state != str(HandoffState.ABORTED) for (state,) in others):
+            raise RepositoryConflict("Another failback of this handoff is open or done")
+
     def open(self, record, *, actor_id):
         if not isinstance(record, AuthorityRecord) or record.revision != 1:
             raise ContractError("A new authority record starts at revision one")
@@ -106,6 +129,8 @@ class PostgresHandoffAuthority:
             self._require_admitted(conn, record)
             require_no_security_hold(conn, self.connect, self.tenant_id,
                                      record.application_id)
+            if record.predecessor is not None:
+                self._require_failback_allowed(conn, record)
             previous = self._current(
                 conn, record.application_id, record.unit_digest, lock=True
             )

@@ -61,6 +61,11 @@ def lock_set(revision):
                 for key in keys:
                     if modes.get(key) != WRITE:
                         modes[key] = mode
+    # A failback writes back into the forward plan's source resources: claim
+    # them by their physical identity, like any plan's source (§19.3).
+    for item in (plan.get("failback_of") or {}).get("return_resources", {}).values():
+        modes[("source", item["environment"], item["resource_uid"])] = WRITE
+        modes[("authority", item["environment"], item["resource_uid"])] = WRITE
     return tuple(sorted(modes.items())), tuple(sorted(set(unresolved)))
 
 

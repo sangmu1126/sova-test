@@ -15,7 +15,8 @@ from sova.domain.system_graph import (
 )
 
 
-def example_dependency_snapshot(now, contract=None):
+def example_dependency_snapshot(now, contract=None, *, environment="synthetic-source",
+                                uid_prefix="synthetic-uid-"):
     contract = contract or example_service_contract()
     kinds = {
         "api-a": ResourceKind.SERVICE,
@@ -35,7 +36,7 @@ def example_dependency_snapshot(now, contract=None):
                 node,
                 node,
                 ResourceScope(
-                    contract.tenant_id, contract.service_id, "synthetic-source", node
+                    contract.tenant_id, contract.service_id, environment, node
                 ),
                 kind,
                 "synthetic-not-live",
@@ -55,7 +56,7 @@ def example_dependency_snapshot(now, contract=None):
         "synthetic-shared-write",
         contract.fingerprint,
         graph,
-        tuple((node, "synthetic-uid-" + node) for node in kinds),
+        tuple((node, uid_prefix + node) for node in kinds),
         tuple(
             (dataset, "database")
             for dataset in contract.document["spec"]["data"]["protected_sets"]

@@ -99,6 +99,16 @@ _STABILIZE = _step(
     POST,
 )
 
+# §19.3 Clean failback: a separately approved handoff back to the original
+# source. The source here is the current authority (the forward target); the
+# return target keeps its forward-plan identity and is verified, not staged.
+_RETURN = _step(
+    "verify_return_target", "TARGET_PREPARED", "verify_return_target",
+    ("approved_failback_scope", "forward_handoff_failback_required"),
+    ("return_target_identity_verified", "target_business_writes_disabled"),
+)
+FAILBACK_STRATEGY = "failback-resync"
+
 TEMPLATES = {
     # §16.1 Offline Copy: the copy happens inside the fenced window.
     "offline-copy": (
@@ -112,6 +122,21 @@ TEMPLATES = {
         _STAGE,
         _step("start_sync", "SYNCING", "start_sync",
               ("target_prepared",), ("replication_scope_and_start_point_recorded",)),
+        _step("check_cutover_ready", "CUTOVER_READY", None,
+              ("replication_scope_and_start_point_recorded",),
+              ("cutover_budget_current",)),
+        _PAUSE, _FENCE,
+        _step("apply_final_changes", "SOURCE_FENCED", "apply_final_changes",
+              ("source_fence_verified_and_latched",), ("final_changes_applied",)),
+        _VERIFY, _INTENT, _ACTIVATE, _ROUTE, _STABILIZE,
+    ),
+    # Writes accepted by the forward target since activation flow back through
+    # the sync and are proven by the final comparison, never assumed (AT-30).
+    FAILBACK_STRATEGY: (
+        _RETURN,
+        _step("start_sync", "SYNCING", "start_sync",
+              ("return_target_identity_verified",),
+              ("replication_scope_and_start_point_recorded",)),
         _step("check_cutover_ready", "CUTOVER_READY", None,
               ("replication_scope_and_start_point_recorded",),
               ("cutover_budget_current",)),
@@ -168,10 +193,16 @@ def _obligations(spec, steps):
            "activate_target"),
         ob("route.stale_writes_rejected", "stale_route_probe", "commit_route"),
     ]
+    placement = "stage_target" if "stage_target" in at else "verify_return_target"
     for category, zones in sorted(spec["residency"].items()):
         if zones:
             result.append(ob(f"residency.{category}", "placement_evidence",
-                             "stage_target", allowed_zones=sorted(zones)))
+                             placement, allowed_zones=sorted(zones)))
+    if "verify_return_target" in at:
+        result.append(ob("failback.return_target_identity", "return_target_check",
+                         "verify_return_target",
+                         checks=["same_resource_uids", "still_fenced",
+                                 "not_restored_from_snapshot"]))
     for name in sorted(spec["data"]["protected_sets"]):
         result.append(ob(f"data.{name}", "final_content_comparison",
                          "verify_final_state",
@@ -209,6 +240,7 @@ def _sets(step, members, resources):
     target_all = [f"target/{m}" for m in members]
     table = {
         "stage_target": ([], target_all),
+        "verify_return_target": (target_all, []),
         "start_sync": (source_data, target_data),
         "check_cutover_ready": (authority + source_data + target_data, []),
         "pause_admission": (authority, [f"source/{m}/admission" for m in members]),
@@ -239,7 +271,9 @@ def compile_revision(
     authenticate,
     clock,
     required_grade=EvidenceGrade.LIVE,
+    failback=None,
 ):
+    """C0-C11 for one unit. ``failback`` comes only from ``compile_failback``."""
     if not isinstance(contract, ServiceContract) or not isinstance(
         snapshot, DependencySnapshot
     ):
@@ -324,6 +358,22 @@ def compile_revision(
             blockers.append(_blocker("C4", "EXTERNAL_EFFECT_NOT_RECONCILABLE",
                                      effect=effect["id"]))
 
+    # Failback (§19.3): only as the separate plan for a forward handoff that
+    # requires it, in exactly the reverse direction, over the same unit.
+    if (manifest.strategy_id == FAILBACK_STRATEGY) != (failback is not None):
+        unsupported = True
+        blockers.append(_blocker("C3", "FAILBACK_REQUIRES_FORWARD_HANDOFF"
+                                 if failback is None else "FAILBACK_STRATEGY_REQUIRED"))
+    elif failback is not None:
+        forward_envs = failback["forward_environments"]
+        if (source.profile_id, target.profile_id) != (forward_envs["target"],
+                                                      forward_envs["source"]):
+            unsupported = True
+            blockers.append(_blocker("C3", "FAILBACK_DIRECTION_MISMATCH"))
+        if sorted(boundary.get("members") or ()) != sorted(failback["return_resources"]):
+            remediation = True
+            blockers.append(_blocker("C2", "FAILBACK_UNIT_MISMATCH"))
+
     finished = utc(clock())
     if finished < started:
         blockers.append(_blocker("C11", "CLOCK_REGRESSION"))
@@ -350,7 +400,7 @@ def compile_revision(
     plan = None
     if status == "COMPILED":
         plan = _freeze(contract, snapshot, boundary, manifest, qualification,
-                       source, target, inputs, spec, identity)
+                       source, target, inputs, spec, identity, failback)
     return plan, {
         "schema_version": 1,
         "compiler_version": COMPILER_VERSION,
@@ -367,7 +417,7 @@ def compile_revision(
 
 
 def _freeze(contract, snapshot, boundary, manifest, qualification, source, target,
-            inputs, spec, identity=None):
+            inputs, spec, identity=None, failback=None):
     members = tuple(boundary["members"])
     resources = {r.node_id: r.kind for r in snapshot.graph.resources}
     scopes = {r.node_id: r.scope.environment_id for r in snapshot.graph.resources}
@@ -459,6 +509,12 @@ def _freeze(contract, snapshot, boundary, manifest, qualification, source, targe
         },
         "valid_until": utc(valid_until).isoformat(),
     }
+    if failback is not None:
+        document["failback_of"] = {
+            key: failback[key] for key in (
+                "forward_compiled_digest", "forward_plan_digest", "forward_unit_digest",
+                "forward_epoch", "forward_environments", "return_resources", "reason")
+        }
     _check_consistency(document, members)
     return PlanRevision(canonical_json(document, limit=MAX_PLAN_BYTES))
 
@@ -493,3 +549,39 @@ def _check_consistency(document, members):
 def compile_plan(contract, snapshot, **kwargs):
     """JSON-ready result only; use ``compile_revision`` for the frozen object."""
     return compile_revision(contract, snapshot, **kwargs)[1]
+
+
+def compile_failback(forward_revision, forward_record, contract, snapshot, **kwargs):
+    """Compile the separate clean-failback plan for a forward handoff (§15.4, §19.3).
+
+    Preconditions are not statuses: the forward record must be this compiled
+    plan's authority in FAILBACK_REQUIRED. The new plan runs from the current
+    authority back to the forward plan's source resources, which it names by
+    their forward identities so their recreation or restore is detected.
+    """
+    from sova.domain.handoff_authority import AuthorityRecord, HandoffState
+
+    if not isinstance(forward_revision, PlanRevision) or not isinstance(
+        forward_record, AuthorityRecord
+    ):
+        raise ContractError("Forward compiled plan and its authority record required")
+    if forward_record.compiled_digest != forward_revision.digest:
+        raise ContractError("Authority record belongs to another plan")
+    if forward_record.state != HandoffState.FAILBACK_REQUIRED:
+        raise ContractError("Failback requires a forward handoff in FAILBACK_REQUIRED")
+    forward = json.loads(forward_revision.canonical)
+    if forward.get("failback_of") is not None:
+        raise ContractError("A failback of a failback is a new forward handoff")
+    if (contract.tenant_id, contract.service_id) != (forward["tenant_id"],
+                                                     forward["service_id"]):
+        raise ContractError("Failback contract belongs to another service")
+    failback = {
+        "forward_compiled_digest": forward_revision.digest,
+        "forward_plan_digest": forward_record.plan_digest,
+        "forward_unit_digest": forward["unit"]["unit_digest"],
+        "forward_epoch": forward_record.epoch,
+        "forward_environments": dict(forward["environments"]),
+        "return_resources": forward["resources"],
+        "reason": forward_record.reason,
+    }
+    return compile_revision(contract, snapshot, failback=failback, **kwargs)

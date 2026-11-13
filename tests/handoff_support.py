@@ -90,12 +90,22 @@ def admitted_handoff(postgres_database, now):
     scopes = tuple(sorted({o.scope for o in plan.obligations},
                           key=lambda s: (s.environment_id, s.resource_id)))
     registry = PostgresVerifierRegistry(connect, tenant_id=tenant, application_id=app)
-    registry.publish(VerifierTrustChange(
-        tenant, app, 1,
-        VerifierTrust(signer.issuer_id, signer.key_id, signer.public_key_hex, scopes,
-                      (VERIFIER,), now - timedelta(minutes=1), now + timedelta(hours=1)),
-        "security-requester", "security-approver", "Register handoff evidence producer",
-        now, now + timedelta(minutes=1)))
+    trusted = {"revision": 0, "scopes": set()}
+
+    def trust_scopes(more):
+        """Publish the producer's trust over its current scopes plus ``more``."""
+        trusted["revision"] += 1
+        trusted["scopes"] |= set(more)
+        registry.publish(VerifierTrustChange(
+            tenant, app, trusted["revision"],
+            VerifierTrust(signer.issuer_id, signer.key_id, signer.public_key_hex,
+                          tuple(sorted(trusted["scopes"],
+                                       key=lambda s: (s.environment_id, s.resource_id))),
+                          (VERIFIER,), now - timedelta(minutes=1), now + timedelta(hours=1)),
+            "security-requester", "security-approver", "Register handoff evidence producer",
+            now, now + timedelta(minutes=1)))
+
+    trust_scopes(scopes)
     signed = SignedEvidenceAuthority(
         PostgresSignedEvidence(connect, tenant_id=tenant),
         Ed25519EvidenceVerifier(registry.resolve), clock=lambda: datetime.now(UTC))
@@ -129,4 +139,5 @@ def admitted_handoff(postgres_database, now):
                 readiness=readiness,
                 claims=claims, prove=prove, ops=ops, app=app, tenant=tenant,
                 connect=connect, lifecycle=lifecycle, world=world, feed=feed,
+                trust_scopes=trust_scopes, changes=changes, verifier=VERIFIER,
                 complete_feeds=lambda: complete_feeds(feed, revision, plan))
