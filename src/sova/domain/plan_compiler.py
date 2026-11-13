@@ -426,6 +426,17 @@ def _freeze(contract, snapshot, boundary, manifest, qualification, source, targe
     prefix = boundary["unit_digest"][:16]
     ids = {s.step_id: f"{prefix}.{i:02d}.{s.step_id}" for i, s in enumerate(template)}
     obligations = _obligations(spec, template)
+    # §14.4: existing automation that writes a member must be verifiably paused
+    # before the platform's first source write; the plan names it for approval.
+    controlled = {}
+    for node, controller in snapshot.controllers:
+        if node in members:
+            controlled.setdefault(controller, []).append(node)
+    for controller, nodes in sorted(controlled.items()):
+        obligations.append({"id": f"controller.{controller}.paused",
+                            "kind": "controller_pause_check",
+                            "required_at": "pause_admission", "members": sorted(nodes)})
+    obligations.sort(key=lambda o: o["id"])
     if identity is not None:
         steps = {s.step_id for s in template}
         for o in identity.obligations:
@@ -509,6 +520,12 @@ def _freeze(contract, snapshot, boundary, manifest, qualification, source, targe
         },
         "valid_until": utc(valid_until).isoformat(),
     }
+    if controlled:
+        document["controllers"] = {
+            "paused_before": "pause_admission",
+            "write_ownership": {c: sorted(n) for c, n in sorted(controlled.items())},
+            "handback": "separate_approval_required_never_resume_against_source",
+        }
     if failback is not None:
         document["failback_of"] = {
             key: failback[key] for key in (

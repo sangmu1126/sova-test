@@ -55,6 +55,7 @@ _GATES = {
     "measured_budget": Gate.POSTFLIGHT,
     "restore_drill": Gate.POSTFLIGHT,
     "return_target_check": Gate.PREFLIGHT,
+    "controller_pause_check": Gate.PREFLIGHT,
     "identity_leak_scan": Gate.REQUIREMENTS,
     "identity_mapping_check": Gate.DATA,
     "identity_flow_test": Gate.PROTECTION,

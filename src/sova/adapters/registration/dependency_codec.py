@@ -11,6 +11,13 @@ from sova.domain.migration_units import (
 
 def decode_dependency_snapshot(data):
     try:
+        controllers = ()
+        if type(data) is dict and "controllers" in data:
+            data = dict(data)
+            declared = data.pop("controllers")
+            if type(declared) is not dict or not declared:
+                raise ContractError("Declared controllers must be a non-empty mapping")
+            controllers = tuple(declared.items())
         exact(
             data,
             (
@@ -69,6 +76,7 @@ def decode_dependency_snapshot(data):
             coverage["writer_inventory_complete"],
             coverage["control_inventory_complete"],
             tuple(constraints),
+            controllers,
         )
     except (TypeError, KeyError, ValueError, OverflowError) as exc:
         raise ContractError("Invalid dependency snapshot") from exc

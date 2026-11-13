@@ -87,6 +87,8 @@ class DependencySnapshot:
     writer_inventory_complete: bool
     control_inventory_complete: bool
     constraints: tuple[BoundaryConstraint, ...] = ()
+    # node -> existing automation that writes it (Terraform workspace, operator)
+    controllers: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self):
         identifier(self.snapshot_id)
@@ -126,6 +128,9 @@ class DependencySnapshot:
             "constraints",
             tuple(sorted(self.constraints, key=lambda c: c.constraint_id)),
         )
+        object.__setattr__(self, "controllers", _pairs(self.controllers))
+        if any(node not in nodes for node, _ in self.controllers):
+            raise ContractError("Controller mapping references an unknown node")
         canonical_json(self.document, limit=MAX_SNAPSHOT_BYTES)
 
     @property
@@ -144,6 +149,8 @@ class DependencySnapshot:
                 "control_inventory_complete": self.control_inventory_complete,
             },
             "constraints": [c.document for c in self.constraints],
+            # Present only when declared, so earlier snapshots keep their digest.
+            **({"controllers": dict(self.controllers)} if self.controllers else {}),
         }
 
     @property

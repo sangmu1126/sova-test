@@ -76,6 +76,7 @@ def explain_plan(revision):
         "independence_drills": [
             {"id": d.drill_id, "level": None if d.level is None else str(d.level),
              "purpose": d.purpose} for d in exit_drills(revision)],
+        "controllers": doc.get("controllers"),
         "recovery": doc["recovery"],
         "approval_policy": doc["approval_policy"],
         "failback_of": None if failback is None else {

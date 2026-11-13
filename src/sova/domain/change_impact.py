@@ -70,6 +70,7 @@ _OBSERVES = {
     "measured_budget": {"source", "target", "edge"},
     "restore_drill": {"target"},
     "return_target_check": {"target"},
+    "controller_pause_check": {"source"},
     "identity_leak_scan": {"target", "platform"},
     "identity_mapping_check": {"source", "target"},
     "identity_flow_test": {"target", "edge"},
