@@ -7,11 +7,12 @@ authority record, next-step commands through the existing effect ledger, and
 signed evidence decide every step. No cloud resource is touched.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 from uuid import uuid4
 
-from handoff_support import admitted_handoff
+from contract_world import build_world
+from handoff_support import admitted_handoff, complete_feeds
 import psycopg
 from psycopg import sql
 import pytest
@@ -23,9 +24,13 @@ from sova.adapters.postgres_handoff_probes import PostgresHandoffProbes, artifac
 from sova.adapters.postgres_offline_copy import PostgresOfflineCopyAdapter
 from sova.adapters.postgres_operations import PostgresOperationRepository
 from sova.application.effects import EffectExecutor
+from sova.application.handoff_admission import HandoffAdmission
 from sova.domain.evidence import VerificationResult
 from sova.domain.handoff_authority import HandoffState
 from sova.domain.operations import OperationRequest
+from sova.domain.plan_compiler import FAILBACK_STRATEGY, compile_failback
+from sova.domain.plan_lowering import lower_plan
+from sova.domain.plans import PlanApproval, PlanPurpose
 
 pytestmark = pytest.mark.postgres
 OPERATION = "real-handoff"
@@ -65,8 +70,9 @@ def business(postgres_database):
         admin.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(app)))
         for name in names.values():
             admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
-        admin.execute(sql.SQL("COMMENT ON DATABASE {} IS 'approved-zone-a'").format(
-            sql.Identifier(names["tgt"])))
+        for zoned in (names["tgt"], names["src"]):
+            admin.execute(sql.SQL("COMMENT ON DATABASE {} IS 'approved-zone-a'").format(
+                sql.Identifier(zoned)))
         admin.execute(sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(
             sql.Identifier(names["other"])))
 
@@ -92,37 +98,30 @@ def business(postgres_database):
     yield dict(names=names, app=app, connect=connect, connect_as=connect_as, dsn=dsn)
 
 
-def run_handoff(postgres_database, now, business, *, adjust=None):
-    h = admitted_handoff(postgres_database, now, adjust=adjust)
-    names, app = business["names"], business["app"]
-    route = Route(names["src"])
-    adapter = PostgresOfflineCopyAdapter(
-        h["world"]["manifest"].adapter_id, connect=business["connect"],
-        source_db=names["src"], target_db=names["tgt"], app_role=app, tables=TABLES,
-        schema_sql=SCHEMA, route=route)
-    probes = PostgresHandoffProbes(
-        connect_as=business["connect_as"], admin_connect=business["connect"],
-        source_db=names["src"], target_db=names["tgt"], app_role=app, tables=TABLES,
-        probe_insert=PROBE_INSERT)
+def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation,
+          approval_id, until=None):
+    """Run a compiled plan's steps through the ledger with measured evidence."""
     lifecycle = h["lifecycle"]
-    approval = lifecycle.get_approval(h["app"], "approval-1")
+    approval = lifecycle.get_approval(h["app"], approval_id)
     PostgresOperationRepository(lifecycle).submit(OperationRequest(
-        h["tenant"], h["app"], OPERATION, h["plan"].plan_id, h["plan"].fingerprint,
-        "approval-1", approval.revision, "operator", "real-handoff-request"))
+        h["tenant"], h["app"], operation, plan.plan_id, plan.fingerprint,
+        approval_id, approval.revision, "operator", operation + "-request"))
     ownership = PostgresExecutionOwnership(lifecycle)
-    lease = ownership.acquire(h["app"], OPERATION, "worker")
+    lease = ownership.acquire(h["app"], operation, "worker")
     journal = PostgresEffectJournal(ownership, lease)
     engine = EffectExecutor(journal, authorize=journal.authorize,
                             clock=lambda: datetime.now(UTC))
-    h["coordinator"].open(h["revision"], h["plan"], actor_id="coordinator")
+    h["coordinator"].open(revision, plan, actor_id="coordinator")
     contract = h["world"]["contract"].document["spec"]
+    doc = json.loads(revision.canonical)
     observed = {}  # step kind -> ledger observation time
 
     def measure(obligation):
-        kind = obligation["kind"]
-        oid = obligation["id"]
+        kind, oid = obligation["kind"], obligation["id"]
         if kind == "placement_evidence":
             return probes.zone("target", set(contract["residency"][oid.split(".", 1)[1]]))
+        if kind == "return_target_check":
+            return probes.write_denied("target")
         if oid == "fence.source_writes_denied" or kind == "stale_route_probe":
             return probes.write_denied("source")
         if kind == "final_content_comparison":
@@ -130,11 +129,11 @@ def run_handoff(postgres_database, now, business, *, adjust=None):
         if kind == "business_invariant":
             return probes.order_effects_once()
         if oid == "security.deny_cross_tenant_data_access":
-            return probes.cross_tenant_denied(names["other"])
+            return probes.cross_tenant_denied(other_db)
         if oid == "security.verified_transport_encryption":
             return probes.transport_encrypted("target")
-        if kind in ("restore_drill",) or oid == "security.tested_restore":
-            return probes.restore_drill(names["scratch"])
+        if kind == "restore_drill" or oid == "security.tested_restore":
+            return probes.restore_drill(scratch_db)
         if kind == "authority_readback":
             return probes.single_writer()
         if kind == "measured_budget":
@@ -145,23 +144,53 @@ def run_handoff(postgres_database, now, business, *, adjust=None):
                 "budget_ms": obligation["budget_ms"]}
         raise AssertionError(f"no probe for {oid}")
 
-    obligations = {o["id"]: o for o in json.loads(h["revision"].canonical)["obligations"]}
+    obligations = {o["id"]: o for o in doc["obligations"]}
     record = None
-    for op in h["ops"]:
+    for op in doc["operations"]:
+        if op["kind"] == until:
+            break
         effect = None
         if op["adapter"]:
-            command = h["coordinator"].next_command(h["revision"], h["plan"],
-                                                    operation_id=OPERATION, epoch=lease.epoch)
+            command = h["coordinator"].next_command(revision, plan, operation_id=operation,
+                                                    epoch=lease.epoch)
             effect = engine.execute(command, permit_for(command), adapter)
             observed[op["kind"]] = effect.observation.observed_at
         for oid in op["required_evidence"]:
             passed, observation = measure(obligations[oid])
             h["prove"](oid, VerificationResult.PASS if passed else VerificationResult.FAIL,
-                       artifact_digest=artifact_digest(observation))
-        record = h["coordinator"].advance_from_ledger(h["revision"], h["plan"], effect=effect,
+                       artifact_digest=artifact_digest(observation),
+                       obligation=next(o for o in plan.obligations if o.obligation_id == oid),
+                       revisions=plan.revisions)
+        record = h["coordinator"].advance_from_ledger(revision, plan, effect=effect,
                                                       actor_id="coordinator")
         if record.state == HandoffState.SAFE_HOLD:
             break
+    # This executor is done; ownership is released only with no unresolved effect.
+    ownership.release(lease)
+    return record, observed
+
+
+def pieces(business, adapter_id, *, source, target, route):
+    names, app = business["names"], business["app"]
+    adapter = PostgresOfflineCopyAdapter(
+        adapter_id, connect=business["connect"], source_db=names[source],
+        target_db=names[target], app_role=app, tables=TABLES, schema_sql=SCHEMA, route=route)
+    probes = PostgresHandoffProbes(
+        connect_as=business["connect_as"], admin_connect=business["connect"],
+        source_db=names[source], target_db=names[target], app_role=app, tables=TABLES,
+        probe_insert=PROBE_INSERT)
+    return adapter, probes
+
+
+def run_handoff(postgres_database, now, business, *, adjust=None, until=None):
+    h = admitted_handoff(postgres_database, now, adjust=adjust)
+    names = business["names"]
+    route = Route(names["src"])
+    adapter, probes = pieces(business, h["world"]["manifest"].adapter_id,
+                             source="src", target="tgt", route=route)
+    record, observed = drive(h, h["revision"], h["plan"], adapter=adapter, probes=probes,
+                             other_db=names["other"], scratch_db=names["scratch"],
+                             operation=OPERATION, approval_id="approval-1", until=until)
     return dict(h, record=record, adapter=adapter, probes=probes, route=route,
                 business=business, observed=observed)
 
@@ -225,3 +254,68 @@ def test_unencrypted_target_is_refused_before_activation(postgres_database, now,
         x["revision"], x["plan"], source_writes_verified=restored_writes,
         actor_id="coordinator")
     assert final.state == HandoffState.ABORTED
+
+
+def test_failback_brings_back_writes_made_on_the_target(postgres_database, now, business):
+    """AT-30: after the target took writes, a separately approved failback returns
+    the authority, and the target's new data, to the original source."""
+    names, app = business["names"], business["app"]
+    x = run_handoff(postgres_database, now, business, adjust=without_transport_control,
+                    until="stabilize")
+    assert x["record"].state == HandoffState.ROUTE_CONFIRMED
+    with business["connect_as"](x["route"].get(), app) as conn:  # business on the target
+        for i in range(51, 56):
+            conn.execute("INSERT INTO orders VALUES (%s, %s, %s, %s)",
+                         (i, "customer-9", f"key-{i}", i))
+            conn.execute("INSERT INTO idempotency_results VALUES (%s, %s, 'confirmed')",
+                         ("customer-9", f"key-{i}"))
+    forward = x["coordinator"].require_failback(
+        x["revision"], x["plan"], reason="post-activation latency breach",
+        actor_id="coordinator")
+    assert forward.state == HandoffState.FAILBACK_REQUIRED
+
+    world = build_world(datetime.now(UTC), contract=x["world"]["contract"],
+                        strategy=FAILBACK_STRATEGY, reverse=True,
+                        environment="synthetic-target", uid_prefix="target-uid-")
+    for subject in (world["contract"], world["snapshot"], world["qualification"]):
+        world["sign"](subject)
+    unit = json.loads(x["revision"].canonical)["unit"]["unit_digest"]
+
+    def recompile():
+        return compile_failback(
+            x["revision"], x["store"].current(x["app"], unit), world["contract"],
+            world["snapshot"], requested_nodes=("api-a", "api-b", "database"),
+            expected_tenant=x["tenant"], source=world["source"], target=world["target"],
+            manifest=world["manifest"], qualification=world["qualification"], rows=2000,
+            authenticate=world["auth"], clock=lambda: datetime.now(UTC))
+
+    revision, result = recompile()
+    assert result["status"] == "COMPILED", result["blockers"]
+    kinds = {o["kind"] for o in json.loads(revision.canonical)["obligations"]}
+    verifiers = {k: x["verifier"] for k in kinds}
+    plan = lower_plan(revision, created_by="planner", verifiers=verifiers)
+    x["lifecycle"].save_plan(plan)
+    x["lifecycle"].save_approval(x["app"], plan.plan_id, "approval-failback", PlanApproval(
+        plan.fingerprint, "security-approver", PlanPurpose.MIGRATION_PHASE,
+        datetime.now(UTC) + timedelta(minutes=3)))
+    x["trust_scopes"]({o.scope for o in plan.obligations})
+    complete_feeds(x["feed"], revision, plan)
+    HandoffAdmission(lifecycle=x["lifecycle"], claims=x["claims"], changes=x["changes"],
+                     compiled=x["compiled"], clock=lambda: datetime.now(UTC)).admit(
+        x["app"], "approval-failback", recompile=recompile, verifiers=verifiers)
+
+    back_adapter, back_probes = pieces(business, world["manifest"].adapter_id,
+                                       source="tgt", target="src", route=x["route"])
+    record, _ = drive(x, revision, plan, adapter=back_adapter, probes=back_probes,
+                      other_db=names["other"], scratch_db=names["scratch"],
+                      operation="real-failback", approval_id="approval-failback")
+    assert record.state == HandoffState.HANDOFF_COMPLETE
+    assert record.owner_environment == "aws-source" and record.predecessor == (
+        x["revision"].digest)
+    assert x["route"].get() == names["src"]
+    with business["connect"](names["src"]) as conn:  # the target's writes came back
+        returned = conn.execute(
+            "SELECT count(*) FROM orders WHERE customer='customer-9'").fetchone()[0]
+    assert returned == 5
+    assert back_probes.single_writer()[0]  # the original source writes, the target not
+    assert back_probes.order_effects_once()[0]

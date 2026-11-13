@@ -6,10 +6,16 @@ own memory:
 
 * stage_target - the target tables exist and the application role cannot
   connect to or write the target;
+* verify_return_target (failback) - the original source still has its tables,
+  stays fenced and has no application session;
+* start_sync - an initial copy taken while the source still accepts writes,
+  marked per table on the target;
 * pause_admission - the application role can no longer connect to the source;
 * fence_source_writes - the role holds no write privilege on any source table
   and has no live session left there (existing sessions are terminated, §15.5);
-* copy_content - every table is copied inside one target transaction;
+* copy_content / apply_final_changes - every table is copied inside one
+  target transaction; this reference adapter applies the final changes by a
+  full re-copy inside the fenced window rather than by change data capture;
 * verify_final_state - per-table row count and content digest are equal;
 * activate_target - the role can connect to and write the target while the
   source stays fenced (single writer);
@@ -28,8 +34,10 @@ from psycopg import sql
 
 from sova.domain.contracts import ContractError, EffectObservation, EffectStatus, canonical_json
 
-ACTIONS = frozenset({"stage_target", "pause_admission", "fence_source_writes", "copy_content",
+ACTIONS = frozenset({"stage_target", "verify_return_target", "start_sync", "pause_admission",
+                     "fence_source_writes", "copy_content", "apply_final_changes",
                      "verify_final_state", "activate_target", "commit_route"})
+_MARKS = "sova_handoff_sync_marks"
 _WRITE = ("INSERT", "UPDATE", "DELETE", "TRUNCATE")
 
 
@@ -154,6 +162,41 @@ class PostgresOfflineCopyAdapter:
         sessions = self._sessions("source")
         return not any(writable.values()) and sessions == 0, {
             "source_writable": writable, "source_sessions": sessions}
+
+    def _verify_return_target(self):
+        return None  # verification only: the readback is the check
+
+    def _check_verify_return_target(self):
+        present, detail = self._check_stage_target()
+        sessions = self._sessions("target")
+        return present and sessions == 0, {**detail, "target_sessions": sessions}
+
+    def _start_sync(self):
+        self._copy_content()
+        with self.connect(self.target_db) as conn:
+            conn.execute(sql.SQL(
+                "CREATE TABLE IF NOT EXISTS {} (table_name text PRIMARY KEY, "
+                "copied_at timestamptz NOT NULL)").format(sql.Identifier(_MARKS)))
+            conn.execute(sql.SQL("REVOKE ALL ON {} FROM PUBLIC").format(sql.Identifier(_MARKS)))
+            for table, _ in self.tables:
+                conn.execute(sql.SQL(
+                    "INSERT INTO {} VALUES (%s, clock_timestamp()) ON CONFLICT (table_name) "
+                    "DO UPDATE SET copied_at=EXCLUDED.copied_at").format(sql.Identifier(_MARKS)),
+                    (table,))
+
+    def _check_start_sync(self):
+        with self.connect(self.target_db) as conn:
+            exists = conn.execute("SELECT to_regclass(%s) IS NOT NULL", (_MARKS,)).fetchone()[0]
+            marked = set() if not exists else {r[0] for r in conn.execute(
+                sql.SQL("SELECT table_name FROM {}").format(sql.Identifier(_MARKS)))}
+        tables = {t for t, _ in self.tables}
+        return tables <= marked, {"synced_tables": sorted(marked & tables)}
+
+    def _apply_final_changes(self):
+        self._copy_content()
+
+    def _check_apply_final_changes(self):
+        return self._check_copy_content()
 
     def _copy_content(self):
         with self.connect(self.source_db) as source, self.connect(self.target_db) as target:
