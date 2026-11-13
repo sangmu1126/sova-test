@@ -1,10 +1,10 @@
 """Strict, bounded graph interchange. Reject unknown keys and duplicate JSON."""
 
-import json
 from datetime import datetime
 from pathlib import Path
 
-from sova.domain.contracts import ContractError, ResourceScope, canonical_json
+from sova.domain.contracts import ContractError, ResourceScope
+from sova.domain.json_documents import json_document as json_document
 from sova.domain.system_graph import (
     Portability,
     RelationKind,
@@ -15,28 +15,6 @@ from sova.domain.system_graph import (
 )
 
 MAX_GRAPH_BYTES = 262144
-
-
-def json_document(raw, limit=MAX_GRAPH_BYTES):
-    if not isinstance(raw, str):
-        raise ContractError("Registration text required")
-
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ContractError("Duplicate JSON key")
-            result[key] = value
-        return result
-
-    try:
-        if len(raw.encode()) > limit:
-            raise ContractError("Registration size limit exceeded")
-        data = json.loads(raw, object_pairs_hook=unique)
-        canonical_json(data, limit=limit)
-        return data
-    except (ValueError, TypeError, RecursionError, UnicodeError) as exc:
-        raise ContractError("Invalid registration JSON") from exc
 
 
 def read_document(path, limit=MAX_GRAPH_BYTES):

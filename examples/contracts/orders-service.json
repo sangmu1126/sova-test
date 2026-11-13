@@ -1,0 +1,81 @@
+{
+  "apiVersion": "migration.platform/v1alpha1",
+  "kind": "ServiceContract",
+  "metadata": {
+    "id": "orders-service",
+    "revision": 1,
+    "tenant_id": "org-example"
+  },
+  "spec": {
+    "acknowledgment_semantics": {
+      "accepted": "durable_request_record",
+      "completed": "transaction_committed_and_result_recorded"
+    },
+    "approval": {
+      "high_risk_handoff": "human_approval",
+      "separation_of_duties": true
+    },
+    "availability": {
+      "latency_budget_ref": "orders-slo-v1",
+      "max_client_completion_wait_ms": 15000,
+      "max_write_admission_pause_ms": 5000,
+      "read_consistency_during_handoff": "read_your_writes_or_explicit_retry"
+    },
+    "business": {
+      "external_effects": [],
+      "invariants": [
+        {
+          "description": "동일 고객·멱등 키의 주문 효과를 한 번만 확정한다.",
+          "id": "ORDER-01"
+        }
+      ]
+    },
+    "data": {
+      "comparison_contract_ref": "orders-consistency-v1",
+      "preserve_completed_operations": true,
+      "protected_sets": [
+        "orders",
+        "work_items",
+        "idempotency_results"
+      ]
+    },
+    "exit": {
+      "allowed_remaining": [
+        "customer-owned-idp"
+      ],
+      "remove": [
+        "source-db"
+      ]
+    },
+    "migration": {
+      "profile": "PLANNED_SINGLE_AUTHORITY",
+      "units": {
+        "mode": "whole_service"
+      }
+    },
+    "operations": {
+      "restore_test_required": true,
+      "source_retirement_requires_separate_approval": true
+    },
+    "owner": "team-orders",
+    "residency": {
+      "ai_inputs": [],
+      "audit": [
+        "approved-zone-a"
+      ],
+      "backups": [
+        "approved-zone-a"
+      ],
+      "business_data": [
+        "approved-zone-a"
+      ]
+    },
+    "security": {
+      "required_controls": [
+        "deny_cross_tenant_data_access",
+        "verified_transport_encryption",
+        "tested_restore"
+      ]
+    }
+  }
+}

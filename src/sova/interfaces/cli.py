@@ -31,6 +31,16 @@ def main(argv=None):
     from sova.interfaces.security_intake import add_commands as add_intake_commands
     add_intake_commands(commands)
     commands.add_parser(
+        "service-contract-example",
+        help="Print synthetic service requirements; no registration or live resources",
+    )
+    contract_inspect = commands.add_parser(
+        "service-contract-inspect",
+        help="Normalize a local service contract; no registration, qualification or approval",
+    )
+    contract_inspect.add_argument("contract")
+    contract_inspect.add_argument("--tenant", required=True)
+    commands.add_parser(
         "example",
         help="Print a synthetic registration valid for one hour; no live resources",
     )
@@ -74,6 +84,15 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         now = datetime.now(timezone.utc)
+        if args.command == "service-contract-example":
+            from sova.application.service_contracts import example_service_contract
+            print(json.dumps(example_service_contract().document, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "service-contract-inspect":
+            from sova.domain.service_contracts import MAX_CONTRACT_BYTES, ServiceContract
+            contract = ServiceContract.from_document(read_document(args.contract, limit=MAX_CONTRACT_BYTES))
+            print(json.dumps(contract.inspect(expected_tenant=args.tenant), ensure_ascii=False, indent=2))
+            return 0
         if args.command == "security-intake-plan":
             from sova.interfaces.security_intake import run as run_intake
             return run_intake(args, now)
