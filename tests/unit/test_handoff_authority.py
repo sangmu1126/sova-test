@@ -23,6 +23,7 @@ from sova.domain.handoff_authority import (
     complete_operation,
     reconcile,
     require_failback,
+    resume_after_review,
     source_restored,
     start,
 )
@@ -199,6 +200,13 @@ def events(revision, record):
     for outcome in (EffectOutcome.SECURITY_VIOLATION, EffectOutcome.CONTRACT_BREACH):
         out.append(("escalate", outcome, None,
                     lambda r, o=outcome: escalate(r, revision, outcome=o)))
+    if op is not None:
+        for outcome in (EffectOutcome.EFFECT_CONFIRMED, EffectOutcome.EFFECT_NOT_APPLIED,
+                        EffectOutcome.EFFECT_UNKNOWN):
+            for evidence in (evidence_for(op), frozenset()):
+                out.append(("resume", outcome, evidence, lambda r, o=outcome, e=evidence:
+                            resume_after_review(r, revision, outcome=o,
+                                                satisfied_evidence=e)))
     return out
 
 
@@ -239,11 +247,12 @@ def test_bounded_model_check_safety_and_progress(revision):
             if record.state == HandoffState.SAFE_HOLD and after.state not in (
                 HandoffState.SAFE_HOLD, HandoffState.FAILBACK_REQUIRED
             ):
-                assert name in ("reconcile", "abort")
+                assert name in ("reconcile", "resume", "abort")
             # Completion only after every operation was confirmed with evidence.
             if after.state == HandoffState.HANDOFF_COMPLETE:
                 assert after.next_operation == len(plan)
-                assert name in ("complete", "reconcile") and a == EffectOutcome.EFFECT_CONFIRMED
+                assert name in ("complete", "reconcile", "resume")
+                assert a == EffectOutcome.EFFECT_CONFIRMED
             # Terminal states are absorbing.
             assert record.state not in TERMINAL or after == record
             k = key(after)

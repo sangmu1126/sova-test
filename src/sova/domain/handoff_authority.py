@@ -264,19 +264,35 @@ def escalate(record, revision, *, outcome):
                  reason=str(outcome))
 
 
+_REVIEWED = (str(EffectOutcome.SECURITY_VIOLATION), str(EffectOutcome.CONTRACT_BREACH))
+
+
 def reconcile(record, revision, *, outcome, satisfied_evidence):
     """Resolve a SAFE_HOLD from a fresh authenticated observation of the held operation."""
+    if isinstance(record, AuthorityRecord) and record.reason in _REVIEWED:
+        raise ContractError("Security or contract holds need a separate recovery decision")
+    return _resolve_hold(record, revision, outcome, satisfied_evidence)
+
+
+def resume_after_review(record, revision, *, outcome, satisfied_evidence):
+    """Resume a security or contract hold after its review (Part V.3-7).
+
+    The caller must already have verified that the security hold was released
+    and that the plan was approved again after the hold began. The held step
+    is then decided by a fresh observation, exactly as in ``reconcile``.
+    """
+    if not isinstance(record, AuthorityRecord) or record.reason not in _REVIEWED:
+        raise ContractError("Only a security or contract hold is resumed after review")
+    return _resolve_hold(record, revision, outcome, satisfied_evidence)
+
+
+def _resolve_hold(record, revision, outcome, satisfied_evidence):
     if not isinstance(record, AuthorityRecord) or record.state != HandoffState.SAFE_HOLD:
         raise ContractError("Only a held handoff can be reconciled")
     if not isinstance(outcome, EffectOutcome) or type(satisfied_evidence) is not frozenset:
         raise ContractError("Typed outcome and immutable evidence required")
     operations = _bind(record, revision)
     op = operations[record.next_operation]
-    if record.reason in (
-        str(EffectOutcome.SECURITY_VIOLATION),
-        str(EffectOutcome.CONTRACT_BREACH),
-    ):
-        raise ContractError("Security or contract holds need a separate recovery decision")
     if outcome == EffectOutcome.EFFECT_CONFIRMED:
         if set(op["required_evidence"]) - satisfied_evidence:
             raise ContractError("Required evidence is not satisfied")
@@ -399,6 +415,9 @@ def available_recoveries(record, revision):
     if record.state == HandoffState.SAFE_HOLD:
         op = operations[record.next_operation]
         trials["RECONCILE"] = lambda: reconcile(
+            record, revision, outcome=EffectOutcome.EFFECT_NOT_APPLIED,
+            satisfied_evidence=frozenset(op["required_evidence"]))
+        trials["RESUME_AFTER_REVIEW"] = lambda: resume_after_review(
             record, revision, outcome=EffectOutcome.EFFECT_NOT_APPLIED,
             satisfied_evidence=frozenset(op["required_evidence"]))
     available = []

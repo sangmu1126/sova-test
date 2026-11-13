@@ -34,6 +34,7 @@ from sova.domain.handoff_authority import (
     escalate,
     reconcile,
     require_failback,
+    resume_after_review,
     source_restored,
     start,
 )
@@ -222,6 +223,30 @@ class HandoffCoordinator:
         if after == record:
             return record
         return self.store.transition(record, after, action="reconciled", actor_id=actor_id)
+
+    def resume_after_review(self, revision, plan, *, lifecycle, approval_id, outcome,
+                            actor_id):
+        """Resume a security or contract hold (Part V.3-7): the security hold is
+        released, the plan was approved again after the hold, its inputs are
+        current, and a fresh observation decides the held step."""
+        doc, record = self._current(revision, plan)
+        self.store.require_no_hold(plan.application_id)
+        self.store.require_reapproval(record, approval_id)
+        lifecycle.get_approval(plan.application_id, approval_id).approval.require_valid(
+            plan, utc(self.clock()))
+        impact = self._impact(revision, plan, doc, record)
+        impact.require_commands_allowed()
+        satisfied = frozenset()
+        if outcome == EffectOutcome.EFFECT_CONFIRMED:
+            required = doc["operations"][record.next_operation]["required_evidence"]
+            satisfied = self.satisfied(plan, required, impact)
+        after = resume_after_review(record, revision, outcome=outcome,
+                                    satisfied_evidence=satisfied)
+        if after == record:
+            return record
+        return self.store.transition(record, after,
+                                     action=_bounded("resumed_after_review:" + approval_id),
+                                     actor_id=actor_id)
 
     def abort(self, revision, plan, *, target_inactive_verified, actor_id):
         _, record = self._current(revision, plan)

@@ -13,11 +13,13 @@ from sova.domain.evidence import EvidenceRecord, VerificationResult
 from sova.domain.handoff_authority import EffectOutcome, HandoffState
 from sova.domain.plan_compiler import compile_revision
 from sova.domain.plan_lowering import lower_plan
+from sova.domain.plans import PlanApproval, PlanPurpose
 
 
 class Store:
     def __init__(self):
         self.rows, self.held, self.actions = {}, False, []
+        self.reapproved = set()
 
     def current(self, app, unit):
         return self.rows.get((app, unit))
@@ -28,6 +30,10 @@ class Store:
 
     def active_hold(self, application_id):
         return self.held
+
+    def require_reapproval(self, record, approval_id):
+        if approval_id not in self.reapproved:
+            raise ContractError("Plan was not approved again after the hold began")
 
     def require_no_hold(self, application_id):
         if self.held:
@@ -72,7 +78,8 @@ def h(now):
                            clock=lambda: clock["now"])
     c.open(revision, plan, actor_id="coordinator")
     ops = json.loads(revision.canonical)["operations"]
-    return dict(c=c, revision=revision, plan=plan, store=store, verdict=verdict, ops=ops)
+    return dict(c=c, revision=revision, plan=plan, store=store, verdict=verdict, ops=ops,
+                now=now)
 
 
 def run_until(h, kind):
@@ -161,3 +168,34 @@ def test_terminal_handoffs_are_not_supervised(h):
     h["store"].held = True
     h["verdict"]["route.stale_writes_rejected"] = VerificationResult.FAIL
     assert h["c"].supervise(h["revision"], h["plan"], actor_id="s") == record
+
+
+class Lifecycle:
+    def __init__(self, plan, now):
+        self.approval = PlanApproval(plan.fingerprint, "security-approver",
+                                     PlanPurpose.MIGRATION_PHASE, now + timedelta(minutes=5))
+
+    def get_approval(self, application_id, approval_id):
+        return self
+
+
+def test_a_remediated_contract_breach_resumes_only_after_reapproval(h):
+    fence, _ = run_until(h, "fence_source_writes")
+    h["verdict"]["fence.source_writes_denied"] = VerificationResult.FAIL
+    held = confirm(h, fence)
+    assert held.reason == "CONTRACT_BREACH"
+    h["verdict"].clear()  # the fence was fixed and the probe now passes
+    lifecycle = Lifecycle(h["plan"], h["now"])
+
+    def resume(approval_id):
+        return h["c"].resume_after_review(h["revision"], h["plan"], lifecycle=lifecycle,
+                                          approval_id=approval_id,
+                                          outcome=EffectOutcome.EFFECT_CONFIRMED,
+                                          actor_id="c")
+
+    with pytest.raises(ContractError, match="approved again"):
+        resume("approval-1")
+    h["store"].reapproved.add("approval-2")
+    resumed = resume("approval-2")
+    assert resumed.state == HandoffState.SOURCE_FENCED and resumed.fence_verified
+    assert h["store"].actions[-1] == "resumed_after_review:approval-2"

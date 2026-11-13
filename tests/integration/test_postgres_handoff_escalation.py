@@ -3,7 +3,7 @@
 Synthetic inputs and local keys; no live environment is changed.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from handoff_support import admitted_handoff
 import pytest
@@ -12,8 +12,9 @@ from sova.adapters.postgres_governance import PostgresSecurityHolds
 from sova.application.handoff_readiness import HandoffReadiness
 from sova.domain.contracts import ContractError, ResourceScope
 from sova.domain.evidence import VerificationResult
-from sova.domain.governance import SecurityHold
+from sova.domain.governance import HoldRelease, SecurityHold
 from sova.domain.handoff_authority import EffectOutcome, HandoffState
+from sova.domain.plans import PlanApproval, PlanPurpose
 from sova.ports.plans import RepositoryConflict
 
 pytestmark = pytest.mark.postgres
@@ -86,4 +87,44 @@ def test_readiness_reports_the_hold_and_the_remaining_recovery(started):
     assert after["execution"]["hold_reason"] == "SECURITY_VIOLATION"
     # Abort is allowed by the model but the store refuses it during the hold.
     assert after["recovery"]["available"] == []
-    assert after["recovery"]["after_security_hold_release"] == ["ABORT_BEFORE_ACTIVATION"]
+    assert after["recovery"]["after_security_hold_release"] == [
+        "ABORT_BEFORE_ACTIVATION", "RESUME_AFTER_REVIEW"]
+
+
+def test_security_incident_hold_release_reapproval_then_resume(started):
+    """Part V.3-7: incident -> hold -> release by an independent approver ->
+    the plan approved again -> a fresh observation resumes the held step."""
+    h = started
+    copy = advance_to(h, "copy_content")
+    holds = PostgresSecurityHolds(h["connect"], tenant_id=h["tenant"])
+    scope = ResourceScope(h["tenant"], h["app"], "aws-source", "db")
+    raised = datetime.now(UTC) - timedelta(seconds=1)
+    holds.open_hold(SecurityHold("incident-11", scope, "incident-commander",
+                                 "Suspected credential compromise", raised))
+    held = h["coordinator"].supervise(h["revision"], h["plan"], actor_id="supervisor")
+    assert held.reason == "SECURITY_VIOLATION"
+
+    def resume(approval_id):
+        return h["coordinator"].resume_after_review(
+            h["revision"], h["plan"], lifecycle=h["lifecycle"], approval_id=approval_id,
+            outcome=EffectOutcome.EFFECT_NOT_APPLIED, actor_id="coordinator")
+
+    with pytest.raises(RepositoryConflict, match="security hold"):
+        resume("approval-1")
+    now = datetime.now(UTC)
+    holds.release_hold(h["app"], HoldRelease(
+        "incident-11", scope, h["plan"].revisions, 1, "security-requester",
+        "security-approver", "Credentials rotated and access re-verified", "ev-rotation",
+        "e" * 64, now, now + timedelta(minutes=10)))
+    with pytest.raises(RepositoryConflict, match="approved again after the hold"):
+        resume("approval-1")  # the admission-time approval predates the hold
+    h["lifecycle"].save_approval(h["app"], h["plan"].plan_id, "approval-2", PlanApproval(
+        h["plan"].fingerprint, "security-approver", PlanPurpose.MIGRATION_PHASE,
+        datetime.now(UTC) + timedelta(minutes=3)))
+    resumed = resume("approval-2")
+    assert resumed.state == held.held_from and resumed.reason is None
+    command = h["coordinator"].next_command(h["revision"], h["plan"], operation_id="op",
+                                            epoch=1)
+    assert command.step_id == copy["operation_id"]
+    assert h["store"].history(h["app"], held.unit_digest)[-1][1] == (
+        "resumed_after_review:approval-2")

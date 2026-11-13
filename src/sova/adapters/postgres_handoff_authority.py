@@ -271,6 +271,33 @@ class PostgresHandoffAuthority:
         return tuple((rev, action, actor, record_from_document(doc))
                      for rev, action, actor, doc in rows)
 
+    def require_reapproval(self, record, approval_id):
+        """An unrevoked approval of this plan created after the current hold began
+        (both times from the database clock)."""
+        identifier(approval_id, "approval_id")
+        with self.transaction() as conn:
+            if self._current(conn, record.application_id, record.unit_digest,
+                             lock=True) != record:
+                raise RepositoryConflict("Stale authority revision")
+            held = conn.execute(
+                """SELECT recorded_at FROM sova_control.handoff_authority_events
+                WHERE tenant_id=%s AND application_id=%s AND unit_digest=%s
+                  AND plan_digest=%s AND revision=%s""",
+                (self.tenant_id, record.application_id, record.unit_digest,
+                 record.plan_digest, record.revision),
+            ).fetchone()
+            approval = conn.execute(
+                """SELECT plan_digest,revoked_at,created_at FROM sova_control.approvals
+                WHERE tenant_id=%s AND application_id=%s AND approval_id=%s FOR SHARE""",
+                (self.tenant_id, record.application_id, approval_id),
+            ).fetchone()
+        if not held or not approval:
+            raise RepositoryConflict("Hold or approval record not found")
+        if approval[0] != record.plan_digest or approval[1] is not None:
+            raise RepositoryConflict("Approval is revoked or for another plan")
+        if approval[2] <= held[0]:
+            raise RepositoryConflict("Plan was not approved again after the hold began")
+
     def active_hold(self, application_id):
         """Whether a security hold is active now (read, serialized with hold changes)."""
         identifier(application_id)
