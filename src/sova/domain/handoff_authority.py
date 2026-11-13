@@ -279,3 +279,29 @@ def require_failback(record, *, reason):
     identifier(reason, "failback reason", limit=1024)
     return _next(record, state=HandoffState.FAILBACK_REQUIRED, held_from=None,
                  hold_operation=None, reason=reason)
+
+
+_FIELDS = (
+    "tenant_id", "application_id", "unit_digest", "plan_digest", "compiled_digest",
+    "source_environment", "target_environment", "revision", "state",
+    "owner_environment", "epoch", "next_operation", "activation_possible",
+    "fence_verified", "held_from", "hold_operation", "reason",
+)
+
+
+def record_from_document(data):
+    """Strict decode of a stored record; the constructor re-checks every invariant."""
+    if type(data) is not dict or set(data) != set(_FIELDS):
+        raise ContractError("Exact authority record document required")
+    try:
+        return AuthorityRecord(
+            **{
+                **data,
+                "state": HandoffState(data["state"]),
+                "held_from": None
+                if data["held_from"] is None
+                else HandoffState(data["held_from"]),
+            }
+        )
+    except (TypeError, ValueError) as exc:
+        raise ContractError("Invalid authority record document") from exc
