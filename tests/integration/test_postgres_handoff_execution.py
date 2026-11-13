@@ -22,6 +22,7 @@ from sova.domain.contracts import (
     EffectStatus,
     canonical_json,
 )
+from sova.domain.evidence import VerificationResult
 from sova.domain.handoff_authority import HandoffState
 from sova.domain.operations import OperationRequest
 
@@ -144,3 +145,25 @@ def test_foreign_change_mid_handoff_stops_commands_but_own_effects_do_not(execut
         x["coordinator"].next_command(x["revision"], x["plan"], operation_id=OPERATION,
                                       epoch=x["lease"].epoch)
     assert x["adapter"].calls == ["stage_target", "pause_admission"]
+
+
+def test_independence_is_judged_from_signed_drills_after_completion(execution):
+    """AT-35/36: handoff completion alone is not independence; signed drill
+    results on the same producer channel decide each level."""
+    x = execution
+    for op in x["ops"]:
+        run_step(x, op)
+    before = x["readiness"].assess(x["revision"], x["plan"])
+    assert before["handoff_state"] == "HANDOFF_COMPLETE"
+    assert before["levels"]["PROVIDER_EXIT_VERIFIED"]["status"] == "UNKNOWN"
+    drills = x["readiness"].obligations(x["revision"], x["plan"])
+    for o in drills:
+        failed = o.obligation_id == "exit.platform.customer_operates_after_revocation"
+        x["prove"](o.obligation_id, VerificationResult.FAIL if failed else
+                   VerificationResult.PASS, obligation=o)
+    after = x["readiness"].assess(x["revision"], x["plan"])
+    assert after["levels"]["PROVIDER_EXIT_VERIFIED"]["status"] == "PASS"
+    assert after["levels"]["PLATFORM_EXIT_VERIFIED"]["status"] == "FAIL"
+    assert after["source_retirement"] == {"approval": "SEPARATE_APPROVAL_REQUIRED",
+                                          "reviewable": True}
+    assert after["residual_dependencies"] == ["customer-owned-idp"]

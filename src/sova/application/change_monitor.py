@@ -28,8 +28,10 @@ class ChangeImpactSource:
             raise ContractError("Change feed and trusted clock required")
         self.feed, self.clock, self.max_feed_lag = feed, clock, max_feed_lag
 
-    def __call__(self, revision, plan, *, issued):
+    def __call__(self, revision, plan, *, issued, extra_obligations=()):
         index = ImpactIndex.from_plan(revision, plan)
+        if extra_obligations:
+            index = index.extended(extra_obligations)
         now = utc(self.clock())
         environments = tuple(sorted(dict(index.side_of_environment)))
         try:

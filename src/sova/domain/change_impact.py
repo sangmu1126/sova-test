@@ -23,7 +23,7 @@ Attribution and watermarks come from authorized collectors; this module does
 not authenticate them.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
 import json
@@ -72,6 +72,8 @@ _OBSERVES = {
     "identity_mapping_check": {"source", "target"},
     "identity_flow_test": {"target", "edge"},
     "identity_operations_check": {"target"},
+    # Independence drills run new instances against the whole unit (§20).
+    "exit_drill": {"source", "target", "platform", "edge"},
 }
 _SIDES = frozenset({"source", "target", "platform", "edge"})
 
@@ -228,6 +230,25 @@ class ImpactIndex:
             frozenset(op["adapter"]["adapter_id"] for op in doc["operations"] if op["adapter"]),
             tuple(operations), obligations,
         )
+
+
+    def extended(self, obligations):
+        """This index plus verification obligations outside the plan's steps, such
+        as post-handoff independence drills, given as (id, kind, verifier version).
+        They depend on every unit member and on the environments their kind observes."""
+        if type(obligations) is not tuple:
+            raise ContractError("Immutable extra obligations required")
+        known = {o[0] for o in self.obligations}
+        members = frozenset(("source", node) for _, _, node in self.members)
+        extra = []
+        for oid, kind, verifier in obligations:
+            identifier(oid, "obligation_id")
+            identifier(verifier, "verifier_version")
+            if oid in known:
+                raise ContractError("Duplicate obligation ID in impact index")
+            known.add(oid)
+            extra.append((oid, frozenset(_OBSERVES.get(kind, _SIDES)), members, kind, verifier))
+        return replace(self, obligations=self.obligations + tuple(extra))
 
 
 def _paths(paths):

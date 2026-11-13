@@ -16,6 +16,7 @@ from sova.adapters.postgres_plans import PostgresLifecycleRepository
 from sova.adapters.postgres_signed_evidence import PostgresSignedEvidence
 from sova.adapters.postgres_verifier_registry import PostgresVerifierRegistry
 from sova.application.change_monitor import ChangeImpactSource
+from sova.application.exit_readiness import ExitReadiness
 from sova.application.handoff_admission import HandoffAdmission
 from sova.application.handoff_coordinator import HandoffCoordinator, SignedObligationEvidence
 from sova.application.service_contracts import example_service_contract
@@ -109,8 +110,9 @@ def admitted_handoff(postgres_database, now):
         clock=lambda: datetime.now(UTC))
     counter = iter(range(10_000))
 
-    def prove(obligation_id, result=VerificationResult.PASS, *, revisions=None):
-        o = next(x for x in plan.obligations if x.obligation_id == obligation_id)
+    def prove(obligation_id, result=VerificationResult.PASS, *, revisions=None,
+              obligation=None):
+        o = obligation or next(x for x in plan.obligations if x.obligation_id == obligation_id)
         observed = datetime.now(UTC) - timedelta(seconds=1) + timedelta(
             microseconds=next(counter))
         record = EvidenceRecord(
@@ -120,7 +122,11 @@ def admitted_handoff(postgres_database, now):
         signed.ingest(signer.sign(record, issued_at=observed))
 
     ops = json.loads(revision.canonical)["operations"]
+    readiness = ExitReadiness(
+        store=store, evidence=coordinator.evidence, changes=changes,
+        clock=lambda: datetime.now(UTC), verifier_version=VERIFIER)
     return dict(revision=revision, plan=plan, store=store, coordinator=coordinator,
+                readiness=readiness,
                 claims=claims, prove=prove, ops=ops, app=app, tenant=tenant,
                 connect=connect, lifecycle=lifecycle, world=world, feed=feed,
                 complete_feeds=lambda: complete_feeds(feed, revision, plan))

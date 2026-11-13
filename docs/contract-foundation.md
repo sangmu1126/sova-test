@@ -263,6 +263,43 @@ C0 검사와 단독 C3는 Identity 의미를 판정하지 않는다. 컴파일�
 
 동결 계획 `inputs`에 `snapshot_observed_at`이 추가됐다. 그래서 이전 컴파일러의 계획과 digest가 다르며, 그 전에 승인한 계획은 C12에서 거부된다.
 
+## 인계 뒤 독립성 판정 (§20, Part II §9.2)
+
+인계 완료와 독립성은 다른 주장이다. 완료는 목적지가 계획의 게이트를 통과해 업무 권한을 넘겨받았다는 뜻이다. 독립성은 탈출 조항이 제거하라는 의존을 **실제로 막아도** 서비스가 동작한다는 뜻이다. `exit_drills`가 동결 계획의 탈출 조항에서 필요한 시험을 만든다.
+
+| 시험 | 판정하는 수준 |
+|---|---|
+| 원본 compute를 막고 새 목적지 인스턴스로 업무 수행 | `COMPUTE_INDEPENDENT` |
+| `exit.remove`의 의존마다, 그것을 막고 새 기동·신규 업무(AT-35) | `DATA_IDENTITY_INDEPENDENT` |
+| Identity 이전 시 원본 IdP를 막고 cold start(IAM-08) | `DATA_IDENTITY_INDEPENDENT` |
+| 캐시 없이 새 인스턴스·연결·토큰·비밀 획득 | `RESTART_VERIFIED` |
+| 배치·백업·복원·감사·신규 배포 | `OPERATIONS_VERIFIED` |
+| 플랫폼 권한 회수 뒤 고객이 배포·비밀 회전·복원(AT-36) | `PLATFORM_EXIT_VERIFIED` |
+
+`PROVIDER_EXIT_VERIFIED`는 앞의 네 수준(compute, 데이터·신원, 재기동, 운영)이 모두 통과해야 통과다. 계약이 제거를 요구하지 않는 수준은 `NOT_REQUIRED`다. 결과는 다음 규칙으로 정한다.
+
+- 수준은 소속 시험이 **모두** 현재 증거로 통과해야 통과다. 하나라도 실패면 실패다.
+- 증거가 없거나 만료됐거나 변경으로 무효화됐거나 수집 공백이 있으면 판단할 수 없음(UNKNOWN)이다. 예외 승인(NOT_APPLICABLE)도 독립성을 증명하지 않는다.
+- 인계가 `HANDOFF_COMPLETE`가 아니면 모든 수준이 `NOT_STARTED`다.
+
+Identity는 따로 보고한다.
+
+| 상황 | 상태 |
+|---|---|
+| 확장 없음 | `NOT_APPLICABLE` |
+| 원본 IdP 유지 | `SOURCE_IDP_RETAINED`(유지하는 IdP 목록) |
+| 이전 중 | `IDENTITY_CUTOVER_IN_PROGRESS` |
+| 이전 완료, IAM-08 미실시 | `IDENTITY_VALIDATED` |
+| IAM-08 통과 | `SOURCE_IDENTITY_INDEPENDENT` |
+| IAM-08 실패 | `IDENTITY_BLOCKED` |
+| IAM-08 증거 불명 | `IDENTITY_UNKNOWN` |
+
+IAM-10(종료 뒤 이전 발급자 거부)과 IAM-11(브리지·이중 발급자 퇴역)은 수준이 아니라 퇴역 확인 항목으로 따로 둔다. `exit.allowed_remaining`과 유지하는 IdP는 언제나 `residual_dependencies`로 표시한다(AT-35 잔존 의존 표시).
+
+`ExitReadiness.assess`는 시험 의무를 계획의 목적지 단계와 같은 범위로 만든다. 증거는 인계 증거와 같은 생산자 채널과 기존 `evaluate_gate`로 판정하며, 서명·범위·계획 revision·검증자 버전·기한을 따진다. 시험 의무도 변경 영향 색인에 들어가므로, 시험 뒤 목적지 정책이나 단위 자원이 바뀌면 그 시험은 다시 해야 한다. 독립성이 모두 통과해도 원본 폐기는 `SEPARATE_APPROVAL_REQUIRED`다(INV-10). 결과의 `reviewable`은 폐기 검토를 시작할 수 있다는 표시일 뿐 승인이 아니다.
+
+시험 자체(원본 의존 차단, 플랫폼 권한 회수)는 범위가 제한된 별도 승인 작업이다. 이 서비스는 그 결과만 판정하며 차단을 실행하지 않는다. 실제 환경의 시험 adapter는 없고, 시험은 합성 서명 증거로 했다.
+
 ## 기존 구현 재사용
 
 - JSON decoder를 순수 domain 유틸리티로 옮기고 기존 `graph_codec.json_document` import를 유지했다. domain이 파일/네트워크 adapter에 의존하지 않도록 했다.
