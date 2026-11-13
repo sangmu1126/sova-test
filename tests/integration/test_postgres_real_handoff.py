@@ -674,3 +674,17 @@ def test_sequences_move_with_the_data_so_numbers_are_never_reissued(postgres_dat
     assert x["record"].state == HandoffState.HANDOFF_COMPLETE
     with business["connect_as"](x["route"].get(), business["app"]) as conn:
         assert conn.execute("SELECT nextval('order_number_seq')").fetchone()[0] == 11
+
+
+def test_a_schema_difference_stops_staging_before_any_source_change(postgres_database, now,
+                                                                    business):
+    """AT-24: the source has a column the target definition lacks. Staging is not
+    confirmed, the handoff holds at its first step, and the source was never
+    paused or fenced."""
+    names = business["names"]
+    with business["connect"](names["src"]) as conn:
+        conn.execute("ALTER TABLE orders ADD COLUMN channel text")
+    x = run_handoff(postgres_database, now, business, adjust=without_transport_control)
+    assert x["record"].state == HandoffState.SAFE_HOLD
+    assert x["record"].reason == "EFFECT_UNKNOWN" and x["record"].next_operation == 0
+    assert not x["probes"].write_denied("source")[0]  # business still runs on the source

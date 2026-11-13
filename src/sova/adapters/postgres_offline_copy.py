@@ -4,8 +4,9 @@ It performs the handoff's external effects on two reachable databases and
 reads each postcondition back from the databases themselves, never from its
 own memory:
 
-* stage_target - the target tables exist and the application role cannot
-  connect to or write the target;
+* stage_target - the target tables exist with exactly the source's columns
+  and types, every extension the source uses is installed on the target
+  (AT-24), and no writer role can connect to or write the target;
 * verify_return_target (failback) - the original source still has its tables,
   stays fenced and has no application session;
 * start_sync - an initial copy taken while the source still accepts writes,
@@ -135,6 +136,16 @@ class PostgresOfflineCopyAdapter:
                 out[table] = {"rows": len(rows), "sha256": h.hexdigest()}
         return out
 
+    def _structure(self, which):
+        names = [t for t, _ in self.tables]
+        with self.connect(self._db(which)) as conn:
+            columns = [list(r) for r in conn.execute(
+                "SELECT table_name, column_name, data_type, is_nullable "
+                "FROM information_schema.columns WHERE table_schema='public' "
+                "AND table_name = ANY(%s) ORDER BY table_name, ordinal_position", (names,))]
+            extensions = sorted(r[0] for r in conn.execute("SELECT extname FROM pg_extension"))
+        return columns, extensions
+
     def _sequences(self, which):
         with self.connect(self._db(which)) as conn:
             return {name: [last, called] for name, last, called in conn.execute(
@@ -163,8 +174,14 @@ class PostgresOfflineCopyAdapter:
                                        (table,)).fetchone()[0] for table, _ in self.tables)
         writable = self._can_write("target")
         connect = self._can_connect("target")
-        return present and not any(writable.values()) and not any(connect.values()), {
-            "tables_present": present, "target_writable": writable,
+        (source_cols, source_ext), (target_cols, target_ext) = (
+            self._structure("source"), self._structure("target"))
+        same_columns = source_cols == target_cols
+        missing_extensions = sorted(set(source_ext) - set(target_ext))
+        return (present and same_columns and not missing_extensions
+                and not any(writable.values()) and not any(connect.values())), {
+            "tables_present": present, "same_columns": same_columns,
+            "missing_extensions": missing_extensions, "target_writable": writable,
             "target_connectable": connect}
 
     def _pause_admission(self):
