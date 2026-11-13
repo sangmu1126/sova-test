@@ -306,3 +306,32 @@ def test_stale_plan_blocks_commands_and_platform_decisions(compiled, now):
     feed.down = True
     unknown = coordinator.impact(revision, plan)
     assert unknown.plan_unknown and "CHANGE_FEED_UNAVAILABLE" in unknown.reasons
+
+
+def test_unplaced_events_are_widened_not_dropped(compiled, now):
+    later = now + timedelta(minutes=1)
+    every = {o["id"] for o in compiled["doc"]["obligations"]}
+    # A member named by UID without an environment is still that member.
+    named = assess(compiled, [event(compiled, ChangeKind.RESOURCE,
+                                    at=now + timedelta(seconds=1), subject=DB)], now=later)
+    assert named.plan_stale and "UNIT_RESOURCE_CHANGED:database" in named.reasons
+    nowhere = assess(compiled, [event(compiled, ChangeKind.RESOURCE,
+                                      at=now + timedelta(seconds=1))], now=later)
+    assert nowhere.plan_stale and set(dict(nowhere.stale_since)) == every
+    policy = assess(compiled, [event(compiled, ChangeKind.POLICY, at=now)], now=later)
+    assert policy.commands_allowed and set(dict(policy.stale_since)) == every
+    identity = assess(compiled, [event(compiled, ChangeKind.IDENTITY, at=now)], now=later)
+    assert "IDENTITY_CHANGED:any" in identity.reasons
+
+
+def test_a_revision_registered_before_the_snapshot_still_supersedes(compiled, now):
+    """The compiled contract must be the latest registered one, not merely
+    unchanged since the snapshot: a newer revision recorded earlier counts."""
+    clock = {"now": now + timedelta(minutes=1)}
+    feed, changes = memory_changes(lambda: clock["now"])
+    feed.recorded.append(event(compiled, ChangeKind.CONTRACT, at=now - timedelta(hours=1),
+                               digest=compiled["doc"]["inputs"]["contract_digest"]))
+    feed.recorded.append(event(compiled, ChangeKind.CONTRACT, at=now - timedelta(minutes=5),
+                               digest="f" * 64))
+    impact = changes(compiled["revision"], compiled["plan"], issued=0)
+    assert impact.plan_stale and "PLAN_INPUT_SUPERSEDED:contract" in impact.reasons

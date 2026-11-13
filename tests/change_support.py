@@ -14,7 +14,9 @@ class MemoryChangeFeed:
     def events(self, *, application_id, environments, since):
         if self.down:
             raise ConnectionError("feed unavailable")
-        return tuple(e for e in self.recorded if e.observed_at >= since)
+        registry = {"contract", "manifest", "qualification", "environment_profile"}
+        return tuple(e for e in self.recorded
+                     if str(e.kind) in registry or e.observed_at >= since)
 
     def watermarks(self, environments):
         if self.down:

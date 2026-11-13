@@ -106,11 +106,14 @@ class PostgresChangeFeed:
         with self.transaction() as conn:
             rows = conn.execute(
                 f"""SELECT {_COLUMNS} FROM sova_control.change_events
-                WHERE tenant_id=%s AND observed_at>=%s
-                  AND (application_id=%s OR environment_id IS NULL
-                       OR environment_id=ANY(%s)
-                       OR kind IN ('manifest','qualification','environment_profile',
-                                   'verifier','adapter'))
+                WHERE tenant_id=%s
+                  AND (kind IN ('contract','manifest','qualification','environment_profile')
+                       -- registry history at any time: the compiled revision must
+                       -- still be the latest one recorded, not merely unchanged later
+                       OR (observed_at>=%s
+                           AND (application_id=%s OR environment_id IS NULL
+                                OR environment_id=ANY(%s)
+                                OR kind IN ('verifier','adapter'))))
                 ORDER BY observed_at,event_id LIMIT %s""",
                 (self.tenant_id, since, application_id, list(environments),
                  MAX_EVENTS + 1),

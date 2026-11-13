@@ -309,10 +309,12 @@ C0 검사와 단독 C3는 Identity 의미를 판정하지 않는다. 컴파일�
 | `code` | 선택 | 선택 | 없음 | 서비스(application) 기준 |
 | `verifier` | 선택 | 검증자 버전(모르면 비움) | 없음 | |
 | `adapter` | 선택 | adapter ID(모르면 비움) | 없음 | 계획 낡음, 재확인 불가 |
-| `contract` | 선택 | 선택 | 새 계약 digest | 서비스 기준 |
+| `contract` | 선택 | 선택 | 새 계약 digest | 서비스 기준. 등록소 사건은 snapshot 이전 것도 읽어, 컴파일한 revision이 기록된 최신이어야 함 |
 | `manifest`, `qualification` | 선택 | 전략 ID | 새 digest | |
 | `environment_profile` | 선택 | 프로필 ID | 새 digest | |
 | `unclassified` | 환경 또는 비움 | 선택 | 없음 | 넓혀서 무효화, 계획 낡음 |
+
+환경을 비운 `resource`·`schema`·`policy` 사건이 구성원 UID를 가리키면 그 구성원 변경으로 본다. 아니면 모든 쪽으로 넓힌다. 환경을 비운 `identity` 사건은 모든 Identity 의무를 무효화한다.
 
 자기 명령이 만든 변경이면 `cause`에 (내린 계획 digest, 단계 ID)를 넣는다.
 

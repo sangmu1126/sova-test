@@ -119,3 +119,14 @@ def test_reaffirmed_plan_issues_commands_again(postgres_database, now):
     command = h["coordinator"].next_command(h["revision"], h["plan"], operation_id="op",
                                             epoch=1)
     assert command.action == "stage_target"
+
+
+def test_registry_history_is_read_regardless_of_the_snapshot_time(feeds):
+    (tenant, _), (feed, _) = feeds
+    old = datetime.now(UTC) - timedelta(hours=2)
+    feed.record(ChangeEvent("ev-contract-r8", tenant, "orders-service", ChangeKind.CONTRACT,
+                            None, None, "f" * 64, old), collector_id="registry-collector")
+    feed.record(change(tenant, "ev-old-resource", at=old), collector_id="collector-a")
+    read = feed.events(application_id="orders-service", environments=("source-env",),
+                       since=datetime.now(UTC) - timedelta(minutes=1))
+    assert [e.event_id for e in read] == ["ev-contract-r8"]

@@ -331,7 +331,7 @@ def assess_impact(index, events, watermarks, *, issued, now, max_feed_lag=MAX_FE
                 stale[oid] = max(stale.get(oid, at), at)
 
     own_steps = {step: (side, written)
-              for step, side, written, _ in index.operations[:issued]}
+                 for step, side, written, _ in index.operations[:issued]}
     registry = {}
     for event in sorted(events, key=lambda e: (e.observed_at, e.event_id)):
         if event.tenant_id != index.tenant_id:
@@ -349,7 +349,11 @@ def assess_impact(index, events, watermarks, *, issued, now, max_feed_lag=MAX_FE
                 plan_stale = True  # some revision changed, unknown which: widen
                 reasons.add(f"PLAN_INPUT_UNRESOLVED:{event.kind}")
             continue
-        node = member.get(event.subject) if side == "source" and event.subject else None
+        # A unit member is named by its physical UID; an event without an
+        # environment can still name one, and is otherwise widened below.
+        unplaced = event.environment_id is None
+        node = (member.get(event.subject) if event.subject and (side == "source" or unplaced)
+                else None)
         if _expected(event, index.plan_digest, own_steps, node, side):
             continue
         at, kind = event.observed_at, event.kind
@@ -359,12 +363,23 @@ def assess_impact(index, events, watermarks, *, issued, now, max_feed_lag=MAX_FE
                            f"UNIT_RESOURCE_CHANGED:{node}")
                 if at > structure_as_of:
                     plan_stale = True
+            elif unplaced and event.subject is None:
+                # Something changed, nobody can say where: every side, and the plan.
+                invalidate(lambda s, t, k, v: True, at, "RESOURCE_CHANGED:any")
+                if at > structure_as_of:
+                    plan_stale = True
             elif side is not None and (event.subject is None or side != "source"):
                 # Unknown resource in a plan environment: widen to that side.
                 invalidate(lambda s, t, k, v: side in s, at, f"RESOURCE_CHANGED:{side}")
                 if side == "source" and at > structure_as_of:
                     plan_stale = True
-        elif kind == ChangeKind.POLICY and side is not None:
+        elif kind == ChangeKind.POLICY and unplaced and node is None:
+            invalidate(lambda s, t, k, v: True, at, "POLICY_CHANGED:any")
+        elif kind == ChangeKind.IDENTITY and unplaced:
+            invalidate(lambda s, t, k, v: k.startswith("identity_"), at,
+                       "IDENTITY_CHANGED:any")
+        elif kind == ChangeKind.POLICY and (side is not None or node is not None):
+            side = side or "source"  # an unplaced event naming a member is source-side
             # Any evidence observing this environment must be re-verified; for an
             # environment-wide permission change that includes the write-denial
             # probe, which is what catches a newly granted writer path.
@@ -414,11 +429,11 @@ def assess_impact(index, events, watermarks, *, issued, now, max_feed_lag=MAX_FE
     )
 
 
-def _expected(event, plan_digest, issued, node, side):
+def _expected(event, plan_digest, own_steps, node, side):
     """A change this plan's own issued command produced inside its write scope."""
     if event.cause is None or event.cause[0] != plan_digest:
         return False
-    step = issued.get(event.cause[1])
+    step = own_steps.get(event.cause[1])
     if step is None or side is None:
         return False  # future step, unknown step, or outside the plan's environments
     if event.kind not in (ChangeKind.RESOURCE, ChangeKind.SCHEMA, ChangeKind.POLICY):
