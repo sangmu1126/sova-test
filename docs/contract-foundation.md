@@ -21,6 +21,43 @@
 
 영역별 상태는 [준비 상태 조회](#준비-상태-조회-242-readiness-274)로 본다.
 
+## 운영 절차 요약
+
+한 단위를 인계할 때의 호출 순서다. 괄호는 구현 위치다.
+
+1. **입력 등록.** 서비스 계약, 의존성 snapshot(관리 주체 선언 포함), 방향별 자격을 기존 서명 증거 저장소에 등록한다(`RegistryAuthenticator`가 확인).
+2. **후보 탐색과 검토.** `search_plans`로 후보 전략을 모두 컴파일한다. 승인자는 `sova plan-explain <plan> --expect-digest <digest>`로 동결 계획을 검토한다.
+3. **내리기와 승인.** `lower_plan`(검증자 버전 지정) → 기존 `PostgresLifecycleRepository.save_plan` → 독립 승인자의 `save_approval`.
+4. **수용.** `HandoffAdmission.admit`이 한 트랜잭션에서 다음을 한다.
+   - 재컴파일 확인, 변경 영향·수집 공백, 보안 보류 확인
+   - 물리 키 잠금, 동결 계획 저장
+5. **실행.** `HandoffCoordinator.open` 뒤에 단계마다 다음을 반복한다.
+   - `next_command` → 기존 `EffectExecutor.execute`
+   - 검증자의 서명 증거 수집
+   - `advance_from_ledger`. 플랫폼 단계는 효과 없이 증거로만 진행한다.
+
+   재시작한 실행 주체는 `PostgresCompiledPlans.for_plan`으로 같은 계획을 불러온다.
+6. **감시.** 주기적으로 다음을 돌린다.
+   - 변경 수집기 폴링
+   - `supervise`: 보안 보류와 검증 회귀
+   - 활성화 뒤 `SourceFenceWatch.check`
+   - `HandoffReadiness.assess`로 상태 확인
+7. **완료 뒤.** 다음을 차례로 한다.
+   1. 독립성 시험을 실행하고 서명 증거를 남긴다(`ExitReadiness.assess`).
+   2. 원본 폐기 검토는 별도 승인으로 한다.
+   3. 원본 폐기 전까지 원본 차단 감시를 계속한다.
+
+**실패 시.**
+
+| 상황 | 처리 |
+|---|---|
+| 효과 불명 | 이전 리스 종료 → 정지 증명 → 복구 리스로 읽기 전용 조정 → `reconcile` |
+| 검증 FAIL, 활성화 전 | 계약 위반 보류 → 원인 수정 → 재승인 → `resume_after_review`, 또는 `abort` → `source_restored` |
+| 검증 FAIL, 활성화 뒤 | `FAILBACK_REQUIRED` → `compile_failback` → 승인 → 수용(잠금 인계) → 역방향 실행 |
+| 보안 보류 | `SECURITY_VIOLATION` 보류 → 기존 `HoldRelease` → 보류 이후 재승인 → `resume_after_review` |
+| 계획 입력 변경 | 자원 수준이면 새 snapshot으로 `PlanReaffirmation`. 아니면 새 계획 |
+| 권한 DB 복원 | `AuthorityRollbackDetected` → `PostgresHandoffAuthority.recover` → 새 관측으로 조정 |
+
 ## 입력 계약
 
 `ServiceContract`는 업무 요구, 접수/완료 의미, 데이터 범위, 가용성, 보안 통제, 위치, 복구·승인·탈출 요구를 보존한다. versioned JSON의 구조를 검사한 뒤 64 KiB 이하의 불변 정규 표현과 SHA-256을 만든다. 중복 키·모르는 필드·누락된 필수 구역·중복 통제·부정확한 숫자·다른 tenant를 거부한다.
