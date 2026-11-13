@@ -16,6 +16,7 @@ import psycopg
 import pytest
 
 from sova.adapters.postgres_change_feed import PostgresChangeFeed
+from sova.adapters.postgres_compiled_plans import PostgresCompiledPlans
 from sova.adapters.postgres_handoff_claims import PostgresHandoffClaims
 from sova.adapters.postgres_plans import PostgresLifecycleRepository
 from sova.application.change_monitor import ChangeImpactSource
@@ -47,13 +48,14 @@ def stores(postgres_database):
     )
     claims = PostgresHandoffClaims(connect, tenant_id=tenant)
     feed = PostgresChangeFeed(connect, tenant_id=tenant)
+    compiled = PostgresCompiledPlans(connect, tenant_id=tenant)
     admission = HandoffAdmission(
         lifecycle=lifecycle, claims=claims,
         changes=ChangeImpactSource(feed=feed, clock=lambda: datetime.now(UTC)),
-        clock=lambda: datetime.now(UTC),
+        compiled=compiled, clock=lambda: datetime.now(UTC),
     )
     return dict(tenant=tenant, lifecycle=lifecycle, claims=claims, admission=admission,
-                feed=feed)
+                feed=feed, compiled=compiled, dsn=dsn)
 
 
 def prepared(stores, now, service, *, uid_prefix=None, feeds=True):
@@ -226,3 +228,21 @@ def test_missing_change_feeds_block_admission(stores, now):
     with pytest.raises(PlanReevaluationRequired, match="CHANGE_FEED_INCOMPLETE"):
         admit(stores, orders)
     assert stores["claims"].active() == ()
+
+
+def test_admission_stores_the_exact_admitted_plan(stores, now):
+    """After a restart the admitted plan is loaded by digest, not recompiled."""
+    orders = prepared(stores, now, "orders-service")
+    value = admit(stores, orders)
+    loaded = stores["compiled"].for_plan(orders["plan"])
+    assert loaded.digest == value["compiled_digest"] == orders["plan"].origin_plan_digest
+    assert stores["compiled"].save(loaded) == loaded.digest  # idempotent
+    with psycopg.connect(stores["dsn"]) as admin:  # tamper with the stored row
+        admin.execute(
+            "UPDATE sova_control.compiled_plans SET canonical=replace(canonical,"
+            "'offline-copy','offline-c0py') WHERE tenant_id=%s", (stores["tenant"],))
+    with pytest.raises(ContractError, match="does not match its digest"):
+        stores["compiled"].load(loaded.digest)
+    other = PostgresCompiledPlans(stores["claims"].connect, tenant_id="tenant-other")
+    with pytest.raises(ContractError, match="not found"):
+        other.load(loaded.digest)

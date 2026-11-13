@@ -79,7 +79,8 @@ def prepare_failback(h, now, *, world=None, approval_id="approval-failback"):
 
 def admit(h, fb, *, approval_id="approval-failback"):
     return HandoffAdmission(lifecycle=h["lifecycle"], claims=h["claims"],
-                            changes=h["changes"], clock=lambda: datetime.now(UTC)).admit(
+                            changes=h["changes"], compiled=h["compiled"],
+                            clock=lambda: datetime.now(UTC)).admit(
         h["app"], approval_id, recompile=fb["recompile"], verifiers=fb["verifiers"])
 
 

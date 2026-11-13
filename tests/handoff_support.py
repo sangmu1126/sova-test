@@ -11,6 +11,7 @@ from witness_support import MemoryAuthorityWitness
 
 from sova.adapters.ed25519_evidence import Ed25519EvidenceSigner, Ed25519EvidenceVerifier
 from sova.adapters.postgres_change_feed import PostgresChangeFeed
+from sova.adapters.postgres_compiled_plans import PostgresCompiledPlans
 from sova.adapters.postgres_handoff_authority import PostgresHandoffAuthority
 from sova.adapters.postgres_handoff_claims import PostgresHandoffClaims
 from sova.adapters.postgres_plans import PostgresLifecycleRepository
@@ -81,7 +82,8 @@ def admitted_handoff(postgres_database, now, *, witness_for=None):
     feed = PostgresChangeFeed(connect, tenant_id=tenant)
     changes = ChangeImpactSource(feed=feed, clock=lambda: datetime.now(UTC))
     complete_feeds(feed, revision, plan)
-    HandoffAdmission(lifecycle=lifecycle, claims=claims, changes=changes,
+    compiled = PostgresCompiledPlans(connect, tenant_id=tenant)
+    HandoffAdmission(lifecycle=lifecycle, claims=claims, changes=changes, compiled=compiled,
                      clock=lambda: datetime.now(UTC)).admit(
         app, "approval-1", recompile=recompile, verifiers=verifiers)
 
@@ -142,5 +144,5 @@ def admitted_handoff(postgres_database, now, *, witness_for=None):
                 claims=claims, prove=prove, ops=ops, app=app, tenant=tenant,
                 connect=connect, lifecycle=lifecycle, world=world, feed=feed,
                 trust_scopes=trust_scopes, changes=changes, verifier=VERIFIER,
-                witness=witness,
+                witness=witness, compiled=compiled,
                 complete_feeds=lambda: complete_feeds(feed, revision, plan))

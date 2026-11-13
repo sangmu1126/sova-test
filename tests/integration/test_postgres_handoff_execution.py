@@ -167,3 +167,16 @@ def test_independence_is_judged_from_signed_drills_after_completion(execution):
     assert after["source_retirement"] == {"approval": "SEPARATE_APPROVAL_REQUIRED",
                                           "reviewable": True}
     assert after["residual_dependencies"] == ["customer-owned-idp"]
+
+
+def test_execution_continues_after_a_restart_from_the_stored_plan(execution):
+    """A new coordinator process has only the stored lifecycle plan and loads
+    the frozen plan it was lowered from by digest."""
+    x = execution
+    for op in x["ops"][:3]:
+        run_step(x, op)
+    restarted = dict(x, revision=x["compiled"].for_plan(x["plan"]))
+    assert restarted["revision"] == x["revision"]
+    for op in x["ops"][3:]:
+        record = run_step(restarted, op)
+    assert record.state == HandoffState.HANDOFF_COMPLETE

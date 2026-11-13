@@ -4,9 +4,10 @@ Admission sits between the existing approval and command issuance. It
 recompiles from current authenticated inputs (``verify_approved_plan``),
 refuses a plan whose inputs changed after its snapshot or whose change feeds
 have a gap (INV-08), derives the absolute claim set, and records it in one
-transaction that also locks the approval against revocation. Admission does
-not issue commands or an execution permit; the existing execution ledger
-remains that authority.
+transaction that also locks the approval against revocation. The exact
+frozen plan it admitted is stored by digest, so execution after a restart runs
+that plan rather than a recompilation. Admission does not issue commands or an
+execution permit; the existing execution ledger remains that authority.
 """
 
 import json
@@ -18,11 +19,14 @@ from sova.domain.plan_lowering import verify_approved_plan
 
 
 class HandoffAdmission:
-    def __init__(self, *, lifecycle, claims, changes, clock):
+    def __init__(self, *, lifecycle, claims, changes, compiled, clock):
         if not callable(clock) or not callable(changes):
             raise ContractError("Trusted admission clock and change impact source required")
+        if not callable(getattr(compiled, "save", None)):
+            raise ContractError("Compiled plan store required")
         self.lifecycle, self.claims, self.changes, self.clock = (
             lifecycle, claims, changes, clock)
+        self.compiled = compiled
 
     def admit(self, application_id, approval_id, *, recompile, verifiers):
         identifier(application_id)
@@ -47,6 +51,7 @@ class HandoffAdmission:
         if unresolved:
             raise ContractError("Plan scope cannot be resolved to claim keys")
         failback = json.loads(revision.canonical).get("failback_of")
+        self.compiled.save(revision)  # content-addressed; harmless if admission fails
         claimed = self.claims.acquire(
             application_id=application_id,
             plan_id=plan.plan_id,
