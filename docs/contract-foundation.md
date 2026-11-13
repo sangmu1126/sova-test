@@ -1,6 +1,25 @@
-# 계약·능력 기반 개발 · 첫 구현
+# 계약·능력 기반 인계 · 구현 안내
 
-개발 기준은 [통합 명세 1.1](specifications/contract-driven-migration-platform-v1.1-integrated-notion.md)과 [채택 ADR](adr/0001-contract-driven-foundation.md)이다. 이 문서는 최초 L0/C0·C3 구현만 설명한다. 전체 compiler·등록 API·클라우드 이전 완료 보고서가 아니다.
+개발 기준은 [통합 명세 1.1](specifications/contract-driven-migration-platform-v1.1-integrated-notion.md)과 [채택 ADR](adr/0001-contract-driven-foundation.md)이다. 이 문서는 서비스 계약에서 인계 완료·failback·독립성 판정까지, 판정과 기록을 맡는 control plane 구현을 설명한다. 실제 환경 adapter(차단·복사·경로 변경)와 증거 생산자는 없으며, 시험은 합성 입력·로컬 키·일회용 PostgreSQL로 했다. 클라우드 이전 완료 보고서가 아니다.
+
+**전체 흐름.**
+
+1. 서명 등록된 계약·snapshot·자격을 인증한다.
+2. 정합성 경계를 정한다(C1~C2).
+3. 컴파일한다(C0~C11). 이어서 기존 `LifecyclePlan`으로 내리고 승인한다(C9).
+4. 수용한다. 이때 재컴파일 확인(C12), 변경 영향, 보안 보류, 물리 키 잠금을 본다.
+5. 단위별 권한 기록을 열고, 다음 단계에만 명령을 낸다. 효과는 기존 효과 원장에서, 증거는 서명 채널에서 받는다. 전이는 권한 DB 밖 witness에도 남긴다.
+6. 감독으로 보안 보류와 검증 회귀를 처리한다.
+7. 인계를 완료하고, 독립성을 판정한 뒤 원본 폐기 검토로 넘어간다.
+
+실패 경로는 다음과 같다.
+
+- 불명 효과는 보류 뒤 조정한다.
+- 계약 위반은 활성화 전이면 보류·중단, 뒤면 failback 계획이다.
+- 계획 입력 변경은 재확인하거나 새 계획을 만든다.
+- 권한 DB 복원은 복구 incarnation으로 처리한다.
+
+영역별 상태는 [준비 상태 조회](#준비-상태-조회-242-readiness-274)로 본다.
 
 ## 입력 계약
 
@@ -280,6 +299,23 @@ C0 검사와 단독 C3는 Identity 의미를 판정하지 않는다. 컴파일�
 
 **한계.** 수집기의 귀속·watermark 주장은 DB 역할 분리로만 보호하며 서명하지 않는다. 귀속을 위조하면 변경을 숨길 수 있으므로, 서명된 수집기 증명은 후속이다. watermark 이후 허용 지연 안의 변경은 볼 수 없다. 그래서 §23.2대로 실행기의 revision 조건·fence와 함께 써야 한다. 실제 클라우드 변경 수집기는 만들지 않았고, 시험은 합성 사건으로 했다.
 
+**변경 사건 규약.** 수집기는 사건을 다음 형태로 기록한다. 환경 ID는 계획이 아는 이름(출발지 실제 환경 또는 프로필 ID, 목적지 프로필 ID, `sova-control-plane`, `edge`, `sova-contract-registry`)이어야 한다. 모르는 환경의 사건은 그 계획에 영향이 없다. 대신 해당 수집 대상의 watermark가 없으면 판단할 수 없는(UNKNOWN) 상태가 되므로 설정 오류는 진행을 막는 쪽으로 드러난다.
+
+| 종류 | environment | subject | digest | 비고 |
+|---|---|---|---|---|
+| `resource`, `schema` | 자원 환경 | 자원 UID(모르면 비움) | 없음 | 비우면 그 환경 전체로 넓힘 |
+| `policy` | 환경 | 구성원 자원 UID 또는 비움 | 없음 | 구성원 정책이면 계획 낡음 |
+| `identity` | 환경 | 선택 | 없음 | Identity 의무 포함 무효화 |
+| `code` | 선택 | 선택 | 없음 | 서비스(application) 기준 |
+| `verifier` | 선택 | 검증자 버전(모르면 비움) | 없음 | |
+| `adapter` | 선택 | adapter ID(모르면 비움) | 없음 | 계획 낡음, 재확인 불가 |
+| `contract` | 선택 | 선택 | 새 계약 digest | 서비스 기준 |
+| `manifest`, `qualification` | 선택 | 전략 ID | 새 digest | |
+| `environment_profile` | 선택 | 프로필 ID | 새 digest | |
+| `unclassified` | 환경 또는 비움 | 선택 | 없음 | 넓혀서 무효화, 계획 낡음 |
+
+자기 명령이 만든 변경이면 `cause`에 (내린 계획 digest, 단계 ID)를 넣는다.
+
 **재평가(`PlanReaffirmation`).** 단위 자원·schema·구성원 정책 변경으로 낡은 계획은 더 새로운 서명 snapshot으로 다시 확인할 수 있다. 같은 계약에 대해 경계 분석을 다시 돌려 다음이 모두 같아야 재확인이다. 이때 계획 구조가 그 snapshot 시점까지 현재와 일치한다고 기록한다(`plan_reaffirmations`, `postgres_change_feed_v2.sql`).
 
 - 경계가 `PARTITIONABLE`이고 구성원이 동결 계획과 같다.
@@ -389,8 +425,8 @@ IAM-10(종료 뒤 이전 발급자 거부)과 IAM-11(브리지·이중 발급자
 ## 기존 구현 재사용
 
 - JSON decoder를 순수 domain 유틸리티로 옮기고 기존 `graph_codec.json_document` import를 유지했다. domain이 파일/네트워크 adapter에 의존하지 않도록 했다.
-- 기존 보안 서명·현재 등록·보류 판정은 security가 소유한다. 새 자격 인증용 host adapter는 기존 신뢰 경계를 소비하도록 후속 구현한다.
-- 계획·승인·PostgreSQL 원장·outbox·실행권·효과 조정, 기존 실제 대응 실행기는 변경하지 않았다.
+- 기존 보안 서명·현재 등록·보류 판정은 security가 소유한다. 등록 문서 인증과 의무 증거 판정은 그 서명 증거·검증자 신뢰 저장소와 `evaluate_gate`를 그대로 쓴다.
+- 계획·승인·PostgreSQL 원장·outbox·실행권·효과 조정, 기존 실제 대응 실행기는 변경하지 않았다. 새 테이블(잠금, 권한·이력, 변경 사건·watermark, 구조 재확인)은 별도 마이그레이션이며 모두 강제 RLS이고 권한을 부여하지 않는다.
 - 이 구현은 실제 all-writer fencing, 데이터 비교, 사고 복구, Cognito 사용자 이전, AI/Harbor E2E를 수행하지 않는다. 그런 실측은 adapter와 서명 증거 생산자가 맡고, 여기서는 그 결과를 요구하고 판정하는 쪽만 만든다.
 
 ## 원격 CI 상태 · 2026-11-14
