@@ -11,8 +11,9 @@ own memory:
 * start_sync - an initial copy taken while the source still accepts writes,
   marked per table on the target;
 * pause_admission - the application role can no longer connect to the source;
-* fence_source_writes - the role holds no write privilege on any source table
-  and has no live session left there (existing sessions are terminated, §15.5);
+* fence_source_writes - no registered writer role (the application, batch
+  jobs, ...) holds a write privilege on any source table or has a live session
+  there, and no prepared transaction is left that could still commit (§15.5);
 * copy_content / apply_final_changes - every table is copied inside one
   target transaction; this reference adapter applies the final changes by a
   full re-copy inside the fenced window rather than by change data capture;
@@ -43,7 +44,7 @@ _WRITE = ("INSERT", "UPDATE", "DELETE", "TRUNCATE")
 
 class PostgresOfflineCopyAdapter:
     def __init__(self, adapter_id, *, connect, source_db, target_db, app_role, tables,
-                 schema_sql, route, session_wait_seconds=5.0):
+                 schema_sql, route, writer_roles=None, session_wait_seconds=5.0):
         if not callable(connect) or not all(
             callable(getattr(route, n, None)) for n in ("get", "set")
         ):
@@ -53,6 +54,11 @@ class PostgresOfflineCopyAdapter:
         self.adapter_id = adapter_id
         self.connect, self.route = connect, route
         self.source_db, self.target_db, self.app_role = source_db, target_db, app_role
+        # Every registered writer path is fenced; only the application role is
+        # activated on the target.
+        self.writer_roles = tuple(writer_roles) if writer_roles else (app_role,)
+        if app_role not in self.writer_roles:
+            raise ContractError("The application role must be a registered writer")
         self.tables, self.schema_sql = tables, schema_sql
         self.session_wait_seconds = session_wait_seconds
 
@@ -83,25 +89,37 @@ class PostgresOfflineCopyAdapter:
     def _role(self):
         return sql.Identifier(self.app_role)
 
-    def _can_write(self, which):
+    def _writers(self):
+        return sql.SQL(", ").join(sql.Identifier(r) for r in self.writer_roles)
+
+    def _can_write(self, which, roles=None):
+        roles = roles or self.writer_roles
         with self.connect(self._db(which)) as conn:
             return {
-                table: any(conn.execute(
+                f"{role}:{table}": any(conn.execute(
                     "SELECT has_table_privilege(%s, %s, %s)",
-                    (self.app_role, table, privilege)).fetchone()[0] for privilege in _WRITE)
-                for table, _ in self.tables
+                    (role, table, privilege)).fetchone()[0] for privilege in _WRITE)
+                for role in roles for table, _ in self.tables
             }
 
-    def _can_connect(self, which):
+    def _can_connect(self, which, roles=None):
+        roles = roles or self.writer_roles
         with self.connect(self._db(which)) as conn:
-            return conn.execute("SELECT has_database_privilege(%s, %s, 'CONNECT')",
-                                (self.app_role, self._db(which))).fetchone()[0]
+            return {role: conn.execute("SELECT has_database_privilege(%s, %s, 'CONNECT')",
+                                       (role, self._db(which))).fetchone()[0]
+                    for role in roles}
 
     def _sessions(self, which):
         with self.connect(self._db(which)) as conn:
             return conn.execute(
-                "SELECT count(*) FROM pg_stat_activity WHERE usename=%s AND datname=%s",
-                (self.app_role, self._db(which))).fetchone()[0]
+                "SELECT count(*) FROM pg_stat_activity WHERE usename = ANY(%s) "
+                "AND datname=%s", (list(self.writer_roles), self._db(which))).fetchone()[0]
+
+    def _prepared(self, which):
+        with self.connect(self._db(which)) as conn:
+            return [gid for (gid,) in conn.execute(
+                "SELECT gid FROM pg_prepared_xacts WHERE database=%s ORDER BY gid",
+                (self._db(which),))]
 
     def _digests(self, which):
         out = {}
@@ -117,10 +135,10 @@ class PostgresOfflineCopyAdapter:
 
     def _no_access(self, which, *, connect_too):
         statements = [sql.SQL("REVOKE {} ON ALL TABLES IN SCHEMA public FROM PUBLIC, {}").format(
-            sql.SQL(", ").join(sql.SQL(p) for p in _WRITE), self._role())]
+            sql.SQL(", ").join(sql.SQL(p) for p in _WRITE), self._writers())]
         if connect_too:
             statements.append(sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC, {}").format(
-                sql.Identifier(self._db(which)), self._role()))
+                sql.Identifier(self._db(which)), self._writers()))
         self._execute(which, statements)
 
     # -- actions ---------------------------------------------------------------
@@ -134,25 +152,25 @@ class PostgresOfflineCopyAdapter:
                                        (table,)).fetchone()[0] for table, _ in self.tables)
         writable = self._can_write("target")
         connect = self._can_connect("target")
-        return present and not any(writable.values()) and not connect, {
+        return present and not any(writable.values()) and not any(connect.values()), {
             "tables_present": present, "target_writable": writable,
             "target_connectable": connect}
 
     def _pause_admission(self):
         self._execute("source", [sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC, {}").format(
-            sql.Identifier(self.source_db), self._role())])
+            sql.Identifier(self.source_db), self._writers())])
 
     def _check_pause_admission(self):
         connect = self._can_connect("source")
-        return not connect, {"source_connectable": connect}
+        return not any(connect.values()), {"source_connectable": connect}
 
     def _fence_source_writes(self):
         self._no_access("source", connect_too=True)
         with self.connect(self.source_db) as conn:
             conn.execute(
                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE usename=%s AND datname=%s AND pid <> pg_backend_pid()",
-                (self.app_role, self.source_db))
+                "WHERE usename = ANY(%s) AND datname=%s AND pid <> pg_backend_pid()",
+                (list(self.writer_roles), self.source_db))
         deadline = time.monotonic() + self.session_wait_seconds
         while self._sessions("source") and time.monotonic() < deadline:
             time.sleep(0.05)
@@ -160,8 +178,11 @@ class PostgresOfflineCopyAdapter:
     def _check_fence_source_writes(self):
         writable = self._can_write("source")
         sessions = self._sessions("source")
-        return not any(writable.values()) and sessions == 0, {
-            "source_writable": writable, "source_sessions": sessions}
+        # A prepared transaction survives its session and can still commit.
+        prepared = self._prepared("source")
+        return not any(writable.values()) and sessions == 0 and not prepared, {
+            "source_writable": writable, "source_sessions": sessions,
+            "prepared_transactions": prepared}
 
     def _verify_return_target(self):
         return None  # verification only: the readback is the check
@@ -232,8 +253,9 @@ class PostgresOfflineCopyAdapter:
         ])
 
     def _check_activate_target(self):
-        target, source = self._can_write("target"), self._can_write("source")
-        connect = self._can_connect("target")
+        target = self._can_write("target", (self.app_role,))
+        source = self._can_write("source")
+        connect = self._can_connect("target", (self.app_role,))[self.app_role]
         return connect and all(target.values()) and not any(source.values()), {
             "target_writable": target, "source_writable": source,
             "target_connectable": connect}

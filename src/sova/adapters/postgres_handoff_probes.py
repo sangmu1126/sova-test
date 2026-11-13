@@ -25,20 +25,22 @@ def artifact_digest(observation):
 
 class PostgresHandoffProbes:
     def __init__(self, *, connect_as, admin_connect, source_db, target_db, app_role, tables,
-                 probe_insert):
+                 probe_insert, writer_roles=None):
         if not callable(connect_as) or not callable(admin_connect):
             raise ContractError("Application-role and administrative connections required")
         self.connect_as, self.admin_connect = connect_as, admin_connect
         self.source_db, self.target_db, self.app_role = source_db, target_db, app_role
         self.tables, self.probe_insert = tables, probe_insert
+        # Every registered writer path is probed, not only the application.
+        self.writer_roles = tuple(writer_roles) if writer_roles else (app_role,)
 
     def _db(self, which):
         return self.source_db if which == "source" else self.target_db
 
-    def _try_write(self, which):
-        """True when a real write by the application role would commit."""
+    def _try_write(self, which, role=None):
+        """True when a real write by ``role`` (default: the application) would commit."""
         try:
-            with self.connect_as(self._db(which), self.app_role) as conn:
+            with self.connect_as(self._db(which), role or self.app_role) as conn:
                 with conn.transaction(force_rollback=True):
                     conn.execute(self.probe_insert)
             return True, "write_accepted"
@@ -48,9 +50,10 @@ class PostgresHandoffProbes:
             return False, "connection_refused"
 
     def write_denied(self, which):
-        wrote, outcome = self._try_write(which)
-        return not wrote, {"probe": "write_denied", "database": self._db(which),
-                           "outcome": outcome}
+        outcomes = {role: self._try_write(which, role) for role in self.writer_roles}
+        return not any(wrote for wrote, _ in outcomes.values()), {
+            "probe": "write_denied", "database": self._db(which),
+            "outcomes": {role: outcome for role, (_, outcome) in outcomes.items()}}
 
     def cold_start_without_source(self):
         """A fresh application session completes a write on the target while the
@@ -67,9 +70,10 @@ class PostgresHandoffProbes:
 
     def single_writer(self):
         target, target_outcome = self._try_write("target")
-        source, source_outcome = self._try_write("source")
-        return target and not source, {"probe": "single_writer",
-                                       "target": target_outcome, "source": source_outcome}
+        source_denied, source = self.write_denied("source")
+        return target and source_denied, {"probe": "single_writer",
+                                          "target": target_outcome,
+                                          "source": source["outcomes"]}
 
     def _rows(self, which, table, key):
         with self.admin_connect(self._db(which)) as conn:

@@ -34,6 +34,7 @@ from sova.domain.operations import OperationRequest
 from sova.domain.plan_compiler import FAILBACK_STRATEGY, compile_failback
 from sova.domain.plan_lowering import lower_plan
 from sova.domain.plans import PlanApproval, PlanPurpose
+from sova.ports.execution import RecoveryRequired
 
 pytestmark = pytest.mark.postgres
 OPERATION = "real-handoff"
@@ -69,8 +70,10 @@ def business(postgres_database):
     suffix = uuid4().hex[:10]
     names = {k: f"{k}_{suffix}" for k in ("src", "tgt", "scratch", "other")}
     app = "orders_app_" + suffix
+    batch = "orders_batch_" + suffix  # a second writer path: a nightly batch job
     with psycopg.connect(dsn, autocommit=True) as admin:
         admin.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(app)))
+        admin.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(batch)))
         for name in names.values():
             admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
         for zoned in (names["tgt"], names["src"]):
@@ -91,6 +94,9 @@ def business(postgres_database):
     with connect(names["src"]) as conn:
         conn.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "
                              "public TO {}").format(sql.Identifier(app)))
+        conn.execute(sql.SQL("GRANT INSERT ON orders TO {}").format(sql.Identifier(batch)))
+        conn.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+            sql.Identifier(names["src"]), sql.Identifier(batch)))  # its own, not PUBLIC's
     with connect_as(names["src"], app) as conn:  # business before the handoff
         for i in range(1, 51):
             conn.execute("INSERT INTO orders VALUES (%s, %s, %s, %s)",
@@ -98,7 +104,8 @@ def business(postgres_database):
             conn.execute("INSERT INTO idempotency_results VALUES (%s, %s, 'confirmed')",
                          (f"customer-{i % 7}", f"key-{i}"))
             conn.execute("INSERT INTO work_items VALUES (%s, %s, 'done')", (i, i))
-    yield dict(names=names, app=app, connect=connect, connect_as=connect_as, dsn=dsn)
+    yield dict(names=names, app=app, batch=batch, connect=connect, connect_as=connect_as,
+               dsn=dsn)
 
 
 class LosesResponse:
@@ -220,7 +227,13 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
                     actor_id="coordinator")
                 events.append((op["kind"], str(record.state), record.reason, None))
                 continue
-            effect = engine.execute(command, permit_for(command), adapter)
+            try:
+                effect = engine.execute(command, permit_for(command), adapter)
+            except UncertainEffect:
+                # The readback did not confirm the postcondition: hold, do not guess.
+                record = h["coordinator"].advance_from_ledger(
+                    revision, plan, effect=journal.get(command), actor_id="coordinator")
+                break
             observed[op["kind"]] = effect.observation.observed_at
         for oid in op["required_evidence"]:
             passed, observation = measure(obligations[oid])
@@ -233,29 +246,37 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
         if record.state == HandoffState.SAFE_HOLD:
             break
     # This executor is done; ownership is released only with no unresolved effect.
-    ownership.release(lease)
+    try:
+        ownership.release(lease)
+    except RecoveryRequired:
+        pass  # an unknown effect keeps the app in recovery, as the ledger requires
     return record, observed
 
 
-def pieces(business, adapter_id, *, source, target, route):
+def pieces(business, adapter_id, *, source, target, route, fenced=None):
+    """The adapter fences ``fenced`` writer roles (default: every registered one);
+    the probes always check every writer path that really exists."""
     names, app = business["names"], business["app"]
+    writers = (app, business["batch"])
     adapter = PostgresOfflineCopyAdapter(
         adapter_id, connect=business["connect"], source_db=names[source],
-        target_db=names[target], app_role=app, tables=TABLES, schema_sql=SCHEMA, route=route)
+        target_db=names[target], app_role=app, tables=TABLES, schema_sql=SCHEMA, route=route,
+        writer_roles=fenced or writers)
     probes = PostgresHandoffProbes(
         connect_as=business["connect_as"], admin_connect=business["connect"],
         source_db=names[source], target_db=names[target], app_role=app, tables=TABLES,
-        probe_insert=PROBE_INSERT)
+        probe_insert=PROBE_INSERT, writer_roles=writers)
     return adapter, probes
 
 
 def run_handoff(postgres_database, now, business, *, adjust=None, until=None,
-                strategy="offline-copy", before=None, lose_response_at=(), events=None):
+                strategy="offline-copy", before=None, lose_response_at=(), events=None,
+                fenced=None):
     h = admitted_handoff(postgres_database, now, adjust=adjust, strategy=strategy)
     names = business["names"]
     route = Route(names["src"])
     adapter, probes = pieces(business, h["world"]["manifest"].adapter_id,
-                             source="src", target="tgt", route=route)
+                             source="src", target="tgt", route=route, fenced=fenced)
     record, observed = drive(h, h["revision"], h["plan"], adapter=adapter, probes=probes,
                              other_db=names["other"], scratch_db=names["scratch"],
                              operation=OPERATION, approval_id="approval-1", until=until,
@@ -506,3 +527,44 @@ def test_independence_is_measured_with_the_source_really_unreachable(
     assert levels["COMPUTE_INDEPENDENT"] == "UNKNOWN"
     assert levels["PLATFORM_EXIT_VERIFIED"] == "UNKNOWN"
     assert levels["PROVIDER_EXIT_VERIFIED"] == "UNKNOWN"
+
+
+def test_a_writer_missing_from_the_inventory_is_caught_by_the_probe(postgres_database, now,
+                                                                     business):
+    """The fence covers every registered writer path (§15.5). If the adapter is
+    told only about the application, the independent probe still finds the
+    batch job writing and the handoff holds before activation."""
+    x = run_handoff(postgres_database, now, business, adjust=without_transport_control,
+                    fenced=(business["app"],))
+    assert x["record"].state == HandoffState.SAFE_HOLD
+    assert x["record"].reason == "CONTRACT_BREACH" and not x["record"].activation_possible
+    denied, observation = x["probes"].write_denied("source")
+    assert not denied and observation["outcomes"][business["batch"]] == "write_accepted"
+
+
+def test_a_prepared_transaction_keeps_the_fence_unconfirmed(postgres_database, now,
+                                                            business):
+    """A prepared transaction outlives its session and could still commit, so the
+    fence readback stays UNKNOWN and the handoff holds."""
+    names, app = business["names"], business["app"]
+    with business["connect"](names["src"]) as conn:
+        if conn.execute("SHOW max_prepared_transactions").fetchone()[0] == "0":
+            pytest.skip("cluster started without prepared transactions")
+    gid = "in-flight-" + uuid4().hex[:8]
+
+    def prepare(step):
+        if step == "pause_admission":
+            conn = business["connect_as"](names["src"], app)
+            conn.execute("INSERT INTO orders VALUES (88, 'prepared', 'key-88', 8)")
+            conn.execute(sql.SQL("PREPARE TRANSACTION {}").format(sql.Literal(gid)))
+            conn.close()
+
+    try:
+        x = run_handoff(postgres_database, now, business, adjust=without_transport_control,
+                        before=prepare)
+        assert x["record"].state == HandoffState.SAFE_HOLD
+        assert x["record"].reason == "EFFECT_UNKNOWN"
+        assert not x["record"].activation_possible
+    finally:
+        with psycopg.connect(business["dsn"], dbname=names["src"], autocommit=True) as admin:
+            admin.execute(sql.SQL("ROLLBACK PREPARED {}").format(sql.Literal(gid)))
