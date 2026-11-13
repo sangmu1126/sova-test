@@ -333,6 +333,52 @@ _FIELDS = (
 )
 
 
+ROLLBACK_RECOVERY = "AUTHORITY_ROLLBACK_RECOVERY"
+
+
+class AuthorityRollbackDetected(ContractError):
+    """The authority store no longer holds the latest witnessed decision."""
+
+
+def recover_incarnation(stored, witnessed, revision):
+    """A new recovery incarnation after the authority store went back in time.
+
+    The latest witnessed record is the last decision actually taken; the
+    restored row is not trusted. The new incarnation keeps that decision,
+    raises the epoch above both so commands of the old incarnation are stale,
+    and holds any unfinished step until a fresh observation reconciles it
+    (§15.6: compare with the field before resuming). ``stored`` may be None
+    when the row itself was lost.
+    """
+    if not isinstance(witnessed, AuthorityRecord) or not (
+        stored is None or isinstance(stored, AuthorityRecord)
+    ):
+        raise ContractError("Typed witnessed record required")
+    operations = _bind(witnessed, revision)
+    if stored is not None:
+        if (stored.tenant_id, stored.application_id, stored.unit_digest) != (
+            witnessed.tenant_id, witnessed.application_id, witnessed.unit_digest
+        ):
+            raise ContractError("Stored and witnessed records name different units")
+        if stored == witnessed:
+            raise ContractError("No rollback: the store holds the witnessed record")
+    epoch = max(witnessed.epoch, 0 if stored is None else stored.epoch) + 1
+    rev = max(witnessed.revision, 0 if stored is None else stored.revision) + 1
+    changes = {"revision": rev, "epoch": epoch}
+    if witnessed.state == HandoffState.SAFE_HOLD:
+        # Never downgrade a security or contract hold to a reconcilable one.
+        if witnessed.reason not in (str(EffectOutcome.SECURITY_VIOLATION),
+                                    str(EffectOutcome.CONTRACT_BREACH)):
+            changes["reason"] = ROLLBACK_RECOVERY
+    elif witnessed.state not in TERMINAL and witnessed.state not in (
+        HandoffState.ABORTING_PRE_ACTIVATION, HandoffState.RESTORING_SOURCE
+    ):
+        changes.update(state=HandoffState.SAFE_HOLD, held_from=witnessed.state,
+                       hold_operation=operations[witnessed.next_operation]["operation_id"],
+                       reason=ROLLBACK_RECOVERY)
+    return replace(witnessed, **changes)
+
+
 def available_recoveries(record, revision):
     """Recovery actions the transition guards allow now, derived by trying them.
 

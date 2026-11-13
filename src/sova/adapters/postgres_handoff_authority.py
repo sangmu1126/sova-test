@@ -15,8 +15,10 @@ from sova.adapters.postgres_handoff_claims import require_no_security_hold
 from sova.domain.handoff_authority import (
     TERMINAL,
     AuthorityRecord,
+    AuthorityRollbackDetected,
     HandoffState,
     record_from_document,
+    recover_incarnation,
 )
 from sova.ports.plans import RepositoryConflict
 
@@ -25,8 +27,15 @@ _SAFETY_WARD = {HandoffState.SAFE_HOLD, HandoffState.FAILBACK_REQUIRED}
 
 
 class PostgresHandoffAuthority:
-    def __init__(self, connect, *, tenant_id):
-        self.connect = connect
+    """``witness`` is an append-only record of every committed authority record,
+    kept outside this database (AT-33). Every read and write checks that the
+    stored row is the latest witnessed record, so a database restored to an
+    earlier point stops progress until ``recover`` starts a new incarnation."""
+
+    def __init__(self, connect, *, tenant_id, witness):
+        if not all(callable(getattr(witness, n, None)) for n in ("append", "latest")):
+            raise ContractError("Authority witness outside the database required")
+        self.connect, self.witness = connect, witness
         self.tenant_id = identifier(tenant_id, "tenant_id")
 
     @contextmanager
@@ -47,6 +56,14 @@ class PostgresHandoffAuthority:
                 yield conn
 
     def _current(self, conn, application_id, unit_digest, *, lock):
+        record = self._stored(conn, application_id, unit_digest, lock=lock)
+        witnessed = self.witness.latest(application_id, unit_digest)
+        if (None if record is None else record.document) != witnessed:
+            raise AuthorityRollbackDetected(
+                "Authority store does not hold the latest witnessed record")
+        return record
+
+    def _stored(self, conn, application_id, unit_digest, *, lock):
         row = conn.execute(
             """SELECT plan_digest,compiled_digest,revision,state,document
             FROM sova_control.handoff_authority
@@ -109,6 +126,10 @@ class PostgresHandoffAuthority:
         if not forward:
             raise RepositoryConflict("Forward handoff authority not found")
         forward = record_from_document(forward[0])
+        if self.witness.latest(forward.application_id, forward.unit_digest) != (
+            forward.document
+        ):
+            raise AuthorityRollbackDetected("Forward authority is not the witnessed record")
         if forward.state != HandoffState.FAILBACK_REQUIRED or record.epoch <= forward.epoch:
             raise RepositoryConflict("Forward handoff does not require this failback")
         others = conn.execute(
@@ -160,6 +181,8 @@ class PostgresHandoffAuthority:
                 if not changed:
                     raise RepositoryConflict("Unit authority changed concurrently")
             self._event(conn, record, "opened", actor_id)
+            self.witness.append(record.application_id, record.unit_digest, "opened",
+                                record.document)
         return record
 
     def transition(self, before, after, *, action, actor_id):
@@ -176,6 +199,9 @@ class PostgresHandoffAuthority:
         identifier(action, "action")
         identifier(actor_id, "actor_id")
         with self.transaction() as conn:
+            if self._current(conn, after.application_id, after.unit_digest,
+                             lock=True) != before:
+                raise RepositoryConflict("Stale authority revision")
             self._require_admitted(conn, after)
             if after.state not in _SAFETY_WARD:
                 require_no_security_hold(conn, self.connect, self.tenant_id,
@@ -192,7 +218,47 @@ class PostgresHandoffAuthority:
             if not changed:
                 raise RepositoryConflict("Stale authority revision")
             self._event(conn, after, action, actor_id)
+            self.witness.append(after.application_id, after.unit_digest, action,
+                                after.document)
         return after
+
+    def recover(self, application_id, unit_digest, revision, *, actor_id):
+        """Start a recovery incarnation after a detected rollback (§15.6).
+
+        ``revision`` is the compiled plan of the latest witnessed record. The
+        restored row is replaced by that decision with a higher epoch, and an
+        unfinished step is held until a fresh observation reconciles it.
+        """
+        identifier(actor_id, "actor_id")
+        witnessed = self.witness.latest(application_id, unit_digest)
+        if witnessed is None:
+            raise ContractError("Nothing witnessed for this unit")
+        witnessed = record_from_document(witnessed)
+        with self.transaction() as conn:
+            stored = self._stored(conn, application_id, unit_digest, lock=True)
+            recovered = recover_incarnation(stored, witnessed, revision)
+            values = (recovered.plan_digest, recovered.compiled_digest, recovered.revision,
+                      str(recovered.state), Jsonb(recovered.document))
+            if stored is None:
+                conn.execute(
+                    """INSERT INTO sova_control.handoff_authority
+                    (tenant_id,application_id,unit_digest,plan_digest,compiled_digest,
+                     revision,state,document) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (self.tenant_id, application_id, unit_digest, *values),
+                )
+            else:
+                conn.execute(
+                    """UPDATE sova_control.handoff_authority
+                    SET plan_digest=%s,compiled_digest=%s,revision=%s,state=%s,
+                        document=%s,updated_at=clock_timestamp()
+                    WHERE tenant_id=%s AND application_id=%s AND unit_digest=%s
+                      AND revision=%s""",
+                    (*values, self.tenant_id, application_id, unit_digest, stored.revision),
+                )
+            self._event(conn, recovered, "recovery_incarnation", actor_id)
+            self.witness.append(application_id, unit_digest, "recovery_incarnation",
+                                recovered.document)
+        return recovered
 
     def history(self, application_id, unit_digest):
         with self.transaction() as conn:

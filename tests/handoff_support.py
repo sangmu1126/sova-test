@@ -7,6 +7,7 @@ from uuid import uuid4
 from contract_world import build_world
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import psycopg
+from witness_support import MemoryAuthorityWitness
 
 from sova.adapters.ed25519_evidence import Ed25519EvidenceSigner, Ed25519EvidenceVerifier
 from sova.adapters.postgres_change_feed import PostgresChangeFeed
@@ -41,7 +42,7 @@ def complete_feeds(feed, revision, plan):
                      observed_through=datetime.now(UTC) - timedelta(milliseconds=5))
 
 
-def admitted_handoff(postgres_database, now):
+def admitted_handoff(postgres_database, now, *, witness_for=None):
     """A compiled, lowered, stored, approved and admitted synthetic handoff."""
     dsn, role = postgres_database
     tenant = "tenant-" + uuid4().hex
@@ -109,7 +110,8 @@ def admitted_handoff(postgres_database, now):
     signed = SignedEvidenceAuthority(
         PostgresSignedEvidence(connect, tenant_id=tenant),
         Ed25519EvidenceVerifier(registry.resolve), clock=lambda: datetime.now(UTC))
-    store = PostgresHandoffAuthority(connect, tenant_id=tenant)
+    witness = witness_for(tenant) if witness_for else MemoryAuthorityWitness()
+    store = PostgresHandoffAuthority(connect, tenant_id=tenant, witness=witness)
     coordinator = HandoffCoordinator(
         store=store,
         evidence=SignedObligationEvidence(
@@ -140,4 +142,5 @@ def admitted_handoff(postgres_database, now):
                 claims=claims, prove=prove, ops=ops, app=app, tenant=tenant,
                 connect=connect, lifecycle=lifecycle, world=world, feed=feed,
                 trust_scopes=trust_scopes, changes=changes, verifier=VERIFIER,
+                witness=witness,
                 complete_feeds=lambda: complete_feeds(feed, revision, plan))
