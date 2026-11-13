@@ -112,6 +112,19 @@ C10은 작업 ID 중복, 의존 순서, 단위 밖 자원 참조, 없는 작업�
 
 결과 상태는 `COMPILED`, `REQUIRES_REMEDIATION`, `NEEDS_EVIDENCE`, `UNSUPPORTED` 중 하나다(우선순위도 이 역순: 미지원 > 사전 변경 > 근거 부족). `COMPILED`이면 `approval_available=true`지만 `executable=false`, `authorizes_execution=false`다. 환경별 명령으로 내리는 C9와 승인 C12, `NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`·`CONFLICT`(계획 간 잠금 충돌)는 아직 없다.
 
+## 기존 승인·명령 계약으로 내리기 (C9) 와 실행 직전 재확인 (C12)
+
+컴파일러 밖에서 넘어온 계획 dict는 믿지 않는다. `compile_revision`이 동결 계획 객체와 결과를 함께 돌려주며, 이 객체만 내릴 수 있다. 동결 계획에는 단위 구성원의 종류·환경·자원 UID와 출발/목적지 프로필 ID도 들어간다.
+
+`lower_plan`은 동결 계획을 기존 `LifecyclePlan`(security 계약)으로 결정적으로 바꾼다.
+
+- 각 작업이 하나의 `PlanStep`이 된다. 범위는 `(tenant, service, 작업이 다루는 환경, unit-<digest>)`이고, 원본 차단·접수 정지는 출발지, 준비·복사·검증·활성화는 목적지, 경로 확정은 `edge`, 활성화 의도·준비 확인·안정화는 `sova-control-plane`이다. 플랫폼 단계의 adapter는 `sova.control-plane`이며 아직 실행 구현이 없다.
+- 매개변수에는 컴파일 계획 digest, 작업 ID, 단계, adapter 작업과 manifest digest, 읽기/쓰기 집합, 전제·보장, 필요한 증거, 멱등 범위, 불확실 시 처리, 복구 경계가 그대로 들어간다. `expected_revision`은 계획이 근거한 snapshot digest다. 실제 자원 revision 대조는 실행 adapter가 다시 해야 한다.
+- 검증 의무는 기존 `VerificationObligation`과 게이트로 옮긴다(위치 → REQUIREMENTS, 원본 차단·외부 효과 → PREFLIGHT, 데이터 → DATA, 업무 → BEHAVIOR, 보안 통제 → PROTECTION, 권한·경로·예산·복원 → POSTFLIGHT). 의무 종류마다 검증자 버전을 **반드시 이름으로** 지정해야 하며 기본값은 없다.
+- 목적은 `MIGRATION_PHASE`, `origin_plan_digest`는 컴파일 계획 digest, revision 묶음은 계약·manifest·자격·snapshot digest다. 같은 입력이면 같은 `LifecyclePlan` digest가 나온다.
+
+승인은 기존 `PlanApproval`을 그대로 쓴다. `verify_approved_plan`은 명령을 내기 전에 현재 인증된 입력으로 다시 컴파일하고 다시 내려서, 승인된 계획과 정확히 같을 때만 기존 `require_valid`(digest·목적·작성자≠승인자·기한)를 적용한다. 승인 뒤 계획이 바뀌었거나(AT-10), 같은 이름의 자원이 다시 만들어졌거나(AT-11), 검증자 키가 철회돼 입력이 인증되지 않으면(AT-13) 거부한다. 이 재확인은 명령 발급 경로에 아직 연결하지 않았다.
+
 ## 기존 구현 재사용
 
 - JSON decoder를 순수 domain 유틸리티로 옮기고 기존 `graph_codec.json_document` import를 유지했다. domain이 파일/네트워크 adapter에 의존하지 않도록 했다.
@@ -119,7 +132,7 @@ C10은 작업 ID 중복, 의존 순서, 단위 밖 자원 참조, 없는 작업�
 - 계획·승인·PostgreSQL 원장·outbox·실행권·효과 조정, 기존 실제 대응 실행기는 변경하지 않았다.
 - 첫 후보 조회는 compiler의 전체 C0~C12, all-writer fencing, 데이터 비교, 사고 복구, Cognito 이전, AI/Harbor E2E를 완성하지 않는다.
 
-다음 단계는 C9(동결 계획을 기존 `LifecyclePlan` 단계·검증 의무로 내림)와 C12(기존 승인 결속) 연결, 그리고 겹치는 쓰기 집합의 계획 간 충돌(`CONFLICT`) 검사다.
+다음 단계는 겹치는 쓰기 집합의 계획 간 충돌(`CONFLICT`) 검사, 그리고 `verify_approved_plan`을 기존 명령 발급·실행 원장 앞에 연결하는 일이다.
 
 ## 원격 CI 상태 · 2026-11-14
 

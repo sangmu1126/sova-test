@@ -224,7 +224,7 @@ def _sets(step, members, resources):
     return sorted(reads), sorted(writes)
 
 
-def compile_plan(
+def compile_revision(
     contract,
     snapshot,
     *,
@@ -338,7 +338,7 @@ def compile_plan(
     if status == "COMPILED":
         plan = _freeze(contract, snapshot, boundary, manifest, qualification,
                        source, target, inputs, spec)
-    return {
+    return plan, {
         "schema_version": 1,
         "compiler_version": COMPILER_VERSION,
         "status": status,
@@ -357,6 +357,8 @@ def _freeze(contract, snapshot, boundary, manifest, qualification, source, targe
             inputs, spec):
     members = tuple(boundary["members"])
     resources = {r.node_id: r.kind for r in snapshot.graph.resources}
+    scopes = {r.node_id: r.scope.environment_id for r in snapshot.graph.resources}
+    uids = dict(snapshot.resource_uids)
     template = TEMPLATES[manifest.strategy_id]
     prefix = boundary["unit_digest"][:16]
     ids = {s.step_id: f"{prefix}.{i:02d}.{s.step_id}" for i, s in enumerate(template)}
@@ -402,6 +404,15 @@ def _freeze(contract, snapshot, boundary, manifest, qualification, source, targe
         "profile": str(contract.profile),
         "inputs": inputs,
         "unit": {"members": list(members), "unit_digest": boundary["unit_digest"]},
+        "environments": {"source": source.profile_id, "target": target.profile_id},
+        "resources": {
+            node: {
+                "kind": str(resources[node]),
+                "environment": scopes[node],
+                "resource_uid": uids[node],
+            }
+            for node in members
+        },
         "strategy": {"strategy_id": manifest.strategy_id,
                      "strategy_version": manifest.strategy_version,
                      "evidence_grade": str(qualification.grade)},
@@ -456,3 +467,8 @@ def _check_consistency(document, members):
         raise ContractError("Compiler consistency violation")
     if not isinstance(document["valid_until"], str):
         raise ContractError("Compiler consistency violation")
+
+
+def compile_plan(contract, snapshot, **kwargs):
+    """JSON-ready result only; use ``compile_revision`` for the frozen object."""
+    return compile_revision(contract, snapshot, **kwargs)[1]
