@@ -43,7 +43,7 @@ def complete_feeds(feed, revision, plan):
                      observed_through=datetime.now(UTC) - timedelta(milliseconds=5))
 
 
-def admitted_handoff(postgres_database, now, *, witness_for=None):
+def admitted_handoff(postgres_database, now, *, witness_for=None, adjust=None):
     """A compiled, lowered, stored, approved and admitted synthetic handoff."""
     dsn, role = postgres_database
     tenant = "tenant-" + uuid4().hex
@@ -53,6 +53,8 @@ def admitted_handoff(postgres_database, now, *, witness_for=None):
 
     data = example_service_contract().document
     data["metadata"]["tenant_id"] = tenant
+    if adjust:
+        adjust(data)
     world = build_world(now, contract=ServiceContract.from_document(data))
     for subject in (world["contract"], world["snapshot"], world["qualification"]):
         world["sign"](subject)
@@ -125,14 +127,14 @@ def admitted_handoff(postgres_database, now, *, witness_for=None):
     counter = iter(range(10_000))
 
     def prove(obligation_id, result=VerificationResult.PASS, *, revisions=None,
-              obligation=None):
+              obligation=None, artifact_digest="a" * 64):
         o = obligation or next(x for x in plan.obligations if x.obligation_id == obligation_id)
         observed = datetime.now(UTC) - timedelta(seconds=1) + timedelta(
             microseconds=next(counter))
         record = EvidenceRecord(
             f"ev-{uuid4().hex[:12]}", o.obligation_id, o.scope, revisions or plan.revisions,
             VERIFIER, observed, observed + timedelta(minutes=10), result,
-            "observation", "a" * 64)
+            "observation", artifact_digest)
         signed.ingest(signer.sign(record, issued_at=observed))
 
     ops = json.loads(revision.canonical)["operations"]
