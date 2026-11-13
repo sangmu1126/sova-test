@@ -23,10 +23,13 @@ from sova.adapters.postgres_execution import PostgresExecutionOwnership
 from sova.adapters.postgres_handoff_probes import PostgresHandoffProbes, artifact_digest
 from sova.adapters.postgres_offline_copy import PostgresOfflineCopyAdapter
 from sova.adapters.postgres_operations import PostgresOperationRepository
-from sova.application.effects import EffectExecutor
+from sova.application.effects import EffectExecutor, UncertainEffect
+from sova.application.execution_recovery import ExecutionRecovery
 from sova.application.handoff_admission import HandoffAdmission
+from sova.domain.contracts import EffectStatus
 from sova.domain.evidence import VerificationResult
-from sova.domain.handoff_authority import HandoffState
+from sova.domain.execution import QuiescenceProof, pending_digest
+from sova.domain.handoff_authority import EffectOutcome, HandoffState
 from sova.domain.operations import OperationRequest
 from sova.domain.plan_compiler import FAILBACK_STRATEGY, compile_failback
 from sova.domain.plan_lowering import lower_plan
@@ -98,8 +101,25 @@ def business(postgres_database):
     yield dict(names=names, app=app, connect=connect, connect_as=connect_as, dsn=dsn)
 
 
+class LosesResponse:
+    """The effect happens, the executor never hears back (AT-20)."""
+
+    def __init__(self, inner):
+        self.inner, self.adapter_id = inner, inner.adapter_id
+
+    def validate(self, command):
+        self.inner.validate(command)
+
+    def apply(self, command):
+        self.inner.apply(command)
+        raise ConnectionError("response lost after the change was made")
+
+    def readback(self, command, now):
+        return self.inner.readback(command, now)
+
+
 def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation,
-          approval_id, until=None):
+          approval_id, until=None, before=None, lose_response_at=(), events=None):
     """Run a compiled plan's steps through the ledger with measured evidence."""
     lifecycle = h["lifecycle"]
     approval = lifecycle.get_approval(h["app"], approval_id)
@@ -107,10 +127,14 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
         h["tenant"], h["app"], operation, plan.plan_id, plan.fingerprint,
         approval_id, approval.revision, "operator", operation + "-request"))
     ownership = PostgresExecutionOwnership(lifecycle)
+
+    def executor_for(lease):
+        journal = PostgresEffectJournal(ownership, lease)
+        return journal, EffectExecutor(journal, authorize=journal.authorize,
+                                       clock=lambda: datetime.now(UTC))
+
     lease = ownership.acquire(h["app"], operation, "worker")
-    journal = PostgresEffectJournal(ownership, lease)
-    engine = EffectExecutor(journal, authorize=journal.authorize,
-                            clock=lambda: datetime.now(UTC))
+    journal, engine = executor_for(lease)
     h["coordinator"].open(revision, plan, actor_id="coordinator")
     contract = h["world"]["contract"].document["spec"]
     doc = json.loads(revision.canonical)
@@ -149,10 +173,53 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
     for op in doc["operations"]:
         if op["kind"] == until:
             break
+        if before:
+            before(op["kind"])
         effect = None
         if op["adapter"]:
             command = h["coordinator"].next_command(revision, plan, operation_id=operation,
                                                     epoch=lease.epoch)
+            if op["kind"] in lose_response_at:
+                with pytest.raises(UncertainEffect):
+                    engine.execute(command, permit_for(command), LosesResponse(adapter))
+                held = h["coordinator"].advance_from_ledger(
+                    revision, plan, effect=journal.get(command), actor_id="coordinator")
+                events.append((op["kind"], str(held.state), held.reason,
+                               held.activation_possible))
+                # The executor that lost the response is gone; its lease ends.
+                with lifecycle.transaction() as conn:
+                    conn.execute(
+                        "UPDATE sova_control.app_execution SET valid_until="
+                        "clock_timestamp()-interval '1 second' WHERE application_id=%s",
+                        (h["app"],))
+                    at = conn.execute("SELECT clock_timestamp()").fetchone()[0]
+                    pending = ownership.pending(conn, h["app"])
+                # Recovery lease bound to exactly the pending effect (existing rule).
+                recovery = ExecutionRecovery(ownership, authenticate_proof=lambda _: None)\
+                    .acquire(QuiescenceProof(h["tenant"], h["app"], operation, lease.epoch,
+                                             pending_digest(pending), "e" * 64, at,
+                                             at + timedelta(minutes=1)), "recovery-worker")
+                # Read-only reconciliation: look at the databases again, never re-run.
+                effect = executor_for(recovery)[1].reconcile(command, permit_for(command),
+                                                             adapter)
+                ownership.release(recovery)
+                lease = ownership.acquire(h["app"], operation, "worker-after-recovery")
+                journal, engine = executor_for(lease)
+                observed[op["kind"]] = effect.observation.observed_at
+                for oid in op["required_evidence"]:
+                    passed, observation = measure(obligations[oid])
+                    h["prove"](oid, VerificationResult.PASS if passed else
+                               VerificationResult.FAIL,
+                               artifact_digest=artifact_digest(observation),
+                               obligation=next(o for o in plan.obligations
+                                               if o.obligation_id == oid),
+                               revisions=plan.revisions)
+                record = h["coordinator"].reconcile(
+                    revision, plan, outcome=EffectOutcome.EFFECT_CONFIRMED
+                    if effect.status == EffectStatus.APPLIED else EffectOutcome.EFFECT_UNKNOWN,
+                    actor_id="coordinator")
+                events.append((op["kind"], str(record.state), record.reason, None))
+                continue
             effect = engine.execute(command, permit_for(command), adapter)
             observed[op["kind"]] = effect.observation.observed_at
         for oid in op["required_evidence"]:
@@ -182,15 +249,18 @@ def pieces(business, adapter_id, *, source, target, route):
     return adapter, probes
 
 
-def run_handoff(postgres_database, now, business, *, adjust=None, until=None):
-    h = admitted_handoff(postgres_database, now, adjust=adjust)
+def run_handoff(postgres_database, now, business, *, adjust=None, until=None,
+                strategy="offline-copy", before=None, lose_response_at=(), events=None):
+    h = admitted_handoff(postgres_database, now, adjust=adjust, strategy=strategy)
     names = business["names"]
     route = Route(names["src"])
     adapter, probes = pieces(business, h["world"]["manifest"].adapter_id,
                              source="src", target="tgt", route=route)
     record, observed = drive(h, h["revision"], h["plan"], adapter=adapter, probes=probes,
                              other_db=names["other"], scratch_db=names["scratch"],
-                             operation=OPERATION, approval_id="approval-1", until=until)
+                             operation=OPERATION, approval_id="approval-1", until=until,
+                             before=before, lose_response_at=lose_response_at,
+                             events=events)
     return dict(h, record=record, adapter=adapter, probes=probes, route=route,
                 business=business, observed=observed)
 
@@ -319,3 +389,37 @@ def test_failback_brings_back_writes_made_on_the_target(postgres_database, now, 
     assert returned == 5
     assert back_probes.single_writer()[0]  # the original source writes, the target not
     assert back_probes.order_effects_once()[0]
+
+
+def test_lost_activation_response_is_held_then_reconciled_from_the_databases(
+        postgres_database, now, business):
+    """§29.2-8, AT-20: the target was really activated but the executor lost the
+    response. The handoff holds (activation may have happened), nothing is
+    re-run, and a read-only look at the databases confirms the effect."""
+    events = []
+    x = run_handoff(postgres_database, now, business, adjust=without_transport_control,
+                    lose_response_at=("activate_target",), events=events)
+    lost, resumed = events
+    assert lost == ("activate_target", "SAFE_HOLD", "EFFECT_UNKNOWN", True)
+    assert resumed[:2] == ("activate_target", "TARGET_ACTIVE_OBSERVED")
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE
+    assert x["probes"].single_writer()[0]
+
+
+def test_snapshot_cdc_keeps_writes_made_after_the_initial_sync(postgres_database, now,
+                                                              business):
+    names, app = business["names"], business["app"]
+
+    def write_during_sync(step):
+        if step == "pause_admission":  # after the initial copy, before the fence
+            with business["connect_as"](names["src"], app) as conn:
+                conn.execute("INSERT INTO orders VALUES (77, 'late', 'key-77', 7)")
+                conn.execute("INSERT INTO idempotency_results VALUES "
+                             "('late', 'key-77', 'confirmed')")
+
+    x = run_handoff(postgres_database, now, business, adjust=without_transport_control,
+                    strategy="snapshot-cdc", before=write_during_sync)
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE
+    with business["connect"](names["tgt"]) as conn:
+        assert conn.execute("SELECT count(*) FROM orders WHERE id=77").fetchone()[0] == 1
+    assert x["probes"].content_equal("orders")[0]

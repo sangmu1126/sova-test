@@ -43,7 +43,8 @@ def complete_feeds(feed, revision, plan):
                      observed_through=datetime.now(UTC) - timedelta(milliseconds=5))
 
 
-def admitted_handoff(postgres_database, now, *, witness_for=None, adjust=None):
+def admitted_handoff(postgres_database, now, *, witness_for=None, adjust=None,
+                     strategy="offline-copy"):
     """A compiled, lowered, stored, approved and admitted synthetic handoff."""
     dsn, role = postgres_database
     tenant = "tenant-" + uuid4().hex
@@ -55,7 +56,7 @@ def admitted_handoff(postgres_database, now, *, witness_for=None, adjust=None):
     data["metadata"]["tenant_id"] = tenant
     if adjust:
         adjust(data)
-    world = build_world(now, contract=ServiceContract.from_document(data))
+    world = build_world(now, contract=ServiceContract.from_document(data), strategy=strategy)
     for subject in (world["contract"], world["snapshot"], world["qualification"]):
         world["sign"](subject)
 
