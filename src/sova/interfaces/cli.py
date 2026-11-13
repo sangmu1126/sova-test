@@ -40,6 +40,12 @@ def main(argv=None):
     )
     contract_inspect.add_argument("contract")
     contract_inspect.add_argument("--tenant", required=True)
+    commands.add_parser("dependency-example", help="Print a synthetic shared-write snapshot; coverage stays unverified")
+    boundary = commands.add_parser("boundary-analyze", help="Analyze an unsigned local dependency snapshot; never registers or authorizes a unit")
+    boundary.add_argument("contract")
+    boundary.add_argument("snapshot")
+    boundary.add_argument("--tenant", required=True)
+    boundary.add_argument("--node", action="append", required=True)
     commands.add_parser(
         "example",
         help="Print a synthetic registration valid for one hour; no live resources",
@@ -84,6 +90,19 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         now = datetime.now(timezone.utc)
+        if args.command == "dependency-example":
+            from sova.application.boundary_examples import example_dependency_snapshot
+            print(json.dumps(example_dependency_snapshot(now).document, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "boundary-analyze":
+            from sova.adapters.registration.dependency_codec import decode_dependency_snapshot
+            from sova.domain.migration_units import MAX_SNAPSHOT_BYTES, analyze_boundary
+            from sova.domain.service_contracts import MAX_CONTRACT_BYTES, ServiceContract
+            contract = ServiceContract.from_document(read_document(args.contract, limit=MAX_CONTRACT_BYTES))
+            snapshot = decode_dependency_snapshot(read_document(args.snapshot, limit=MAX_SNAPSHOT_BYTES))
+            result = analyze_boundary(contract, snapshot, requested_nodes=tuple(args.node), expected_tenant=args.tenant, authenticate=None, clock=lambda: datetime.now(timezone.utc))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
         if args.command == "service-contract-example":
             from sova.application.service_contracts import example_service_contract
             print(json.dumps(example_service_contract().document, ensure_ascii=False, indent=2))
