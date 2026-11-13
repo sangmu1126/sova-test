@@ -146,6 +146,21 @@ C10은 작업 ID 중복, 의존 순서, 단위 밖 자원 참조, 없는 작업�
 
 새 마이그레이션 `postgres_handoff_claims_v1.sql`은 테넌트별 강제 RLS를 쓰고 권한을 부여하지 않는다. 실행 역할에는 이 테이블의 `SELECT`·`INSERT`·`UPDATE(released_at,released_by)`와 승인 테이블의 `UPDATE(lock_guard)`만 준다. 수용 결과는 `commands_issued=false`, `authorizes_execution=false`다. 실행권 발급은 기존 실행 원장이 맡으며 아직 이 수용 결과와 연결하지 않았다. 해제는 인계가 검증된 종료 상태에 도달한 뒤에만 호출해야 하며, 해제가 복구 결정을 대신하지 않는다.
 
+## 인계 권한 상태 (§15)
+
+`AuthorityRecord`는 한 이전 단위의 업무 변경 권한이 어느 환경에 있는지를 기록한다. 기존 실행 원장의 `ExecutionLease`(명령을 수행하는 쪽의 독점 진행권)와는 다른 개념이다.
+
+- `start`는 수용된 계획에 대해 `SOURCE_ACTIVE`, 소유 환경=출발지, epoch 1로 연다.
+- `complete_operation`은 계획 순서의 **다음 작업**에 대한 인증된 관측만 받는다. `EFFECT_CONFIRMED`이고 그 작업의 필요 증거가 모두 충족될 때만 해당 단계로 간다. 원본 차단을 마치면 `fence_verified`가 켜진다. 활성화 의도를 기록하면 `activation_possible`이 켜지고 epoch가 오른다. 목적지 활성화를 관측해야 소유 환경이 목적지로 바뀐다. 마지막 작업을 마치면 `HANDOFF_COMPLETE`다.
+- `EFFECT_NOT_APPLIED`는 상태를 바꾸지 않는다. `EFFECT_UNKNOWN`·`PARTIAL_EFFECT`·`SECURITY_VIOLATION`, 그리고 활성화 전의 `CONTRACT_BREACH`는 `SAFE_HOLD`로 멈춘다. 활성화 의도 뒤의 `CONTRACT_BREACH`는 `FAILBACK_REQUIRED`다.
+- `reconcile`은 보류된 작업을 새로 관측해 확인되면 진행하고, 미적용이면 보류 전 상태로 돌아가며, 여전히 불명이면 보류를 유지한다. 보안 위반·계약 위반 보류는 자동 조정하지 않는다.
+- `abort_before_activation`은 활성화 의도가 없고 목적지 비활성이 검증된 경우에만 시작한다. 원본 쓰기 재개가 검증돼야 `ABORTED`다. 활성화 의도 뒤에는 중단과 원본 복원이 불가능하고 `require_failback`만 가능하다.
+- 기록 자체가 구조 불변조건을 검사한다. 활성화 의도 없이 목적지가 소유할 수 없고, 검증된 원본 차단 없이 활성화 가능성이 생길 수 없으며, 활성화 가능성과 원본 복원 상태는 함께 있을 수 없다.
+
+**유계 모델 검사.** 시험은 한 컴파일 계획에서 시작해 모든 사건(작업 완료×6가지 결과×증거 유무, 조정, 중단, 원본 복원, failback)을 도달 가능한 모든 상태에 적용한다. 현재 계획에서 상태 67개, 전이 267개다. 각 전이에서 §28.3의 안전 속성을 확인한다: 권한은 최대 하나, 차단 없는 활성화 금지, 불명 뒤 진행 금지, 활성화 가능성 뒤 원본 자동 재개 금지, 모든 작업 확인 후에만 완료, 종료 상태 흡수. 또 모든 도달 상태에서 종료 상태로 가는 길이 있는지(진행 속성) 확인한다. 일부러 결함 두 개(보류 중 진행 허용, 활성화 가능성 뒤 중단 허용)를 넣었을 때 각각 검사가 실패하는 것을 확인했다. 이것은 계획 수준 상태 머신의 검사이며, adapter가 실제 환경에서 이 가정을 지키는지와 TLA+ 수준의 동시성 모델은 별도다.
+
+아직 이 기록을 PostgreSQL에 CAS로 저장하거나 실행 원장의 명령 발급과 연결하지 않았다.
+
 ## 기존 구현 재사용
 
 - JSON decoder를 순수 domain 유틸리티로 옮기고 기존 `graph_codec.json_document` import를 유지했다. domain이 파일/네트워크 adapter에 의존하지 않도록 했다.
