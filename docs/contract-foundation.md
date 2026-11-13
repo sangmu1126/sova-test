@@ -173,6 +173,8 @@ C10은 작업 ID 중복, 의존 순서, 단위 밖 자원 참조, 없는 작업�
 
 실제 PostgreSQL에서 기존 운영 작업 등록, 실행 소유권 리스, `EffectExecutor`, 효과 원장을 그대로 써서 승인 → 수용 → 명령 → 원장 readback → 권한 전이로 인계를 끝까지 실행했다(adapter는 기록용 대역). 원본 차단 readback을 불명으로 바꾸면 기존 실행기가 `UncertainEffect`를 내고 원장에 `unknown`이 남는다. 그 기록으로 권한은 `SAFE_HOLD`가 되고, 활성화 가능성은 생기지 않으며, 다음 명령은 발급되지 않는다.
 
+**보안 보류(Part IV).** 기존 security의 보안 보류 이력과 같은 트랜잭션에서 `lock_security_hold_set`으로 보류 집합을 잠그고 활성 보류를 확인한다. 같은 서비스에 활성 보류가 있으면 다음을 모두 거부한다: 계획 수용, 권한 기록 열기, 다음 명령 발급, 진행·중단·원본 복원 전이. `SAFE_HOLD`와 `FAILBACK_REQUIRED`로 가는 안전 쪽 전이만 기록한다. 침해가 의심되는 동안 원본 쓰기를 다시 여는 중단도 막는다. 인계 쪽 `SAFE_HOLD`와 보안 `SECURITY_HOLD`는 합치지 않으며, 보류 해제는 기존 `HoldRelease` 절차(독립 승인자, 재검증 증거)만 할 수 있다. 컴파일은 실행 효과가 없어 보류를 보지 않고, 수용 단계에서 막는다.
+
 `PARTIAL_EFFECT`·`SECURITY_VIOLATION`·`CONTRACT_BREACH`는 효과 원장 상태가 아니라 검증·사고 경로에서 와야 하며 그 연결은 아직 없다. 실제 환경 adapter와 실제 데이터 이전은 수행하지 않았다.
 
 ## 기존 구현 재사용

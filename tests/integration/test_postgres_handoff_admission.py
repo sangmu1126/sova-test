@@ -182,3 +182,18 @@ def test_concurrent_conflicting_admissions_admit_exactly_one(stores, now):
         outcomes = sorted(pool.map(race, (orders, billing)))
     assert outcomes == ["ADMITTED", "CONFLICT"]
     assert len({plan for _, plan, _, _ in stores["claims"].active()}) == 1
+
+
+def test_active_security_hold_blocks_admission(stores, now):
+    from sova.adapters.postgres_governance import PostgresSecurityHolds
+    from sova.domain.contracts import ResourceScope
+    from sova.domain.governance import SecurityHold
+
+    orders = prepared(stores, now, "orders-service")
+    connect = stores["claims"].connect
+    PostgresSecurityHolds(connect, tenant_id=stores["tenant"]).open_hold(SecurityHold(
+        "incident-1", ResourceScope(stores["tenant"], "orders-service", "aws-source", "db"),
+        "incident-commander", "Suspected compromise", datetime.now(UTC)))
+    with pytest.raises(RepositoryConflict, match="security hold"):
+        admit(stores, orders)
+    assert stores["claims"].active() == ()

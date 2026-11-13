@@ -116,3 +116,45 @@ def test_released_claims_and_unfinished_units_refuse_changes(handoff):
         h["coordinator"].abort(h["revision"], h["plan"], target_inactive_verified=True,
                                actor_id="coordinator")
     assert h["store"].current(h["app"], record.unit_digest) == record
+
+
+def open_hold(h, hold_id="incident-1"):
+    from datetime import UTC, datetime
+
+    from sova.adapters.postgres_governance import PostgresSecurityHolds
+    from sova.domain.contracts import ResourceScope
+    from sova.domain.governance import SecurityHold
+
+    return PostgresSecurityHolds(h["connect"], tenant_id=h["tenant"]).open_hold(
+        SecurityHold(hold_id, ResourceScope(h["tenant"], h["app"], "aws-source", "api-a"),
+                     "incident-commander", "Suspected credential compromise",
+                     datetime.now(UTC)))
+
+
+def test_security_hold_allows_only_safety_ward_transitions(handoff):
+    h = handoff
+    record = h["coordinator"].open(h["revision"], h["plan"], actor_id="coordinator")
+    first = h["ops"][0]
+    for obligation_id in first["required_evidence"]:
+        h["prove"](obligation_id)
+    open_hold(h)
+    with pytest.raises(RepositoryConflict, match="security hold"):
+        step(h, first)  # forward progress is refused
+    with pytest.raises(RepositoryConflict, match="security hold"):
+        h["coordinator"].next_command(h["revision"], h["plan"], operation_id="op",
+                                      epoch=1)
+    with pytest.raises(RepositoryConflict, match="security hold"):
+        h["coordinator"].abort(h["revision"], h["plan"], target_inactive_verified=True,
+                               actor_id="coordinator")  # no source reopen under a hold
+    held = step(h, first, EffectOutcome.EFFECT_UNKNOWN)  # toward safety is recorded
+    assert held.state == HandoffState.SAFE_HOLD
+    assert h["store"].current(h["app"], record.unit_digest) == held
+
+
+def test_security_hold_blocks_admission_and_opening(postgres_database, now):
+    from handoff_support import admitted_handoff as build
+
+    h = build(postgres_database, now)
+    open_hold(h)
+    with pytest.raises(RepositoryConflict, match="security hold"):
+        h["coordinator"].open(h["revision"], h["plan"], actor_id="coordinator")

@@ -184,6 +184,7 @@ class HandoffCoordinator:
         op = doc["operations"][record.next_operation]
         if op["adapter"] is None:
             raise ContractError("Platform-owned step has no adapter command")
+        self.store.require_no_hold(plan.application_id)
         return plan.command(op["operation_id"], operation_id=operation_id, epoch=epoch)
 
     def advance_from_ledger(self, revision, plan, *, effect, actor_id):

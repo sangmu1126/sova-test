@@ -22,6 +22,7 @@ from sova.domain.plan_lowering import lower_plan
 class MemoryStore:
     def __init__(self):
         self.rows = {}
+        self.held = set()
 
     def current(self, app, unit):
         return self.rows.get((app, unit))
@@ -29,6 +30,10 @@ class MemoryStore:
     def open(self, record, *, actor_id):
         self.rows[(record.application_id, record.unit_digest)] = record
         return record
+
+    def require_no_hold(self, application_id):
+        if application_id in self.held:
+            raise ContractError("Active security hold blocks handoff progress")
 
     def transition(self, before, after, *, action, actor_id):
         key = (after.application_id, after.unit_digest)
@@ -148,3 +153,10 @@ def test_platform_steps_take_no_ledger_effect_and_no_adapter_command(setup):
         advance(setup, ledger(setup, setup["ops"][0], EffectStatus.APPLIED))
     record = advance(setup, None)
     assert record.state == HandoffState(op["phase"])
+
+
+def test_no_command_is_issued_while_a_security_hold_is_active(setup):
+    setup["coordinator"].store.held.add(setup["plan"].application_id)
+    with pytest.raises(ContractError, match="security hold"):
+        setup["coordinator"].next_command(setup["revision"], setup["plan"],
+                                          operation_id="exec-1", epoch=1)

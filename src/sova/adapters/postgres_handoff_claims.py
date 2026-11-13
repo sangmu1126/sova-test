@@ -17,6 +17,18 @@ from sova.ports.plans import RepositoryConflict
 _MODES = ("read", "write")
 
 
+def require_no_security_hold(conn, connect, tenant_id, application_id):
+    """Serialize with hold changes and refuse while any hold is active (Part IV)."""
+    from sova.adapters.postgres_governance import (
+        PostgresSecurityHolds,
+        lock_security_hold_set,
+    )
+
+    lock_security_hold_set(conn, tenant_id, application_id)
+    if PostgresSecurityHolds(connect, tenant_id=tenant_id)._active(conn, application_id):
+        raise RepositoryConflict("Active security hold blocks handoff progress")
+
+
 def _key_text(key):
     if type(key) is not tuple or not key or any(type(p) is not str for p in key):
         raise ContractError("Absolute claim key required")
@@ -86,6 +98,7 @@ class PostgresHandoffClaims:
                 or approval[3] is not None
             ):
                 raise RepositoryConflict("Approval changed, revoked, or not for this plan")
+            require_no_security_hold(conn, self.connect, self.tenant_id, application_id)
             conflicts = []
             for text, mode in ordered:
                 conn.execute(

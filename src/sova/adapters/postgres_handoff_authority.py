@@ -11,8 +11,17 @@ from contextlib import contextmanager
 from psycopg.types.json import Jsonb
 
 from sova.domain.contracts import ContractError, digest, identifier
-from sova.domain.handoff_authority import TERMINAL, AuthorityRecord, record_from_document
+from sova.adapters.postgres_handoff_claims import require_no_security_hold
+from sova.domain.handoff_authority import (
+    TERMINAL,
+    AuthorityRecord,
+    HandoffState,
+    record_from_document,
+)
 from sova.ports.plans import RepositoryConflict
+
+# Under an active security hold only moves toward safety are recorded.
+_SAFETY_WARD = {HandoffState.SAFE_HOLD, HandoffState.FAILBACK_REQUIRED}
 
 
 class PostgresHandoffAuthority:
@@ -95,6 +104,8 @@ class PostgresHandoffAuthority:
         identifier(actor_id, "actor_id")
         with self.transaction() as conn:
             self._require_admitted(conn, record)
+            require_no_security_hold(conn, self.connect, self.tenant_id,
+                                     record.application_id)
             previous = self._current(
                 conn, record.application_id, record.unit_digest, lock=True
             )
@@ -141,6 +152,9 @@ class PostgresHandoffAuthority:
         identifier(actor_id, "actor_id")
         with self.transaction() as conn:
             self._require_admitted(conn, after)
+            if after.state not in _SAFETY_WARD:
+                require_no_security_hold(conn, self.connect, self.tenant_id,
+                                         after.application_id)
             changed = conn.execute(
                 """UPDATE sova_control.handoff_authority
                 SET revision=%s,state=%s,document=%s,updated_at=clock_timestamp()
@@ -165,3 +179,9 @@ class PostgresHandoffAuthority:
             ).fetchall()
         return tuple((rev, action, actor, record_from_document(doc))
                      for rev, action, actor, doc in rows)
+
+    def require_no_hold(self, application_id):
+        """Checked before issuing a command; the effect ledger rechecks its own grant."""
+        identifier(application_id)
+        with self.transaction() as conn:
+            require_no_security_hold(conn, self.connect, self.tenant_id, application_id)
