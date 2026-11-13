@@ -8,6 +8,8 @@
 
 ## 먼저 볼 문서
 
+- [2026-11-14 개인 개발 기준](docs/adr/0001-contract-driven-foundation.md): 계약·능력 기반 통합 명세 1.1과 단계별 구현 순서. 기존 실검증 결과를 새 제품 전체 완료로 합산하지 않는다.
+
 - [전체 문서 목차](docs/README.md): 목표 설계, 현재 실행 안내, 과거 검증을 구분한다.
 - [워크로드 대응 실행기](docs/workload-response-runtime.md): 실제 RKE2와 실행 전용 EKS를 사용하는 9개 대응 유형, 명령·승인·서명 증거·보류·감사 보존.
 - [명세 대비 추적표](docs/spec-traceability.md): 실환경·로컬·단위·미구현을 항목별로 구분한다.

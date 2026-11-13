@@ -2,7 +2,7 @@
 
 기준: 「계약·능력 기반 전방향 운영 인계 플랫폼 — 통합 상세 설계 명세」 MIG-SPEC-001 통합 1.1-draft(2026-11-11). 대상은 이 레포의 [워크로드 대응 실제 실행기](workload-response-runtime.md)다. `src/sova`의 제어면 구현 현황은 [구현 현황](implementation-status.md)에서 따로 관리한다.
 
-이 외부 통합 초안의 전문·고정 원문 링크는 이 저장소에 포함돼 있지 않다. 아래 ID·절 번호를 저장소 자체의 [목표 명세 v2](sova-production-spec-v2.md)와 동일한 번호 체계로 읽지 않는다. 원문 전체의 요구사항 누락 여부와 두 문서의 우선순위까지 이 표만으로 확정할 수는 없다.
+2026-11-14 후속: [통합 명세 전문](specifications/contract-driven-migration-platform-v1.1-integrated-notion.md)을 원문 그대로 받아 보존했다([채택 ADR](adr/0001-contract-driven-foundation.md)). 아래 표 자체는 그 이전 실행기의 검증 기록이다. 아래 ID·절 번호를 저장소 자체의 [목표 명세 v2](sova-production-spec-v2.md)와 동일한 번호 체계로 읽지 않는다. 원문 전체의 요구사항 누락 여부와 두 문서의 우선순위까지 이 표만으로 확정할 수는 없다.
 
 명세 V.4에 따라 상태를 아래처럼 나눈다. 한 경로에서 통과한 시험을 다른 클라우드, 서비스, DB로 일반화하지 않는다.
 

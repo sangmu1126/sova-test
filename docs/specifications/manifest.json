@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "adopted_on": "2026-11-14",
+  "document_id": "MIG-SPEC-001-CONSOLIDATED",
+  "version": "1.1-draft",
+  "source_date": "2026-11-11",
+  "file": "contract-driven-migration-platform-v1.1-integrated-notion.md",
+  "sha256": "ffad2d1f49ea4878bf50b9e08d117e9f722e68197e4dde7e3e769c1f6d171d66",
+  "bytes": 142881,
+  "source": "user-provided document, preserved verbatim",
+  "status": "target specification; not implementation or live qualification evidence",
+  "historical_claims_reverified": false
+}

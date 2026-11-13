@@ -2,6 +2,10 @@
 
 이 저장소에는 서로 다른 시기에 만든 실행 경로가 함께 있다. **설계 목표, 구현 코드, 특정 실행의 검증 기록, 현재 운영 상태**를 구분한다. 아래 문서의 과거 PASS나 화면을 현재 접속·권한·가동 증거로 쓰지 않는다.
 
+## 2026-11-14 이후 개발
+
+[통합 명세 채택 ADR](adr/0001-contract-driven-foundation.md) · [보존 원문](specifications/contract-driven-migration-platform-v1.1-integrated-notion.md) · [원문 manifest](specifications/manifest.json). 아래 기존 구현·검증 기록과 목표 명세를 구분한다.
+
 ## 처음 읽는 순서
 
 | 목적 | 먼저 읽을 문서 | 해석 범위 |
@@ -107,4 +111,4 @@
 - [워크로드 격리 원문](evidence/workload-response-20261108.json) · [자동 격리 원문](evidence/automatic-containment-20261108.json) · [메뉴 검증 원문](evidence/workspace-navigation-20261108.json)은 11/8 시험의 공개 요약이다. 최신 9개 실행기의 자격 원본과 합산하지 않는다.
 - [썸네일 출처](assets/workload-verification.md)와 [이미지 메타데이터](assets/thumbnail.json)는 당시 화면의 제작·검증 범위를 설명한다. 정적 그림은 실시간 상태가 아니다.
 
-외부 통합 초안 MIG-SPEC-001의 전문은 이 저장소에 포함돼 있지 않다. 추적표의 외부 요구 ID와 저장소 자체 명세 v2의 절 번호를 같은 계약으로 취급하지 않는다.
+2026-11-14 제공받은 통합 명세 전문은 `specifications/`에 보존했다. 기존 추적표의 요구 ID와 저장소 자체 명세 v2의 절 번호는 같은 계약으로 취급하지 않는다.
