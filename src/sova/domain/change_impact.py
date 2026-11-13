@@ -133,6 +133,7 @@ class ImpactAssessment:
     stale_since: tuple[tuple[str, datetime], ...]  # obligation -> latest impacting change
     unknown_obligations: frozenset
     reasons: tuple[str, ...]
+    structure_as_of: datetime | None = None  # latest snapshot confirming the unit
 
     def require_commands_allowed(self):
         if not self.commands_allowed:
@@ -162,6 +163,8 @@ class ImpactAssessment:
             "invalidated": {o: t.isoformat() for o, t in self.stale_since},
             "unknown": sorted(self.unknown_obligations),
             "reasons": list(self.reasons),
+            "structure_as_of": None if self.structure_as_of is None
+            else self.structure_as_of.isoformat(),
         }
 
 
@@ -268,11 +271,16 @@ class PlanReevaluationRequired(ContractError):
         self.assessment = assessment
 
 
-def assess_impact(index, events, watermarks, *, issued, now, max_feed_lag=MAX_FEED_LAG):
+def assess_impact(index, events, watermarks, *, issued, now, max_feed_lag=MAX_FEED_LAG,
+                  reaffirmed_at=None):
     """Decide the impact of recorded ``events`` on ``index``.
 
     ``issued`` is how many leading plan steps may already have had commands
     issued: 0 before admission, the in-flight step's index + 1 afterwards.
+    ``reaffirmed_at`` is when a newer authenticated snapshot last showed the
+    unit's structure unchanged; resource-level changes observed up to then no
+    longer make the plan stale (their evidence stays invalidated). Adapter,
+    unclassified, and registry changes are never cleared this way.
     """
     if not isinstance(index, ImpactIndex):
         raise ContractError("Impact index required")
@@ -289,6 +297,11 @@ def assess_impact(index, events, watermarks, *, issued, now, max_feed_lag=MAX_FE
     now = utc(now)
     if len({e.event_id for e in events}) != len(events):
         raise ContractError("Duplicate change event IDs")
+    structure_as_of = index.snapshot_observed_at
+    if reaffirmed_at is not None:
+        if utc(reaffirmed_at) > now:
+            raise ContractError("Reaffirmation is in the future")
+        structure_as_of = max(structure_as_of, utc(reaffirmed_at))
 
     side_of = dict(index.side_of_environment)
     member = {uid: node for _, uid, node in index.members}
@@ -344,12 +357,12 @@ def assess_impact(index, events, watermarks, *, issued, now, max_feed_lag=MAX_FE
             if node is not None:
                 invalidate(lambda s, t, k, v: ("source", node) in t, at,
                            f"UNIT_RESOURCE_CHANGED:{node}")
-                if at > index.snapshot_observed_at:
+                if at > structure_as_of:
                     plan_stale = True
             elif side is not None and (event.subject is None or side != "source"):
                 # Unknown resource in a plan environment: widen to that side.
                 invalidate(lambda s, t, k, v: side in s, at, f"RESOURCE_CHANGED:{side}")
-                if side == "source" and at > index.snapshot_observed_at:
+                if side == "source" and at > structure_as_of:
                     plan_stale = True
         elif kind == ChangeKind.POLICY and side is not None:
             # Any evidence observing this environment must be re-verified; for an
@@ -360,7 +373,7 @@ def assess_impact(index, events, watermarks, *, issued, now, max_feed_lag=MAX_FE
                 # A unit member's own policy (e.g. its writers) is part of the plan.
                 invalidate(lambda s, t, k, v: ("source", node) in t, at,
                            f"UNIT_POLICY_CHANGED:{node}")
-                if at > index.snapshot_observed_at:
+                if at > structure_as_of:
                     plan_stale = True
         elif kind == ChangeKind.IDENTITY and side is not None:
             invalidate(lambda s, t, k, v: side in s or k.startswith("identity_"), at,
@@ -397,6 +410,7 @@ def assess_impact(index, events, watermarks, *, issued, now, max_feed_lag=MAX_FE
     return ImpactAssessment(
         index.plan_digest, now, plan_stale, plan_unknown,
         tuple(sorted(stale.items())), frozenset(unknown), tuple(sorted(reasons)),
+        structure_as_of,
     )
 
 

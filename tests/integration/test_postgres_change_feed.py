@@ -6,11 +6,14 @@ Synthetic tenants and events only; no live environment is observed or changed.
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from contract_world import build_world
+from handoff_support import admitted_handoff
 import psycopg
 import pytest
 
 from sova.adapters.postgres_change_feed import PostgresChangeFeed
-from sova.domain.change_impact import ChangeEvent, ChangeKind
+from sova.application.plan_reaffirmation import PlanReaffirmation
+from sova.domain.change_impact import ChangeEvent, ChangeKind, PlanReevaluationRequired
 from sova.domain.contracts import ContractError
 from sova.ports.plans import RepositoryConflict
 
@@ -77,3 +80,42 @@ def test_tenants_never_see_each_others_changes(feeds):
     assert other.watermarks(("source-env",)) == ()
     with pytest.raises(ContractError, match="this tenant"):
         other.record(change(tenant, "ev-cross"), collector_id="collector-a")
+
+
+def test_reaffirmations_are_tenant_scoped_and_not_ahead_of_the_clock(feeds):
+    (tenant, _), (feed, other) = feeds
+    now = datetime.now(UTC)
+    for seconds in (5, 2):
+        feed.record_reaffirmation(
+            application_id="orders-service", plan_digest="a" * 64, compiled_digest="b" * 64,
+            snapshot_digest=f"{seconds:x}" * 64, observed_at=now - timedelta(seconds=seconds),
+            actor_id="planner")
+    assert feed.reaffirmed_at("a" * 64) == now - timedelta(seconds=2)
+    assert other.reaffirmed_at("a" * 64) is None
+    with pytest.raises(ContractError, match="ahead of the database clock"):
+        feed.record_reaffirmation(
+            application_id="orders-service", plan_digest="a" * 64, compiled_digest="b" * 64,
+            snapshot_digest="c" * 64, observed_at=now + timedelta(minutes=5),
+            actor_id="planner")
+
+
+def test_reaffirmed_plan_issues_commands_again(postgres_database, now):
+    h = admitted_handoff(postgres_database, now)
+    h["coordinator"].open(h["revision"], h["plan"], actor_id="coordinator")
+    h["feed"].record(ChangeEvent(
+        "ev-db-config", h["tenant"], "another-service", ChangeKind.RESOURCE,
+        "synthetic-source", "synthetic-uid-database", None,
+        datetime.now(UTC) - timedelta(milliseconds=20)), collector_id="change-collector-1")
+    with pytest.raises(PlanReevaluationRequired):
+        h["coordinator"].next_command(h["revision"], h["plan"], operation_id="op", epoch=1)
+    at = datetime.now(UTC) - timedelta(milliseconds=5)
+    world = build_world(at, contract=h["world"]["contract"])
+    world["sign"](world["contract"])
+    world["sign"](world["snapshot"])
+    result = PlanReaffirmation(feed=h["feed"], clock=lambda: datetime.now(UTC)).reaffirm(
+        h["revision"], h["plan"], world["contract"], world["snapshot"],
+        expected_tenant=h["tenant"], authenticate=world["auth"], actor_id="planner")
+    assert result["status"] == "REAFFIRMED"
+    command = h["coordinator"].next_command(h["revision"], h["plan"], operation_id="op",
+                                            epoch=1)
+    assert command.action == "stage_target"

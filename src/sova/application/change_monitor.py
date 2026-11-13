@@ -39,8 +39,12 @@ class ChangeImpactSource:
                                             environments=environments,
                                             since=index.snapshot_observed_at))
             marks = tuple(self.feed.watermarks(tuple(sorted(index.required_feeds))))
-            return assess_impact(index, events, marks, issued=issued, now=now,
-                                 max_feed_lag=self.max_feed_lag)
+            reaffirmed = getattr(self.feed, "reaffirmed_at", None)
+            return assess_impact(
+                index, events, marks, issued=issued, now=now,
+                max_feed_lag=self.max_feed_lag,
+                reaffirmed_at=reaffirmed(index.plan_digest) if callable(reaffirmed) else None,
+            )
         except Exception:
             # Unreachable feed, oversized history, or an inconsistent record:
             # the impact is unknown, never "unchanged".

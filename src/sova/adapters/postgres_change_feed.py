@@ -12,7 +12,7 @@ tenant set by trusted callers.
 from contextlib import contextmanager
 
 from sova.domain.change_impact import ChangeEvent, ChangeKind, FeedWatermark
-from sova.domain.contracts import ContractError, identifier
+from sova.domain.contracts import ContractError, digest, identifier
 from sova.ports.plans import RepositoryConflict
 
 MAX_EVENTS = 4096
@@ -122,6 +122,34 @@ class PostgresChangeFeed:
                         artifact, observed, None if plan is None else (plan, step))
             for event_id, app, kind, env, subject, artifact, observed, plan, step in rows
         )
+
+    def record_reaffirmation(self, *, application_id, plan_digest, compiled_digest,
+                             snapshot_digest, observed_at, actor_id):
+        identifier(application_id)
+        identifier(actor_id, "actor_id")
+        for value in (plan_digest, compiled_digest, snapshot_digest):
+            digest(value)
+        with self.transaction() as conn:
+            if conn.execute("SELECT %s > clock_timestamp()", (observed_at,)).fetchone()[0]:
+                raise ContractError("Reaffirming snapshot cannot be ahead of the database clock")
+            conn.execute(
+                """INSERT INTO sova_control.plan_reaffirmations
+                (tenant_id,application_id,plan_digest,compiled_digest,snapshot_digest,
+                 observed_at,actor_id) VALUES(%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (tenant_id,plan_digest,snapshot_digest) DO NOTHING""",
+                (self.tenant_id, application_id, plan_digest, compiled_digest,
+                 snapshot_digest, observed_at, actor_id),
+            )
+
+    def reaffirmed_at(self, plan_digest):
+        digest(plan_digest)
+        with self.transaction() as conn:
+            row = conn.execute(
+                """SELECT max(observed_at) FROM sova_control.plan_reaffirmations
+                WHERE tenant_id=%s AND plan_digest=%s""",
+                (self.tenant_id, plan_digest),
+            ).fetchone()
+        return row[0]
 
     def watermarks(self, environments):
         if type(environments) is not tuple:

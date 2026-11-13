@@ -9,6 +9,7 @@ class MemoryChangeFeed:
 
     def __init__(self, clock):
         self.clock, self.recorded, self.gaps, self.down = clock, [], set(), False
+        self.reaffirmations = {}
 
     def events(self, *, application_id, environments, since):
         if self.down:
@@ -20,6 +21,13 @@ class MemoryChangeFeed:
             raise ConnectionError("feed unavailable")
         return tuple(FeedWatermark(e, self.clock()) for e in environments
                      if e not in self.gaps)
+
+    def record_reaffirmation(self, *, application_id, plan_digest, compiled_digest,
+                             snapshot_digest, observed_at, actor_id):
+        self.reaffirmations.setdefault(plan_digest, []).append(observed_at)
+
+    def reaffirmed_at(self, plan_digest):
+        return max(self.reaffirmations.get(plan_digest, []), default=None)
 
 
 def memory_changes(clock):
