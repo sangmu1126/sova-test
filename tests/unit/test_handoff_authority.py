@@ -210,6 +210,52 @@ def events(revision, record):
     return out
 
 
+def _template_revision(strategy):
+    """A compiled plan for each template: forward offline-copy and snapshot-cdc,
+    and the failback-resync plan of a forward handoff that requires failback."""
+    from datetime import UTC, datetime
+
+    from sova.domain.plan_compiler import FAILBACK_STRATEGY, compile_failback
+
+    now = datetime(2026, 11, 14, 9, 0, tzinfo=UTC)
+
+    def compiled(world, **extra):
+        for subject in (world["contract"], world["snapshot"], world["qualification"]):
+            world["sign"](subject)
+        kwargs = dict(requested_nodes=("api-a", "api-b", "database"),
+                      expected_tenant=world["contract"].tenant_id, source=world["source"],
+                      target=world["target"], manifest=world["manifest"],
+                      qualification=world["qualification"], rows=2000,
+                      authenticate=world["auth"], clock=lambda: now)
+        return world["contract"], world["snapshot"], kwargs
+
+    if strategy != FAILBACK_STRATEGY:
+        contract, snapshot, kwargs = compiled(build_world(now, strategy=strategy))
+        revision, result = compile_revision(contract, snapshot, **kwargs)
+        assert result["status"] == "COMPILED"
+        return revision
+    forward = _template_revision("offline-copy")
+    record = start(forward, plan_digest=PLAN_DIGEST)
+    for op in ops(forward):
+        if op["kind"] == "commit_route":
+            break
+        record = complete_operation(record, forward, operation_id=op["operation_id"],
+                                    outcome=EffectOutcome.EFFECT_CONFIRMED,
+                                    satisfied_evidence=evidence_for(op))
+    record = require_failback(record, reason="model check")
+    world = build_world(now, strategy=FAILBACK_STRATEGY, reverse=True,
+                        environment="synthetic-target", uid_prefix="target-uid-")
+    contract, snapshot, kwargs = compiled(world)
+    revision, result = compile_failback(forward, record, contract, snapshot, **kwargs)
+    assert result["status"] == "COMPILED", result["blockers"]
+    return revision
+
+
+@pytest.mark.parametrize("strategy", ["snapshot-cdc", "failback-resync"])
+def test_bounded_model_check_holds_for_every_template(strategy):
+    test_bounded_model_check_safety_and_progress(_template_revision(strategy))
+
+
 def test_bounded_model_check_safety_and_progress(revision):
     plan = ops(revision)
     fence_index = next(i for i, o in enumerate(plan) if o["kind"] == "fence_source_writes")
