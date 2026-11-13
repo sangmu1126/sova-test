@@ -48,8 +48,12 @@
 - root·중첩 README와 `docs/` 전체: 최종 105개 파일(그중 Markdown 53개)을 목록화하고 파일별 SHA-256을 기록했다. Markdown/HTML/SVG 링크의 저장소 내부 대상·헤딩을 검사했다.
 - JSON/JSONL 구문, 텍스트 UTF-8, SVG/drawio XML, PNG 헤더·크기, ZIP CRC를 검사했다. PDF 2개는 PDFKit으로 열어 본문 텍스트와 페이지 수를 확인했다.
 - 썸네일·캡처의 선언 hash/크기 2개가 실제 PNG와 일치했다. 공개 썸네일은 11/8 당시 시험 화면이며 현재 관측이 아니다.
-- README의 `example → inspect → assess`를 현재 source import로 오프라인 실행해 세 명령 모두 종료 코드 0을 확인했다. 패키지 설치·클라우드 호출·실행 승인은 수행하지 않았다.
+- 2026-11-14 정정: 당시 기동 확인에 사용한 `python -m sova.interfaces.cli`는 실제 실행 진입점이 아니었다. 따라서 그 종료 코드 0만으로 README 명령이 수행됐다는 근거로 쓰지 않는다. 후속 개발에서 올바른 `python -m sova`의 JSON 출력과 실제 CLI 시험을 검증했다([개발 기록](development/contract-foundation-2026-11-14.md)). 패키지 설치·클라우드 호출·실행 승인은 이 기동 점검에서 수행하지 않았다.
 - 실행 예시의 shell 6개 블록과 모듈 명령 11개의 CLI 인자를 검사해 통과했다. 상태 변경 명령 자체는 실행하지 않았다.
 - 과거 증빙·제안·그림의 원본 bytes는 보존했다. 문서 링크 검사와 `git diff --check`에서 오류 0건을 확인했다.
 
 전체 앱 회귀·실환경 자격 시험을 새로 통과했다는 기록이 아니다. [전체 문서 목차](README.md)에서 현재 안내와 날짜별 이력을 구분한다.
+
+## 2026-11-14 후속
+
+사용자가 통합 상세 명세 전문을 제공해 `specifications/`에 원문과 hash를 보존했다. 위의 원문 미포함 지적은 11/13 당시 상태이며 현재 개발 기준은 [채택 ADR](adr/0001-contract-driven-foundation.md)을 따른다. 새로 확보한 원문을 기존 실환경 시험의 소급 증거로 쓰지 않는다.

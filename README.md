@@ -8,6 +8,7 @@
 
 ## 먼저 볼 문서
 
+- [계약·방향별 자격 첫 구현](docs/contract-foundation.md): 새 CLI, 평가 API, 검증 범위와 다음 단계.
 - [2026-11-14 개인 개발 기준](docs/adr/0001-contract-driven-foundation.md): 계약·능력 기반 통합 명세 1.1과 단계별 구현 순서. 기존 실검증 결과를 새 제품 전체 완료로 합산하지 않는다.
 
 - [전체 문서 목차](docs/README.md): 목표 설계, 현재 실행 안내, 과거 검증을 구분한다.
@@ -22,8 +23,8 @@
 |---|---|---|
 | 이 저장소의 `src/sova` | 공통 그래프·계획·실행 원장·환경 어댑터·통합 코드 | 코드·구성 요소 시험과 운영 인수를 구분한다. |
 | 이 저장소의 `demo` | 개인 시험 호스트·앱·클러스터 대응 실행기 | 개인 시험 승인은 팀 운영 승인이 아니다. |
-| [sova-security](https://github.com/Softbank-Hackathon-Finals/security) | 공통 정책·보안 보류·서명 근거·읽기 전용 판정 서비스 | 승인 발급이나 클라우드 변경 권한을 제공하지 않는다. |
-| [팀 platform](https://github.com/Softbank-Hackathon-Finals/platform) | 팀 최종 제품의 API·승인·실행·통합 | 이 저장소의 시험 성공을 팀 제품 전체 완료로 옮기지 않는다. |
+| [sova-security](https://github.com/sangmu1126/security) | 공통 정책·보안 보류·서명 근거·읽기 전용 판정 서비스 | 승인 발급이나 클라우드 변경 권한을 제공하지 않는다. |
+| [팀 platform](https://github.com/Softbank-Hackathon-Finals/platform) | 기존 팀 API·승인·실행·통합의 참조 구현 | 이 저장소의 시험 성공을 팀 제품 전체 완료로 옮기지 않는다. |
 
 개인 계정의 포크와 팀 원본은 브랜치가 자동 동기화되지 않는다. 공개 `main`, 작업 브랜치, 검증한 코드 SHA와 실제 이미지 digest를 각각 확인한다. 이 문서의 대응 실행기는 `demo/local_response`가 있는 브랜치를 기준으로 한다. [문서 점검 기준](docs/documentation-review-2026-11-13.md)
 
@@ -67,7 +68,7 @@ python3 -m venv .local-notes/venv
   --target-environment customer-k3s --target-backend kubernetes
 ```
 
-설치 전에 `pyproject.toml`의 `sova-security==0.11.1`과 사용할 Security 코드·산출물의 출처를 확인한다. [패키지 소비 계약](https://github.com/Softbank-Hackathon-Finals/security/blob/main/docs/distribution.md). `.local-notes`와 비밀값은 커밋하지 않는다. 예제는 단기 가상 등록이며 운영 승인·실제 배포 결과가 아니다. [입력 예제](examples/README.md)
+설치 전에 `pyproject.toml`의 `sova-security==0.11.1`과 사용할 Security 코드·산출물의 출처를 확인한다. [패키지 소비 계약](https://github.com/sangmu1126/security/blob/main/docs/distribution.md). `.local-notes`와 비밀값은 커밋하지 않는다. 예제는 단기 가상 등록이며 운영 승인·실제 배포 결과가 아니다. [입력 예제](examples/README.md)
 
 실제 대응 실행기는 기존 소유 VM·클러스터 UID·namespace UID·고정 이미지·보호된 상태 등록이 필요하다. 일반 설치 명령만으로 새 PC에 준비되는 서비스가 아니다. 고정 대상을 다른 클러스터로 임의 치환하지 않는다. AWS 자원 생성·앱 쓰기 제한·역방향 데이터 복사·자원 삭제가 포함된 명령은 [실행 안내](docs/workload-response-runtime.md)의 대상과 영향을 먼저 확인한다.
 

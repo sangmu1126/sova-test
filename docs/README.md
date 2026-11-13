@@ -4,7 +4,7 @@
 
 ## 2026-11-14 이후 개발
 
-[통합 명세 채택 ADR](adr/0001-contract-driven-foundation.md) · [보존 원문](specifications/contract-driven-migration-platform-v1.1-integrated-notion.md) · [원문 manifest](specifications/manifest.json). 아래 기존 구현·검증 기록과 목표 명세를 구분한다.
+[통합 명세 채택 ADR](adr/0001-contract-driven-foundation.md) · [보존 원문](specifications/contract-driven-migration-platform-v1.1-integrated-notion.md) · [원문 manifest](specifications/manifest.json). 현재 첫 구현은 [계약·방향별 자격 안내](contract-foundation.md)를 따른다. 아래 기존 구현·검증 기록과 목표 명세를 구분한다.
 
 ## 처음 읽는 순서
 
