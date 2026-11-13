@@ -333,6 +333,44 @@ _FIELDS = (
 )
 
 
+def available_recoveries(record, revision):
+    """Recovery actions the transition guards allow now, derived by trying them.
+
+    Deriving instead of restating keeps what an operator is offered identical
+    to what the authority model accepts. Each action still needs its own
+    verified preconditions (target inactivity, source writes, evidence).
+    """
+    if not isinstance(record, AuthorityRecord):
+        raise ContractError("Typed authority record required")
+    operations = _bind(record, revision)
+    trials = {
+        "ABORT_BEFORE_ACTIVATION":
+            lambda: abort_before_activation(record, target_inactive_verified=True),
+        "CONFIRM_SOURCE_RESTORED":
+            lambda: source_restored(record, source_writes_verified=True),
+        "REQUIRE_FAILBACK": lambda: require_failback(record, reason="operator decision"),
+    }
+    if record.state == HandoffState.SAFE_HOLD:
+        op = operations[record.next_operation]
+        trials["RECONCILE"] = lambda: reconcile(
+            record, revision, outcome=EffectOutcome.EFFECT_NOT_APPLIED,
+            satisfied_evidence=frozenset(op["required_evidence"]))
+    available = []
+    for name, trial in trials.items():
+        try:
+            trial()
+        except ContractError:
+            continue
+        available.append(name)
+    if record.state == HandoffState.FAILBACK_REQUIRED:
+        # A failed failback is resolved by a new forward handoff, not a nested one.
+        is_failback = _plan(revision).get("failback_of") is not None
+        available.append("NEW_PLAN" if is_failback else "COMPILE_FAILBACK_PLAN")
+    if record.state == HandoffState.ABORTED:
+        available.append("NEW_PLAN")
+    return tuple(sorted(available))
+
+
 def record_from_document(data):
     """Strict decode of a stored record; the constructor re-checks every invariant."""
     if type(data) is not dict or set(data) != set(_FIELDS):

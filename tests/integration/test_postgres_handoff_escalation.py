@@ -9,6 +9,7 @@ from handoff_support import admitted_handoff
 import pytest
 
 from sova.adapters.postgres_governance import PostgresSecurityHolds
+from sova.application.handoff_readiness import HandoffReadiness
 from sova.domain.contracts import ContractError, ResourceScope
 from sova.domain.evidence import VerificationResult
 from sova.domain.governance import SecurityHold
@@ -67,3 +68,22 @@ def test_security_hold_mid_handoff_is_recorded_as_a_security_violation(started):
     with pytest.raises(RepositoryConflict, match="security hold"):
         h["coordinator"].abort(h["revision"], h["plan"], target_inactive_verified=True,
                                actor_id="coordinator")
+
+
+def test_readiness_reports_the_hold_and_the_remaining_recovery(started):
+    h = started
+    readiness = HandoffReadiness(store=h["store"], claims=h["claims"],
+                                 coordinator=h["coordinator"], exit_readiness=h["readiness"])
+    before = readiness.assess(h["revision"], h["plan"])
+    assert before["commands"]["allowed"] and before["claims"]["active"] > 0
+    advance_to(h, "copy_content")
+    PostgresSecurityHolds(h["connect"], tenant_id=h["tenant"]).open_hold(SecurityHold(
+        "incident-9", ResourceScope(h["tenant"], h["app"], "aws-source", "db"),
+        "incident-commander", "Suspected credential compromise", datetime.now(UTC)))
+    h["coordinator"].supervise(h["revision"], h["plan"], actor_id="supervisor")
+    after = readiness.assess(h["revision"], h["plan"])
+    assert after["commands"]["blocked_by"] == ["AUTHORITY_SAFE_HOLD", "SECURITY_HOLD_ACTIVE"]
+    assert after["execution"]["hold_reason"] == "SECURITY_VIOLATION"
+    # Abort is allowed by the model but the store refuses it during the hold.
+    assert after["recovery"]["available"] == []
+    assert after["recovery"]["after_security_hold_release"] == ["ABORT_BEFORE_ACTIVATION"]

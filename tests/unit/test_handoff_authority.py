@@ -18,6 +18,7 @@ from sova.domain.handoff_authority import (
     EffectOutcome,
     HandoffState,
     abort_before_activation,
+    available_recoveries,
     escalate,
     complete_operation,
     reconcile,
@@ -248,6 +249,13 @@ def test_bounded_model_check_safety_and_progress(revision):
             k = key(after)
             edges[key(record)].add(k)
             if k not in seen:
+                # Recovery options are derivable in every reachable state: a held
+                # record always has a way out, and a failed or aborted handoff
+                # always offers its next plan.
+                options = available_recoveries(after, revision)
+                if after.state in (HandoffState.SAFE_HOLD, HandoffState.FAILBACK_REQUIRED,
+                                   HandoffState.ABORTED):
+                    assert options
                 seen[k] = after
                 edges[k] = set()
                 queue.append(after)
