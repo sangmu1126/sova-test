@@ -83,6 +83,35 @@ C3 자격 판정과 C1~C2 경계 분석은 `authenticate(record)`가 정확히 `
 
 같은 문서 digest에 두 번째 서명이 들어오면 정확한 조회가 모호해져 인증이 실패한다. 개별 문서 철회는 이 성질로 닫힌 쪽으로 동작하며, 검증자 키 철회는 기존 신뢰 revision으로 처리한다. 인증된 등록 문서도 실행 권한이 아니다. 운영 registry API, 인증된 등록 주체 확인, 검증자 신뢰를 등록할 관리 절차 연결은 아직 없다.
 
+## 계획 컴파일 (C0~C8, C10~C11)
+
+`compile_plan`은 첫 일반 실행 프로필 `PLANNED_SINGLE_AUTHORITY`만 컴파일한다. 다른 결과 dict를 믿지 않고 같은 인증기와 신뢰된 시계로 다음을 직접 다시 판정한다.
+
+| 단계 | 내용 | 막히면 |
+|---|---|---|
+| C0 | 서비스 계약 자체의 등록 서명 | `CONTRACT_REGISTRATION_REQUIRED` |
+| C1~C2 | 서명된 snapshot의 경계. 요청 밖 구성원이 필요하면 추가할 구성원을 돌려줌 | `BOUNDARY_MERGE_REQUIRED`(사전 변경), 경계 차단 사유 |
+| C3 | 템플릿이 요구하는 adapter 작업 전체에 대한 방향별 자격 | 빠진 작업 목록, 자격 사유 |
+| C4 | 판단 가능한 제약: 외부 효과가 멱등 키·결과 조회·불명 시 보류를 모두 갖추지 않으면 무인 실행에서 제외 | `EXTERNAL_EFFECT_NOT_RECONCILABLE` |
+
+실측이 필요한 계약 요구는 통과로 가정하지 않고 실행 게이트의 **검증 의무**로 결속한다.
+
+| 의무 | 결속 위치 |
+|---|---|
+| 데이터 위치(`residency.<분류>`, 빈 분류 제외) | 목적지 준비. 데이터가 넘어가기 전 |
+| 원본 쓰기 거부(등록된 모든 writer 경로, 독립 probe) | 원본 차단 |
+| 보호 데이터셋 최종 비교, 업무 불변조건 | 최종 상태 검증 |
+| 목적지 필수 보안 통제 | 활성화 의도 기록 전 |
+| 단일 writer readback, 오래된 경로 쓰기 거부 | 목적지 활성화, 경로 확정 |
+| 외부 효과 결과 조회 | 신규 접수 정지 |
+| 쓰기 접수 정지·완료 대기 예산(ms), 복원 시험 | 안정화 |
+
+전략 템플릿은 §15.2 인계 상태를 따른다. `offline-copy`는 원본 차단 뒤 복사하고, `snapshot-cdc`는 접수 정지 전에 동기화를 시작하고 차단 뒤 최종 변경분을 적용한다. 각 작업은 단위 구성원 기준 읽기/쓰기 집합, 전제·보장 조건, `tenant+execution+operation` 멱등 범위(같은 키에 다른 입력은 거부), 불확실 시 `observe_or_safe_hold`, 복구 경계를 가진다. 활성화 의도 기록은 adapter 명령이 아닌 플랫폼 단계이며, 그때부터의 모든 작업은 `post_activation_intent` 경계다. 활성화 가능성이 생긴 뒤 원본 자동 재개는 금지하고 failback은 별도 계획을 요구한다. 원본 폐기는 이 계획에 없고 별도 승인이다.
+
+C10은 작업 ID 중복, 의존 순서, 단위 밖 자원 참조, 없는 작업을 가리키는 의무, 복구 경계 역전을 검사하며 위반은 상태가 아니라 컴파일러 결함으로 거부한다. C11은 평가 시각을 뺀 정규 문서를 동결한다. 같은 동결 입력이면 평가 시각이 달라도 같은 `plan_digest`다. 계획 유효기간은 자격 만료와 snapshot 유효기간 중 이른 쪽이다.
+
+결과 상태는 `COMPILED`, `REQUIRES_REMEDIATION`, `NEEDS_EVIDENCE`, `UNSUPPORTED` 중 하나다(우선순위도 이 역순: 미지원 > 사전 변경 > 근거 부족). `COMPILED`이면 `approval_available=true`지만 `executable=false`, `authorizes_execution=false`다. 환경별 명령으로 내리는 C9와 승인 C12, `NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`·`CONFLICT`(계획 간 잠금 충돌)는 아직 없다.
+
 ## 기존 구현 재사용
 
 - JSON decoder를 순수 domain 유틸리티로 옮기고 기존 `graph_codec.json_document` import를 유지했다. domain이 파일/네트워크 adapter에 의존하지 않도록 했다.
@@ -90,7 +119,7 @@ C3 자격 판정과 C1~C2 경계 분석은 `authenticate(record)`가 정확히 `
 - 계획·승인·PostgreSQL 원장·outbox·실행권·효과 조정, 기존 실제 대응 실행기는 변경하지 않았다.
 - 첫 후보 조회는 compiler의 전체 C0~C12, all-writer fencing, 데이터 비교, 사고 복구, Cognito 이전, AI/Harbor E2E를 완성하지 않는다.
 
-다음 단계는 C4~C11 계획 컴파일(보안·위치·가용성 제약 검사, typed DAG, 고정 입력 digest)이다. 그 뒤 기존 승인·원장을 연결한다.
+다음 단계는 C9(동결 계획을 기존 `LifecyclePlan` 단계·검증 의무로 내림)와 C12(기존 승인 결속) 연결, 그리고 겹치는 쓰기 집합의 계획 간 충돌(`CONFLICT`) 검사다.
 
 ## 원격 CI 상태 · 2026-11-14
 
