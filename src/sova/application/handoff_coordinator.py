@@ -31,6 +31,7 @@ from sova.domain.handoff_authority import (
     HandoffState,
     abort_before_activation,
     complete_operation,
+    escalate,
     reconcile,
     require_failback,
     source_restored,
@@ -49,6 +50,10 @@ _BLOCKED = TERMINAL | {
     HandoffState.ABORTING_PRE_ACTIVATION,
     HandoffState.RESTORING_SOURCE,
 }
+
+
+def _bounded(action):
+    return action if len(action) <= 512 else action[:509] + "..."
 
 
 class SignedObligationEvidence:
@@ -121,6 +126,11 @@ class HandoffCoordinator:
         return impact
 
     def satisfied(self, plan, required_ids, impact):
+        return frozenset(o for o, result in self.verdicts(plan, required_ids, impact).items()
+                         if result == VerificationResult.PASS)
+
+    def verdicts(self, plan, required_ids, impact):
+        """Current verdict per obligation; ambiguous evidence decides nothing."""
         if not isinstance(impact, ImpactAssessment):
             raise ContractError("Change impact assessment required")
         required = set(required_ids)
@@ -132,15 +142,11 @@ class HandoffCoordinator:
                          if impact.evidence_counts(o.obligation_id, item.observed_at))
         ids = [e.evidence_id for e in evidence]
         if len(ids) != len(set(ids)):
-            return frozenset()  # ambiguous evidence never satisfies
+            return {o.obligation_id: VerificationResult.UNKNOWN for o in obligations}
         decision = evaluate_gate(
             Gate.POSTFLIGHT, obligations, evidence, plan.revisions, now=utc(self.clock())
         )
-        return frozenset(
-            d.obligation.obligation_id
-            for d in decision.decisions
-            if d.result == VerificationResult.PASS
-        )
+        return {d.obligation.obligation_id: d.result for d in decision.decisions}
 
     def open(self, revision, plan, *, actor_id):
         self._check(revision, plan)
@@ -155,19 +161,55 @@ class HandoffCoordinator:
         if record.next_operation >= len(ops):
             raise ContractError("No planned operation remains")
         op = ops[record.next_operation]
-        satisfied = frozenset()
+        satisfied, action = frozenset(), "effect." + str(outcome).lower()
         if outcome == EffectOutcome.EFFECT_CONFIRMED:
             impact = self._impact(revision, plan, doc, record)
             if op["adapter"] is None:
                 # A platform decision on a stale or unknown plan is never taken.
                 impact.require_commands_allowed()
-            satisfied = self.satisfied(plan, op["required_evidence"], impact)
+            verdicts = self.verdicts(plan, op["required_evidence"], impact)
+            failed = sorted(o for o, r in verdicts.items() if r == VerificationResult.FAIL)
+            if failed:
+                # The effect happened but its verification failed: a contract
+                # breach (§19.1), never a silent "not yet satisfied".
+                outcome = EffectOutcome.CONTRACT_BREACH
+                action = _bounded("verification_failed:" + ",".join(failed))
+            satisfied = frozenset(o for o, r in verdicts.items()
+                                  if r == VerificationResult.PASS)
         after = complete_operation(record, revision, operation_id=operation_id,
                                    outcome=outcome, satisfied_evidence=satisfied)
         if after == record:
             return record
-        return self.store.transition(record, after, action="effect." + str(outcome).lower(),
-                                     actor_id=actor_id)
+        return self.store.transition(record, after, action=action, actor_id=actor_id)
+
+    def supervise(self, revision, plan, *, actor_id):
+        """Escalate outcomes that do not come from the effect ledger (§19.1).
+
+        An active security hold is a SECURITY_VIOLATION. A FAIL verdict now
+        current for an obligation of an already completed step is a
+        CONTRACT_BREACH (a regression after it passed). Returns the record.
+        """
+        doc, record = self._current(revision, plan)
+        if record.state in TERMINAL:
+            return record
+        if self.store.active_hold(plan.application_id):
+            outcome, action = EffectOutcome.SECURITY_VIOLATION, "security_hold_observed"
+        else:
+            done = [i for op in doc["operations"][:record.next_operation]
+                    for i in op["required_evidence"]]
+            if not done:
+                return record
+            impact = self._impact(revision, plan, doc, record)
+            failed = sorted(o for o, r in self.verdicts(plan, done, impact).items()
+                            if r == VerificationResult.FAIL)
+            if not failed:
+                return record
+            outcome = EffectOutcome.CONTRACT_BREACH
+            action = _bounded("verification_regressed:" + ",".join(failed))
+        after = escalate(record, revision, outcome=outcome)
+        if after == record:
+            return record
+        return self.store.transition(record, after, action=action, actor_id=actor_id)
 
     def reconcile(self, revision, plan, *, outcome, actor_id):
         doc, record = self._current(revision, plan)

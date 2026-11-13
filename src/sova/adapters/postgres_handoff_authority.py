@@ -205,6 +205,15 @@ class PostgresHandoffAuthority:
         return tuple((rev, action, actor, record_from_document(doc))
                      for rev, action, actor, doc in rows)
 
+    def active_hold(self, application_id):
+        """Whether a security hold is active now (read, serialized with hold changes)."""
+        identifier(application_id)
+        try:
+            self.require_no_hold(application_id)
+        except RepositoryConflict:
+            return True
+        return False
+
     def require_no_hold(self, application_id):
         """Checked before issuing a command; the effect ledger rechecks its own grant."""
         identifier(application_id)

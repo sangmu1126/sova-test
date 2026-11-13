@@ -48,22 +48,37 @@ def test_signed_evidence_drives_the_handoff_to_completion(handoff):
     assert [rev for rev, *_ in history] == list(range(1, len(h["ops"]) + 2))
 
 
-def test_newer_failed_or_foreign_evidence_does_not_satisfy_a_step(handoff):
+def test_foreign_evidence_does_not_satisfy_a_step(handoff):
     h = handoff
     h["coordinator"].open(h["revision"], h["plan"], actor_id="coordinator")
     first = h["ops"][0]
     target = first["required_evidence"][0]
     for obligation_id in first["required_evidence"]:
-        h["prove"](obligation_id)
-    h["prove"](target, VerificationResult.FAIL)  # newer FAIL invalidates the PASS
-    with pytest.raises(ContractError, match="evidence"):
-        step(h, first)
+        if obligation_id != target:
+            h["prove"](obligation_id)
     other = replace(h["plan"].revisions, policy="9" * 64)
     h["prove"](target, revisions=other)  # bound to another plan's inputs
     with pytest.raises(ContractError, match="evidence"):
         step(h, first)
     h["prove"](target)
     assert step(h, first).state == HandoffState.TARGET_PREPARED
+
+
+def test_newer_failed_evidence_is_a_contract_breach_not_a_retry(handoff):
+    """A signed FAIL newer than the PASS is a violated condition (§19.1): the
+    step is held as a contract breach, and a later PASS does not resume it."""
+    h = handoff
+    h["coordinator"].open(h["revision"], h["plan"], actor_id="coordinator")
+    first = h["ops"][0]
+    target = first["required_evidence"][0]
+    for obligation_id in first["required_evidence"]:
+        h["prove"](obligation_id)
+    h["prove"](target, VerificationResult.FAIL)
+    held = step(h, first)
+    assert held.state == HandoffState.SAFE_HOLD and held.reason == "CONTRACT_BREACH"
+    h["prove"](target)
+    with pytest.raises(ContractError, match="SAFE_HOLD"):
+        step(h, first)
 
 
 def test_unknown_effect_holds_and_persists_until_reconciled(handoff):

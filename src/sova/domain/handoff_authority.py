@@ -232,6 +232,38 @@ def complete_operation(record, revision, *, operation_id, outcome, satisfied_evi
     )
 
 
+_ESCALATIONS = (EffectOutcome.SECURITY_VIOLATION, EffectOutcome.CONTRACT_BREACH)
+
+
+def escalate(record, revision, *, outcome):
+    """Apply a security incident or a failed verification observed outside the
+    effect ledger (§19.1), whatever step is next.
+
+    A contract breach after a possible activation requires failback; otherwise
+    the unit is held with a reason that automatic reconciliation refuses. A
+    security violation always holds (and outranks an earlier hold reason).
+    Terminal records refuse; aborting records are unchanged, since their guards
+    already stop progress and a security hold blocks their remaining transitions.
+    """
+    if not isinstance(record, AuthorityRecord) or outcome not in _ESCALATIONS:
+        raise ContractError("Typed record and a security or contract outcome required")
+    operations = _bind(record, revision)
+    if record.state in TERMINAL:
+        raise ContractError("Handoff already reached a terminal state")
+    if record.state in (HandoffState.ABORTING_PRE_ACTIVATION, HandoffState.RESTORING_SOURCE):
+        return record
+    if outcome == EffectOutcome.CONTRACT_BREACH and record.activation_possible:
+        return _next(record, state=HandoffState.FAILBACK_REQUIRED, held_from=None,
+                     hold_operation=None, reason=str(outcome))
+    if record.state == HandoffState.SAFE_HOLD:
+        if record.reason in (str(EffectOutcome.SECURITY_VIOLATION), str(outcome)):
+            return record
+        return _next(record, reason=str(outcome))
+    return _next(record, state=HandoffState.SAFE_HOLD, held_from=record.state,
+                 hold_operation=operations[record.next_operation]["operation_id"],
+                 reason=str(outcome))
+
+
 def reconcile(record, revision, *, outcome, satisfied_evidence):
     """Resolve a SAFE_HOLD from a fresh authenticated observation of the held operation."""
     if not isinstance(record, AuthorityRecord) or record.state != HandoffState.SAFE_HOLD:

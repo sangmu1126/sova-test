@@ -18,6 +18,7 @@ from sova.domain.handoff_authority import (
     EffectOutcome,
     HandoffState,
     abort_before_activation,
+    escalate,
     complete_operation,
     reconcile,
     require_failback,
@@ -194,6 +195,9 @@ def events(revision, record):
         out.append(("restored", verified, None,
                     lambda r, v=verified: source_restored(r, source_writes_verified=v)))
     out.append(("failback", None, None, lambda r: require_failback(r, reason="operator")))
+    for outcome in (EffectOutcome.SECURITY_VIOLATION, EffectOutcome.CONTRACT_BREACH):
+        out.append(("escalate", outcome, None,
+                    lambda r, o=outcome: escalate(r, revision, outcome=o)))
     return out
 
 
@@ -230,6 +234,11 @@ def test_bounded_model_check_safety_and_progress(revision):
             # no_conflicting_step_after_unknown: a held record never completes a step.
             if record.state == HandoffState.SAFE_HOLD and name == "complete":
                 raise AssertionError("a held record completed an operation")
+            # A hold is left for a non-terminal state only by reconciliation or abort.
+            if record.state == HandoffState.SAFE_HOLD and after.state not in (
+                HandoffState.SAFE_HOLD, HandoffState.FAILBACK_REQUIRED
+            ):
+                assert name in ("reconcile", "abort")
             # Completion only after every operation was confirmed with evidence.
             if after.state == HandoffState.HANDOFF_COMPLETE:
                 assert after.next_operation == len(plan)
