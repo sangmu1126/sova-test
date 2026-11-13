@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS sova_control.compiled_plans (
     tenant_id text NOT NULL,
     application_id text NOT NULL,
     compiled_digest text NOT NULL CHECK (compiled_digest ~ '^[0-9a-f]{64}$'),
-    canonical text NOT NULL CHECK (length(canonical) BETWEEN 2 AND 1048576),
+    canonical text NOT NULL CHECK (octet_length(canonical) BETWEEN 2 AND 262144),
     recorded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (tenant_id, compiled_digest)
 );

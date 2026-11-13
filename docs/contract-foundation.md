@@ -132,6 +132,21 @@ C10은 작업 ID 중복, 의존 순서, 단위 밖 자원 참조, 없는 작업�
 
 결과 상태는 `COMPILED`, `REQUIRES_REMEDIATION`, `NEEDS_EVIDENCE`, `UNSUPPORTED` 중 하나다(우선순위도 이 역순: 미지원 > 사전 변경 > 근거 부족). `COMPILED`이면 `approval_available=true`지만 `executable=false`, `authorizes_execution=false`다. C9·C12와 계획 간 충돌은 아래 절에서 다룬다. 여러 전략을 탐색해 고르는 `NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`는 아직 없고, 지금은 manifest가 지정한 템플릿 하나만 컴파일한다.
 
+**승인 전 검토.** 승인자는 승인하라고 받은 digest와 동결 계획의 정규 텍스트로 다음을 실행해 계획을 검토한다. 이 명령은 읽기 전용이며 아무것도 승인하지 않는다.
+
+```sh
+sova plan-explain plan.json --expect-digest <digest>
+```
+
+파일이 정규형이 아니거나(같은 내용이라도 들여쓴 JSON 등), digest가 다르거나, 크기 한도(256 KiB)를 넘으면 거부한다. 설명에는 다음이 들어간다.
+
+- 단계별 행동 쪽(출발지·목적지·플랫폼·edge), 복구 경계, adapter 작업, 전제·보장, 필요한 증거와 게이트
+- 되돌릴 수 없게 되는 첫 단계
+- 물리 잠금 키
+- 독립성 시험
+- 복구 정책
+- failback이면 정방향 계획·epoch·사유·원래 자원
+
 ## 기존 승인·명령 계약으로 내리기 (C9) 와 실행 직전 재확인 (C12)
 
 컴파일러 밖에서 넘어온 계획 dict는 믿지 않는다. `compile_revision`이 동결 계획 객체와 결과를 함께 돌려주며, 이 객체만 내릴 수 있다. 동결 계획에는 단위 구성원의 종류·환경·자원 UID와 출발/목적지 프로필 ID도 들어간다.

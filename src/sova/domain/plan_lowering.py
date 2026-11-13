@@ -62,6 +62,16 @@ _GATES = {
 }
 
 
+def gate_for(obligation_kind):
+    """The verification gate an obligation kind is checked at."""
+    return _GATES[obligation_kind]
+
+
+def side_for(step_kind):
+    """Which side a template step acts on: source, target, platform, or edge."""
+    return _SIDE[step_kind]
+
+
 def _document(revision):
     if not isinstance(revision, PlanRevision):
         raise ContractError("Frozen compiler plan required")

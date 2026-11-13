@@ -40,6 +40,12 @@ def main(argv=None):
     )
     contract_inspect.add_argument("contract")
     contract_inspect.add_argument("--tenant", required=True)
+    explain = commands.add_parser(
+        "plan-explain",
+        help="Verify and explain a frozen compiled plan for review; authorizes nothing",
+    )
+    explain.add_argument("plan", help="File with the plan's exact canonical text")
+    explain.add_argument("--expect-digest", help="Digest the approver was asked to approve")
     commands.add_parser("dependency-example", help="Print a synthetic shared-write snapshot; coverage stays unverified")
     boundary = commands.add_parser("boundary-analyze", help="Analyze an unsigned local dependency snapshot; never registers or authorizes a unit")
     boundary.add_argument("contract")
@@ -90,6 +96,22 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         now = datetime.now(timezone.utc)
+        if args.command == "plan-explain":
+            from sova.application.plan_explanation import (
+                MAX_PLAN_BYTES,
+                explain_plan,
+                load_canonical_plan,
+            )
+            path = Path(args.plan)
+            if path.is_symlink() or not path.is_file():
+                raise ContractError("A regular local plan file is required")
+            raw = path.read_bytes()
+            if len(raw) > MAX_PLAN_BYTES + 1:
+                raise ContractError("Plan size limit exceeded")
+            revision = load_canonical_plan(raw.decode("utf-8"),
+                                           expect_digest=args.expect_digest)
+            print(json.dumps(explain_plan(revision), ensure_ascii=False, indent=2))
+            return 0
         if args.command == "dependency-example":
             from sova.application.boundary_examples import example_dependency_snapshot
             print(json.dumps(example_dependency_snapshot(now).document, ensure_ascii=False, indent=2))
