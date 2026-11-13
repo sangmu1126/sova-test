@@ -13,7 +13,10 @@ from sova.domain.contracts import (
 @pytest.fixture
 def now(request):
     if request.node.get_closest_marker("postgres"):
-        return datetime.now(UTC)
+        # The database rejects times ahead of its own clock, and a container's
+        # clock can trail the host's by a millisecond or more; a value taken on
+        # the host and written at once would then be "in the future".
+        return datetime.now(UTC) - timedelta(seconds=1)
     return datetime(2026, 10, 31, 7, 0, tzinfo=UTC)
 
 

@@ -126,7 +126,8 @@ class LosesResponse:
 
 
 def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation,
-          approval_id, until=None, before=None, lose_response_at=(), events=None):
+          approval_id, until=None, before=None, lose_response_at=(), events=None,
+          after_effect=None):
     """Run a compiled plan's steps through the ledger with measured evidence."""
     lifecycle = h["lifecycle"]
     approval = lifecycle.get_approval(h["app"], approval_id)
@@ -235,6 +236,8 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
                     revision, plan, effect=journal.get(command), actor_id="coordinator")
                 break
             observed[op["kind"]] = effect.observation.observed_at
+            if after_effect:
+                after_effect(op)
         for oid in op["required_evidence"]:
             passed, observation = measure(obligations[oid])
             h["prove"](oid, VerificationResult.PASS if passed else VerificationResult.FAIL,
@@ -271,8 +274,11 @@ def pieces(business, adapter_id, *, source, target, route, fenced=None):
 
 def run_handoff(postgres_database, now, business, *, adjust=None, until=None,
                 strategy="offline-copy", before=None, lose_response_at=(), events=None,
-                fenced=None):
+                fenced=None, watch_catalog=None):
     h = admitted_handoff(postgres_database, now, adjust=adjust, strategy=strategy)
+    after_effect = None
+    if watch_catalog:
+        before, after_effect = watch_catalog(h, before)
     names = business["names"]
     route = Route(names["src"])
     adapter, probes = pieces(business, h["world"]["manifest"].adapter_id,
@@ -281,7 +287,7 @@ def run_handoff(postgres_database, now, business, *, adjust=None, until=None,
                              other_db=names["other"], scratch_db=names["scratch"],
                              operation=OPERATION, approval_id="approval-1", until=until,
                              before=before, lose_response_at=lose_response_at,
-                             events=events)
+                             events=events, after_effect=after_effect)
     return dict(h, record=record, adapter=adapter, probes=probes, route=route,
                 business=business, observed=observed)
 
@@ -568,3 +574,63 @@ def test_a_prepared_transaction_keeps_the_fence_unconfirmed(postgres_database, n
     finally:
         with psycopg.connect(business["dsn"], dbname=names["src"], autocommit=True) as admin:
             admin.execute(sql.SQL("ROLLBACK PREPARED {}").format(sql.Literal(gid)))
+
+
+def catalog_watch(business, *, foreign=None):
+    """Poll the source and target catalogs: unattributed before each step (anyone's
+    change), attributed right after each of the plan's own effects."""
+    from sova.adapters.postgres_change_collector import PostgresCatalogCollector
+
+    names = business["names"]
+
+    def install(h, before):
+        collector = PostgresCatalogCollector(
+            h["feed"], connect=business["connect"], tenant_id=h["tenant"],
+            application_id=h["app"], collector_id="change-collector-1",
+            databases={names["src"]: ("synthetic-source", "synthetic-uid-database"),
+                       names["tgt"]: ("onprem-target", None)})
+        collector.poll()  # baseline
+
+        def poll_before(step):
+            if foreign:
+                foreign(step)
+            collector.poll()
+            if before:
+                before(step)
+
+        def poll_after(op):
+            collector.poll(cause=(h["plan"].fingerprint, op["operation_id"]))
+
+        return poll_before, poll_after
+
+    return install
+
+
+def test_catalog_changes_by_the_plan_itself_do_not_stop_it(postgres_database, now,
+                                                          business):
+    x = run_handoff(postgres_database, now, business, adjust=without_transport_control,
+                    watch_catalog=catalog_watch(business))
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE
+    recorded = x["feed"].events(application_id=x["app"],
+                                environments=("synthetic-source", "onprem-target"),
+                                since=now)
+    assert {str(e.kind) for e in recorded} == {"policy"}  # pause, fence, stage, activate
+    assert all(e.cause is not None for e in recorded)
+
+
+def test_a_foreign_schema_change_mid_handoff_stops_the_next_command(postgres_database, now,
+                                                                   business):
+    """INV-08 with a real collector: someone alters a source table after the
+    snapshot; the next command is refused until the plan is re-evaluated."""
+    from sova.domain.change_impact import PlanReevaluationRequired
+
+    names = business["names"]
+
+    def alter(step):
+        if step == "fence_source_writes":
+            with business["connect"](names["src"]) as conn:
+                conn.execute("ALTER TABLE orders ADD COLUMN note text")
+
+    with pytest.raises(PlanReevaluationRequired, match="UNIT_RESOURCE_CHANGED:database"):
+        run_handoff(postgres_database, now, business, adjust=without_transport_control,
+                    watch_catalog=catalog_watch(business, foreign=alter))

@@ -364,6 +364,12 @@ C0 검사와 단독 C3는 Identity 의미를 판정하지 않는다. 컴파일�
 
 자기 명령이 만든 변경이면 `cause`에 (내린 계획 digest, 단계 ID)를 넣는다.
 
+**PostgreSQL 카탈로그 수집기.** `PostgresCatalogCollector`는 DB마다 테이블 구조(열·타입)와 접근 정책(테이블 권한, DB ACL)의 지문을 폴링마다 비교한다. 달라지면 `schema`·`policy` 사건을 기록한 뒤, 그 폴링의 DB 시각까지 watermark를 올린다. 사건을 먼저 쓰므로 watermark가 기록하지 않은 변경을 완전하다고 주장하지 않는다. 행 쓰기는 카탈로그 변경이 아니므로 보고하지 않는다.
+
+귀속(`cause`)은 계획 단계의 자기 효과 직후에 한 폴링에만 붙인다. 그래도 그 단계의 쓰기 범위 밖이면 외부 변경으로 본다. 운영 수집기는 시점이 아니라 변경에 실린 상관관계 ID로 귀속해야 한다.
+
+로컬 시험에서 인계 자신의 권한 변경(목적지 준비, 접수 정지, 차단, 활성화)은 각 단계에 귀속돼 인계가 끝까지 진행됐다. 인계 도중 다른 사람이 원본 테이블에 열을 추가하자 다음 명령이 `UNIT_RESOURCE_CHANGED:database`로 거부됐다.
+
 **재평가(`PlanReaffirmation`).** 단위 자원·schema·구성원 정책 변경으로 낡은 계획은 더 새로운 서명 snapshot으로 다시 확인할 수 있다. 같은 계약에 대해 경계 분석을 다시 돌려 다음이 모두 같아야 재확인이다. 이때 계획 구조가 그 snapshot 시점까지 현재와 일치한다고 기록한다(`plan_reaffirmations`, `postgres_change_feed_v2.sql`).
 
 - 경계가 `PARTITIONABLE`이고 구성원이 동결 계획과 같다.
@@ -537,7 +543,8 @@ IAM-10(종료 뒤 이전 발급자 거부)과 IAM-11(브리지·이중 발급자
 | 활성화 뒤 원본 차단 감시 | 모의 시험 통과 | 로컬 PostgreSQL에서 권한 복원 실측 |
 | PostgreSQL 간 offline copy 참조 adapter·실측 probe | 모의 시험 통과 | 로컬 일회용 PostgreSQL에서 실제 권한·세션·데이터 변경과 실측 |
 | 클라우드·관리형 DB·실제 앱 진입점용 adapter | 미검증 | 구현 없음 |
-| 실제 변경 수집기·witness의 WORM 저장소 | 미검증 | 구현 없음 |
+| PostgreSQL 카탈로그 변경 수집기 | 모의 시험 통과 | 로컬 PostgreSQL, 시점 기반 귀속 |
+| 클라우드 변경 수집기·witness의 WORM 저장소 | 미검증 | 구현 없음 |
 | 실제 IdP 이전·로그인 시험 | 미검증 | 판정과 의무 결속까지만 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |
 | 사고 보류·증거 기한·사고 복구 확장 | 지원하지 않음 | 명세가 스키마를 정하지 않음(S.9, ADR 전제). 있으면 `NEEDS_EVIDENCE` |
