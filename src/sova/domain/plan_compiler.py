@@ -330,6 +330,8 @@ def compile_revision(
     inputs = {
         "contract_digest": contract.fingerprint,
         "snapshot_digest": snapshot.fingerprint,
+        # Changes observed after this instant are not reflected in the plan (INV-08).
+        "snapshot_observed_at": utc(snapshot.graph.observed_at).isoformat(),
         "unit_digest": boundary["unit_digest"],
         "manifest_digest": manifest.fingerprint,
         "qualification_digest": qualification.fingerprint

@@ -11,11 +11,18 @@ only; a NOT_APPLICABLE exception does not satisfy a safety step.
 record for exactly the next planned step; ``next_command`` issues a command
 only for that step. Platform-owned steps (activation intent, readiness,
 stabilization) have no external effect and advance on evidence alone.
+
+Change impact (INV-08) applies to every decision: evidence observed at or
+before a change that affects its obligation does not count, and while the
+plan's inputs are stale or a change feed has a gap, no command is issued and
+no platform-owned step (such as recording activation intent) advances. An
+adapter step's settled effect is still recorded, because it already happened.
 """
 
 import json
 
 from sova.adapters.ed25519_evidence import Ed25519EvidenceVerifier
+from sova.domain.change_impact import ImpactAssessment
 from sova.domain.contracts import ContractError, EffectRecord, EffectStatus, identifier, utc
 from sova.domain.evidence import Gate, VerificationResult, evaluate_gate
 from sova.domain.handoff_authority import (
@@ -78,10 +85,10 @@ class SignedObligationEvidence:
 
 
 class HandoffCoordinator:
-    def __init__(self, *, store, evidence, clock):
-        if not callable(evidence) or not callable(clock):
-            raise ContractError("Evidence source and trusted clock required")
-        self.store, self.evidence, self.clock = store, evidence, clock
+    def __init__(self, *, store, evidence, changes, clock):
+        if not all(callable(f) for f in (evidence, changes, clock)):
+            raise ContractError("Evidence source, change impact source, and clock required")
+        self.store, self.evidence, self.changes, self.clock = store, evidence, changes, clock
 
     @staticmethod
     def _check(revision, plan):
@@ -101,12 +108,28 @@ class HandoffCoordinator:
             raise ContractError("No authority record for this admitted plan")
         return doc, record
 
-    def satisfied(self, plan, required_ids):
+    def impact(self, revision, plan):
+        """The current change impact on this admitted plan."""
+        doc, record = self._current(revision, plan)
+        return self._impact(revision, plan, doc, record)
+
+    def _impact(self, revision, plan, doc, record):
+        issued = min(record.next_operation + 1, len(doc["operations"]))
+        impact = self.changes(revision, plan, issued=issued)
+        if not isinstance(impact, ImpactAssessment) or impact.plan_digest != plan.fingerprint:
+            raise ContractError("Change impact for another plan")
+        return impact
+
+    def satisfied(self, plan, required_ids, impact):
+        if not isinstance(impact, ImpactAssessment):
+            raise ContractError("Change impact assessment required")
         required = set(required_ids)
         obligations = tuple(o for o in plan.obligations if o.obligation_id in required)
         if {o.obligation_id for o in obligations} != required:
             raise ContractError("Operation requires an obligation the plan lacks")
-        evidence = tuple(item for o in obligations for item in self.evidence(o))
+        # Evidence predating a change that affects it no longer counts (INV-08).
+        evidence = tuple(item for o in obligations for item in self.evidence(o)
+                         if impact.evidence_counts(o.obligation_id, item.observed_at))
         ids = [e.evidence_id for e in evidence]
         if len(ids) != len(set(ids)):
             return frozenset()  # ambiguous evidence never satisfies
@@ -131,12 +154,14 @@ class HandoffCoordinator:
         ops = doc["operations"]
         if record.next_operation >= len(ops):
             raise ContractError("No planned operation remains")
-        required = ops[record.next_operation]["required_evidence"]
-        satisfied = (
-            self.satisfied(plan, required)
-            if outcome == EffectOutcome.EFFECT_CONFIRMED
-            else frozenset()
-        )
+        op = ops[record.next_operation]
+        satisfied = frozenset()
+        if outcome == EffectOutcome.EFFECT_CONFIRMED:
+            impact = self._impact(revision, plan, doc, record)
+            if op["adapter"] is None:
+                # A platform decision on a stale or unknown plan is never taken.
+                impact.require_commands_allowed()
+            satisfied = self.satisfied(plan, op["required_evidence"], impact)
         after = complete_operation(record, revision, operation_id=operation_id,
                                    outcome=outcome, satisfied_evidence=satisfied)
         if after == record:
@@ -147,11 +172,10 @@ class HandoffCoordinator:
     def reconcile(self, revision, plan, *, outcome, actor_id):
         doc, record = self._current(revision, plan)
         required = doc["operations"][record.next_operation]["required_evidence"]
-        satisfied = (
-            self.satisfied(plan, required)
-            if outcome == EffectOutcome.EFFECT_CONFIRMED
-            else frozenset()
-        )
+        satisfied = frozenset()
+        if outcome == EffectOutcome.EFFECT_CONFIRMED:
+            satisfied = self.satisfied(
+                plan, required, self._impact(revision, plan, doc, record))
         after = reconcile(record, revision, outcome=outcome, satisfied_evidence=satisfied)
         if after == record:
             return record
@@ -185,6 +209,7 @@ class HandoffCoordinator:
         if op["adapter"] is None:
             raise ContractError("Platform-owned step has no adapter command")
         self.store.require_no_hold(plan.application_id)
+        self._impact(revision, plan, doc, record).require_commands_allowed()
         return plan.command(op["operation_id"], operation_id=operation_id, epoch=epoch)
 
     def advance_from_ledger(self, revision, plan, *, effect, actor_id):

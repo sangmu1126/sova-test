@@ -38,6 +38,7 @@ def postgres_database():
         admin.execute(migration_sql("postgres_lifecycle_v2.sql"))
         admin.execute(migration_sql("postgres_handoff_claims_v1.sql"))
         admin.execute(migration_sql("postgres_handoff_authority_v1.sql"))
+        admin.execute(migration_sql("postgres_change_feed_v1.sql"))
         admin.execute(migration_sql("postgres_operations_v1.sql"))
         admin.execute(migration_sql("postgres_monitoring_v1.sql"))
         admin.execute(migration_sql("postgres_execution_v1.sql"))
@@ -84,6 +85,11 @@ def postgres_database():
         admin.execute(
             sql.SQL(
                 "GRANT UPDATE(plan_digest,compiled_digest,revision,state,document,updated_at) ON sova_control.handoff_authority TO {}"
+            ).format(sql.Identifier(role))
+        )
+        admin.execute(
+            sql.SQL(
+                "GRANT UPDATE(observed_through,updated_at) ON sova_control.change_feed_watermarks TO {}"
             ).format(sql.Identifier(role))
         )
         for table in ("monitor_jobs", "monitor_runs", "monitor_alerts"):

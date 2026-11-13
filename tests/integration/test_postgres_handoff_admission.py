@@ -11,13 +11,17 @@ from threading import Barrier
 from uuid import uuid4
 
 from contract_world import build_world
+from handoff_support import complete_feeds
 import psycopg
 import pytest
 
+from sova.adapters.postgres_change_feed import PostgresChangeFeed
 from sova.adapters.postgres_handoff_claims import PostgresHandoffClaims
 from sova.adapters.postgres_plans import PostgresLifecycleRepository
+from sova.application.change_monitor import ChangeImpactSource
 from sova.application.handoff_admission import HandoffAdmission
 from sova.application.service_contracts import example_service_contract
+from sova.domain.change_impact import ChangeEvent, ChangeKind, PlanReevaluationRequired
 from sova.domain.contracts import ContractError
 from sova.domain.plan_compiler import compile_revision
 from sova.domain.plan_lowering import lower_plan
@@ -42,13 +46,17 @@ def stores(postgres_database):
         connect, tenant_id=tenant, clock=lambda: datetime.now(UTC)
     )
     claims = PostgresHandoffClaims(connect, tenant_id=tenant)
+    feed = PostgresChangeFeed(connect, tenant_id=tenant)
     admission = HandoffAdmission(
-        lifecycle=lifecycle, claims=claims, clock=lambda: datetime.now(UTC)
+        lifecycle=lifecycle, claims=claims,
+        changes=ChangeImpactSource(feed=feed, clock=lambda: datetime.now(UTC)),
+        clock=lambda: datetime.now(UTC),
     )
-    return dict(tenant=tenant, lifecycle=lifecycle, claims=claims, admission=admission)
+    return dict(tenant=tenant, lifecycle=lifecycle, claims=claims, admission=admission,
+                feed=feed)
 
 
-def prepared(stores, now, service, *, uid_prefix=None):
+def prepared(stores, now, service, *, uid_prefix=None, feeds=True):
     """Compile, lower, store, and approve one synthetic handoff for ``service``."""
     data = example_service_contract().document
     data["metadata"]["tenant_id"] = stores["tenant"]
@@ -85,6 +93,8 @@ def prepared(stores, now, service, *, uid_prefix=None):
     verifiers = {k: VERIFIER for k in kinds}
     plan = lower_plan(revision, created_by="planner", verifiers=verifiers)
     stores["lifecycle"].save_plan(plan)
+    if feeds:
+        complete_feeds(stores["feed"], revision, plan)
     approval_id = "approval-" + uuid4().hex[:12]
     stores["lifecycle"].save_approval(
         service,
@@ -195,5 +205,24 @@ def test_active_security_hold_blocks_admission(stores, now):
         "incident-1", ResourceScope(stores["tenant"], "orders-service", "aws-source", "db"),
         "incident-commander", "Suspected compromise", datetime.now(UTC)))
     with pytest.raises(RepositoryConflict, match="security hold"):
+        admit(stores, orders)
+    assert stores["claims"].active() == ()
+
+
+def test_unit_change_after_the_snapshot_or_a_feed_gap_blocks_admission(stores, now):
+    """INV-08: a recreated source database or an unreported feed is never "unchanged"."""
+    orders = prepared(stores, now, "orders-service")
+    stores["feed"].record(ChangeEvent(
+        "ev-db-recreated", stores["tenant"], "another-service", ChangeKind.RESOURCE,
+        "synthetic-source", "synthetic-uid-database", None,
+        datetime.now(UTC) - timedelta(milliseconds=1)), collector_id="change-collector-1")
+    with pytest.raises(PlanReevaluationRequired, match="UNIT_RESOURCE_CHANGED:database"):
+        admit(stores, orders)
+    assert stores["claims"].active() == ()
+
+
+def test_missing_change_feeds_block_admission(stores, now):
+    orders = prepared(stores, now, "orders-service", feeds=False)
+    with pytest.raises(PlanReevaluationRequired, match="CHANGE_FEED_INCOMPLETE"):
         admit(stores, orders)
     assert stores["claims"].active() == ()

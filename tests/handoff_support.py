@@ -9,16 +9,19 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import psycopg
 
 from sova.adapters.ed25519_evidence import Ed25519EvidenceSigner, Ed25519EvidenceVerifier
+from sova.adapters.postgres_change_feed import PostgresChangeFeed
 from sova.adapters.postgres_handoff_authority import PostgresHandoffAuthority
 from sova.adapters.postgres_handoff_claims import PostgresHandoffClaims
 from sova.adapters.postgres_plans import PostgresLifecycleRepository
 from sova.adapters.postgres_signed_evidence import PostgresSignedEvidence
 from sova.adapters.postgres_verifier_registry import PostgresVerifierRegistry
+from sova.application.change_monitor import ChangeImpactSource
 from sova.application.handoff_admission import HandoffAdmission
 from sova.application.handoff_coordinator import HandoffCoordinator, SignedObligationEvidence
 from sova.application.service_contracts import example_service_contract
 from sova.application.signed_evidence import SignedEvidenceAuthority
 from sova.domain.evidence import EvidenceRecord, VerificationResult
+from sova.domain.change_impact import ImpactIndex
 from sova.domain.plan_compiler import compile_revision
 from sova.domain.plan_lowering import lower_plan
 from sova.domain.plans import PlanApproval, PlanPurpose
@@ -27,6 +30,14 @@ from sova.domain.signed_evidence import VerifierTrust
 from sova.domain.verifier_registry import VerifierTrustChange
 
 VERIFIER = "handoff-verifier-1"
+COLLECTOR = "change-collector-1"
+
+
+def complete_feeds(feed, revision, plan):
+    """Report every change feed the plan depends on as complete up to now."""
+    for environment in sorted(ImpactIndex.from_plan(revision, plan).required_feeds):
+        feed.advance(environment, collector_id=COLLECTOR,
+                     observed_through=datetime.now(UTC) - timedelta(milliseconds=5))
 
 
 def admitted_handoff(postgres_database, now):
@@ -65,7 +76,10 @@ def admitted_handoff(postgres_database, now):
         plan.fingerprint, "security-approver", PlanPurpose.MIGRATION_PHASE,
         now + timedelta(minutes=3)))
     claims = PostgresHandoffClaims(connect, tenant_id=tenant)
-    HandoffAdmission(lifecycle=lifecycle, claims=claims,
+    feed = PostgresChangeFeed(connect, tenant_id=tenant)
+    changes = ChangeImpactSource(feed=feed, clock=lambda: datetime.now(UTC))
+    complete_feeds(feed, revision, plan)
+    HandoffAdmission(lifecycle=lifecycle, claims=claims, changes=changes,
                      clock=lambda: datetime.now(UTC)).admit(
         app, "approval-1", recompile=recompile, verifiers=verifiers)
 
@@ -91,6 +105,7 @@ def admitted_handoff(postgres_database, now):
             current_envelope=PostgresSignedEvidence(connect, tenant_id=tenant).current_envelope,
             resolve_trust=registry.resolve, issuers={VERIFIER: signer.issuer_id},
             clock=lambda: datetime.now(UTC)),
+        changes=changes,
         clock=lambda: datetime.now(UTC))
     counter = iter(range(10_000))
 
@@ -107,4 +122,5 @@ def admitted_handoff(postgres_database, now):
     ops = json.loads(revision.canonical)["operations"]
     return dict(revision=revision, plan=plan, store=store, coordinator=coordinator,
                 claims=claims, prove=prove, ops=ops, app=app, tenant=tenant,
-                connect=connect, lifecycle=lifecycle, world=world)
+                connect=connect, lifecycle=lifecycle, world=world, feed=feed,
+                complete_feeds=lambda: complete_feeds(feed, revision, plan))

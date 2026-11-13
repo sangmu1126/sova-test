@@ -5,7 +5,7 @@ ownership lease and EffectExecutor -> ledger readback -> authority transition.
 The adapter is a recording double; no real environment is changed.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from handoff_support import admitted_handoff
 import pytest
@@ -15,6 +15,7 @@ from sova.adapters.postgres_effects import PostgresEffectJournal
 from sova.adapters.postgres_execution import PostgresExecutionOwnership
 from sova.adapters.postgres_operations import PostgresOperationRepository
 from sova.application.effects import EffectExecutor, UncertainEffect
+from sova.domain.change_impact import ChangeEvent, ChangeKind, PlanReevaluationRequired
 from sova.domain.contracts import (
     ContractError,
     EffectObservation,
@@ -119,3 +120,27 @@ def test_uncertain_fence_readback_holds_and_issues_no_further_command(execution)
     with pytest.raises(ContractError, match="does not allow"):
         x["coordinator"].next_command(x["revision"], x["plan"], operation_id=OPERATION,
                                       epoch=x["lease"].epoch)
+
+
+def test_foreign_change_mid_handoff_stops_commands_but_own_effects_do_not(execution):
+    """INV-08 during execution: the plan's own admission pause is expected; a
+    foreign change to the source database after the snapshot is not."""
+    x = execution
+    ops = iter(x["ops"])
+    for op in ops:
+        run_step(x, op)
+        if op["kind"] == "pause_admission":
+            break
+    x["feed"].record(ChangeEvent(
+        "ev-own-pause", x["tenant"], x["app"], ChangeKind.POLICY, "synthetic-source",
+        "synthetic-uid-api-a", None, datetime.now(UTC) - timedelta(milliseconds=2),
+        (x["plan"].fingerprint, op["operation_id"])), collector_id="change-collector-1")
+    assert x["coordinator"].impact(x["revision"], x["plan"]).commands_allowed
+    x["feed"].record(ChangeEvent(
+        "ev-foreign-db", x["tenant"], "another-service", ChangeKind.RESOURCE,
+        "synthetic-source", "synthetic-uid-database", None,
+        datetime.now(UTC) - timedelta(milliseconds=1)), collector_id="change-collector-1")
+    with pytest.raises(PlanReevaluationRequired, match="UNIT_RESOURCE_CHANGED:database"):
+        x["coordinator"].next_command(x["revision"], x["plan"], operation_id=OPERATION,
+                                      epoch=x["lease"].epoch)
+    assert x["adapter"].calls == ["stage_target", "pause_admission"]

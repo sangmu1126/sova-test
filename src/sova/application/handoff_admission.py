@@ -2,21 +2,25 @@
 
 Admission sits between the existing approval and command issuance. It
 recompiles from current authenticated inputs (``verify_approved_plan``),
-derives the absolute claim set, and records it in one transaction that also
-locks the approval against revocation. Admission does not issue commands or an
-execution permit; the existing execution ledger remains that authority.
+refuses a plan whose inputs changed after its snapshot or whose change feeds
+have a gap (INV-08), derives the absolute claim set, and records it in one
+transaction that also locks the approval against revocation. Admission does
+not issue commands or an execution permit; the existing execution ledger
+remains that authority.
 """
 
+from sova.domain.change_impact import ImpactAssessment
 from sova.domain.contracts import ContractError, identifier, utc
 from sova.domain.plan_conflicts import lock_set
 from sova.domain.plan_lowering import verify_approved_plan
 
 
 class HandoffAdmission:
-    def __init__(self, *, lifecycle, claims, clock):
-        if not callable(clock):
-            raise ContractError("Trusted admission clock required")
-        self.lifecycle, self.claims, self.clock = lifecycle, claims, clock
+    def __init__(self, *, lifecycle, claims, changes, clock):
+        if not callable(clock) or not callable(changes):
+            raise ContractError("Trusted admission clock and change impact source required")
+        self.lifecycle, self.claims, self.changes, self.clock = (
+            lifecycle, claims, changes, clock)
 
     def admit(self, application_id, approval_id, *, recompile, verifiers):
         identifier(application_id)
@@ -33,6 +37,10 @@ class HandoffAdmission:
             verifiers=verifiers,
             now=utc(self.clock()),
         )
+        impact = self.changes(revision, plan, issued=0)
+        if not isinstance(impact, ImpactAssessment) or impact.plan_digest != plan.fingerprint:
+            raise ContractError("Change impact for another plan")
+        impact.require_commands_allowed()
         locks, unresolved = lock_set(revision)
         if unresolved:
             raise ContractError("Plan scope cannot be resolved to claim keys")

@@ -3,6 +3,7 @@
 from datetime import timedelta
 import json
 
+from change_support import memory_changes
 from contract_world import build_world
 import pytest
 
@@ -69,11 +70,13 @@ def setup(now):
             ),
         )
 
+    feed, changes = memory_changes(lambda: now)
     coordinator = HandoffCoordinator(store=MemoryStore(), evidence=evidence,
-                                     clock=lambda: now)
+                                     changes=changes, clock=lambda: now)
     coordinator.open(revision, plan, actor_id="coordinator")
     ops = json.loads(revision.canonical)["operations"]
-    return dict(revision=revision, plan=plan, coordinator=coordinator, ops=ops, now=now)
+    return dict(revision=revision, plan=plan, coordinator=coordinator, ops=ops, now=now,
+                feed=feed)
 
 
 def ledger(setup, op, status, *, plan=None, observed=True):
