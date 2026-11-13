@@ -7,17 +7,21 @@ and decides it with the existing ``evaluate_gate`` binding rules (obligation,
 scope, plan revisions, verifier version, freshness). Handoff steps accept PASS
 only; a NOT_APPLICABLE exception does not satisfy a safety step.
 
-The effect outcome passed in must come from the authenticated effect ledger
-(``postgres_effects``) for the same operation; wiring that ledger is separate.
+``advance_from_ledger`` takes the outcome from the existing effect ledger's
+record for exactly the next planned step; ``next_command`` issues a command
+only for that step. Platform-owned steps (activation intent, readiness,
+stabilization) have no external effect and advance on evidence alone.
 """
 
 import json
 
 from sova.adapters.ed25519_evidence import Ed25519EvidenceVerifier
-from sova.domain.contracts import ContractError, identifier, utc
+from sova.domain.contracts import ContractError, EffectRecord, EffectStatus, identifier, utc
 from sova.domain.evidence import Gate, VerificationResult, evaluate_gate
 from sova.domain.handoff_authority import (
+    TERMINAL,
     EffectOutcome,
+    HandoffState,
     abort_before_activation,
     complete_operation,
     reconcile,
@@ -27,6 +31,17 @@ from sova.domain.handoff_authority import (
 )
 from sova.domain.plan_compiler import PlanRevision
 from sova.domain.plans import LifecyclePlan
+
+_LEDGER = {
+    EffectStatus.APPLIED: EffectOutcome.EFFECT_CONFIRMED,
+    EffectStatus.NOT_APPLIED: EffectOutcome.EFFECT_NOT_APPLIED,
+    EffectStatus.UNKNOWN: EffectOutcome.EFFECT_UNKNOWN,
+}
+_BLOCKED = TERMINAL | {
+    HandoffState.SAFE_HOLD,
+    HandoffState.ABORTING_PRE_ACTIVATION,
+    HandoffState.RESTORING_SOURCE,
+}
 
 
 class SignedObligationEvidence:
@@ -160,3 +175,45 @@ class HandoffCoordinator:
         after = require_failback(record, reason=reason)
         return self.store.transition(record, after, action="failback_required",
                                      actor_id=actor_id)
+
+    def next_command(self, revision, plan, *, operation_id, epoch):
+        """Issue the existing EffectCommand for the next adapter step only."""
+        doc, record = self._current(revision, plan)
+        if record.state in _BLOCKED:
+            raise ContractError("Handoff state does not allow a new command")
+        op = doc["operations"][record.next_operation]
+        if op["adapter"] is None:
+            raise ContractError("Platform-owned step has no adapter command")
+        return plan.command(op["operation_id"], operation_id=operation_id, epoch=epoch)
+
+    def advance_from_ledger(self, revision, plan, *, effect, actor_id):
+        """Advance the next step from its effect-ledger record (None for platform steps)."""
+        doc, record = self._current(revision, plan)
+        if record.next_operation >= len(doc["operations"]):
+            raise ContractError("No planned operation remains")
+        op = doc["operations"][record.next_operation]
+        if op["adapter"] is None:
+            if effect is not None:
+                raise ContractError("Platform-owned steps have no ledger effect")
+            outcome = EffectOutcome.EFFECT_CONFIRMED
+        else:
+            if not isinstance(effect, EffectRecord):
+                raise ContractError("Effect-ledger record required for an adapter step")
+            command = effect.command
+            if (
+                command.plan_digest != plan.fingerprint
+                or command.step_id != op["operation_id"]
+                or command.action != op["kind"]
+                or command.adapter_id != op["adapter"]["adapter_id"]
+            ):
+                raise ContractError("Ledger effect belongs to another plan step")
+            if effect.status not in _LEDGER:
+                raise ContractError("Effect is not settled in the ledger")
+            if effect.status == EffectStatus.APPLIED and (
+                effect.observation is None
+                or effect.observation.command_digest != command.fingerprint
+            ):
+                raise ContractError("Applied effect lacks its readback observation")
+            outcome = _LEDGER[effect.status]
+        return self.apply_effect(revision, plan, operation_id=op["operation_id"],
+                                 outcome=outcome, actor_id=actor_id)

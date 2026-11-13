@@ -163,7 +163,17 @@ C10은 작업 ID 중복, 의존 순서, 단위 밖 자원 참조, 없는 작업�
 
 `HandoffCoordinator`는 작업이 요구하는 증거를 호출자에게 받지 않는다. `SignedObligationEvidence`가 검증 의무마다 등록된 생산자 채널의 최신 서명 관측을 읽고, Ed25519 서명과 현재 발급자 신뢰를 확인한다. 그 결과를 기존 `evaluate_gate`의 결속 규칙(의무·범위·계획 revision 묶음·검증자 버전·기한)으로 판정하고 PASS만 인정한다. 최신 관측이 FAIL이면 예전 PASS는 쓰이지 않고, 다른 계획 입력에 결속된 증거도 충족하지 않는다. 실제 PostgreSQL에서 다음을 시험했다: 서명 증거로 끝까지 완료, 불명 효과의 보류 저장과 조정, 동시 조정자 중 하나만 성공, 잠금 해제 뒤 변경 거부.
 
-효과 결과(`EffectOutcome`)는 아직 호출자가 넘긴다. 같은 작업에 대한 기존 효과 원장(`postgres_effects`)의 인증된 관측에서만 받도록 연결하는 일과, 명령 발급을 권한 기록의 다음 작업에만 허용하는 일은 남아 있다.
+**효과 원장과 명령 발급.** `next_command`는 권한 기록이 가리키는 **다음 adapter 작업**에 대해서만 기존 `LifecyclePlan.command`로 명령을 만든다. 보류·중단·종료 상태와 플랫폼 단계에서는 거부한다. `advance_from_ledger`는 효과 결과를 호출자가 아니라 기존 효과 원장의 그 작업 기록에서 받는다. 이때 다음을 확인한다.
+
+- 기록의 명령이 이 계획 digest·다음 작업 ID·동작·adapter에 결속돼 있는지
+- `confirmed_applied`에는 그 명령의 readback 관측이 붙어 있는지
+- `prepared`·`in_flight`처럼 끝나지 않은 효과가 아닌지
+
+`confirmed_applied`는 확인, `confirmed_not_applied`는 미적용, `unknown`은 불명으로 대응한다. 활성화 의도·준비 확인·안정화 같은 플랫폼 단계는 외부 효과가 없어 효과 기록을 받지 않고 증거만으로 진행한다.
+
+실제 PostgreSQL에서 기존 운영 작업 등록, 실행 소유권 리스, `EffectExecutor`, 효과 원장을 그대로 써서 승인 → 수용 → 명령 → 원장 readback → 권한 전이로 인계를 끝까지 실행했다(adapter는 기록용 대역). 원본 차단 readback을 불명으로 바꾸면 기존 실행기가 `UncertainEffect`를 내고 원장에 `unknown`이 남는다. 그 기록으로 권한은 `SAFE_HOLD`가 되고, 활성화 가능성은 생기지 않으며, 다음 명령은 발급되지 않는다.
+
+`PARTIAL_EFFECT`·`SECURITY_VIOLATION`·`CONTRACT_BREACH`는 효과 원장 상태가 아니라 검증·사고 경로에서 와야 하며 그 연결은 아직 없다. 실제 환경 adapter와 실제 데이터 이전은 수행하지 않았다.
 
 ## 기존 구현 재사용
 
