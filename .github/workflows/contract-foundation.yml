@@ -1,0 +1,63 @@
+name: contract-foundation
+on:
+  push:
+    branches: [main, feature/contract-driven-foundation]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  offline-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python: ['3.11', '3.14']
+    env:
+      UV_PYTHON_DOWNLOADS: 'never'
+      AWS_EC2_METADATA_DISABLED: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Select the existing pinned security source
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, re
+          value = json.loads(pathlib.Path('integration/security/manifest.json').read_text())
+          source = value['qualified_package_source']
+          assert type(source) is str and re.fullmatch(r'[0-9a-f]{40}', source)
+          with open(os.environ['GITHUB_ENV'], 'a') as stream:
+              stream.write('SECURITY_COMMIT=' + source + '\n')
+          PY
+      - name: Read the immutable producer from the personal security repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: sangmu1126/security
+          ref: ${{ env.SECURITY_COMMIT }}
+          path: .local-notes/security-source
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: '0.13.6'
+          enable-cache: false
+      - name: Prepare the producer's locked test dependencies
+        working-directory: .local-notes/security-source
+        run: uv sync --locked --extra dev --extra platform-test --no-install-project --no-build --python '${{ matrix.python }}'
+      - name: Check domain layering and acceptance boundaries without cloud credentials
+        env:
+          PYTHONPATH: '${{ github.workspace }}/src:${{ github.workspace }}/.local-notes/security-source/src'
+        run: |
+          PYTHON="$PWD/.local-notes/security-source/.venv/bin/python"
+          "$PYTHON" -m ruff check src tests
+          "$PYTHON" -m pytest -q tests/unit -rs
+          "$PYTHON" - <<'PY'
+          import hashlib, json, pathlib
+          root = pathlib.Path('docs/specifications')
+          manifest = json.loads((root / 'manifest.json').read_text())
+          raw = (root / manifest['file']).read_bytes()
+          assert len(raw) == manifest['bytes']
+          assert hashlib.sha256(raw).hexdigest() == manifest['sha256']
+          PY
