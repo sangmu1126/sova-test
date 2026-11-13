@@ -634,3 +634,28 @@ def test_a_foreign_schema_change_mid_handoff_stops_the_next_command(postgres_dat
     with pytest.raises(PlanReevaluationRequired, match="UNIT_RESOURCE_CHANGED:database"):
         run_handoff(postgres_database, now, business, adjust=without_transport_control,
                     watch_catalog=catalog_watch(business, foreign=alter))
+
+
+def test_business_continues_on_the_confirmed_route_while_the_platform_is_down(
+        postgres_database, now, business):
+    """INV-07, AT-34: once the route is confirmed, business does not need the
+    control plane. With the platform's database role unable to log in, the
+    application still writes on the target through the confirmed route."""
+    dsn, runtime_role = postgres_database
+    app = business["app"]
+    x = run_handoff(postgres_database, now, business, adjust=without_transport_control)
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE
+    with psycopg.connect(dsn, autocommit=True) as admin:
+        admin.execute(sql.SQL("ALTER ROLE {} NOLOGIN").format(sql.Identifier(runtime_role)))
+    try:
+        with pytest.raises(psycopg.OperationalError):
+            x["store"].current(x["app"], x["record"].unit_digest)  # the platform is down
+        with business["connect_as"](x["route"].get(), app) as conn:
+            conn.execute("INSERT INTO orders VALUES (60, 'customer-2', 'key-60', 60)")
+            conn.execute("INSERT INTO idempotency_results VALUES "
+                         "('customer-2', 'key-60', 'confirmed')")
+        assert x["probes"].order_effects_once()[0]
+    finally:
+        with psycopg.connect(dsn, autocommit=True) as admin:
+            admin.execute(sql.SQL("ALTER ROLE {} LOGIN").format(
+                sql.Identifier(runtime_role)))
