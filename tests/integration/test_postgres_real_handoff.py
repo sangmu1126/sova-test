@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS work_items (id bigint PRIMARY KEY, order_id bigint NO
 CREATE TABLE IF NOT EXISTS idempotency_results (customer text NOT NULL,
   idempotency_key text NOT NULL, result text NOT NULL,
   PRIMARY KEY (customer, idempotency_key));
+CREATE SEQUENCE IF NOT EXISTS order_number_seq;
 """
 PROBE_INSERT = ("INSERT INTO orders (id, customer, idempotency_key, amount) "
                 "VALUES (-1, 'sova-probe', 'sova-probe', 0)")
@@ -94,6 +95,8 @@ def business(postgres_database):
     with connect(names["src"]) as conn:
         conn.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "
                              "public TO {}").format(sql.Identifier(app)))
+        conn.execute(sql.SQL("GRANT USAGE, SELECT ON SEQUENCE order_number_seq TO {}").format(
+            sql.Identifier(app)))
         conn.execute(sql.SQL("GRANT INSERT ON orders TO {}").format(sql.Identifier(batch)))
         conn.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
             sql.Identifier(names["src"]), sql.Identifier(batch)))  # its own, not PUBLIC's
@@ -104,6 +107,8 @@ def business(postgres_database):
             conn.execute("INSERT INTO idempotency_results VALUES (%s, %s, 'confirmed')",
                          (f"customer-{i % 7}", f"key-{i}"))
             conn.execute("INSERT INTO work_items VALUES (%s, %s, 'done')", (i, i))
+        for _ in range(10):  # order numbers already handed out to customers
+            conn.execute("SELECT nextval('order_number_seq')")
     yield dict(names=names, app=app, batch=batch, connect=connect, connect_as=connect_as,
                dsn=dsn)
 
@@ -659,3 +664,13 @@ def test_business_continues_on_the_confirmed_route_while_the_platform_is_down(
         with psycopg.connect(dsn, autocommit=True) as admin:
             admin.execute(sql.SQL("ALTER ROLE {} LOGIN").format(
                 sql.Identifier(runtime_role)))
+
+
+def test_sequences_move_with_the_data_so_numbers_are_never_reissued(postgres_database,
+                                                                   now, business):
+    """AT-24: rows alone are not the state. The source issued order numbers 1-10;
+    after the handoff the target continues at 11 instead of issuing 1 again."""
+    x = run_handoff(postgres_database, now, business, adjust=without_transport_control)
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE
+    with business["connect_as"](x["route"].get(), business["app"]) as conn:
+        assert conn.execute("SELECT nextval('order_number_seq')").fetchone()[0] == 11

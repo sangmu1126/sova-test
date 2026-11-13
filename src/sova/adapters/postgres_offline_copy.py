@@ -14,10 +14,12 @@ own memory:
 * fence_source_writes - no registered writer role (the application, batch
   jobs, ...) holds a write privilege on any source table or has a live session
   there, and no prepared transaction is left that could still commit (§15.5);
-* copy_content / apply_final_changes - every table is copied inside one
-  target transaction; this reference adapter applies the final changes by a
-  full re-copy inside the fenced window rather than by change data capture;
-* verify_final_state - per-table row count and content digest are equal;
+* copy_content / apply_final_changes - every table, and the state of every
+  sequence (so identifiers are never issued twice, AT-24), is copied inside
+  one target transaction; this reference adapter applies the final changes by
+  a full re-copy inside the fenced window rather than by change data capture;
+* verify_final_state - per-table row count and content digest, and every
+  sequence's position, are equal;
 * activate_target - the role can connect to and write the target while the
   source stays fenced (single writer);
 * commit_route - the route points at the target.
@@ -133,9 +135,18 @@ class PostgresOfflineCopyAdapter:
                 out[table] = {"rows": len(rows), "sha256": h.hexdigest()}
         return out
 
+    def _sequences(self, which):
+        with self.connect(self._db(which)) as conn:
+            return {name: [last, called] for name, last, called in conn.execute(
+                "SELECT sequencename, last_value, last_value IS NOT NULL FROM pg_sequences "
+                "WHERE schemaname='public' ORDER BY sequencename")}
+
     def _no_access(self, which, *, connect_too):
         statements = [sql.SQL("REVOKE {} ON ALL TABLES IN SCHEMA public FROM PUBLIC, {}").format(
-            sql.SQL(", ").join(sql.SQL(p) for p in _WRITE), self._writers())]
+            sql.SQL(", ").join(sql.SQL(p) for p in _WRITE), self._writers()),
+            # nextval() changes state too: a fenced writer must not draw numbers.
+            sql.SQL("REVOKE USAGE, UPDATE ON ALL SEQUENCES IN SCHEMA public "
+                    "FROM PUBLIC, {}").format(self._writers())]
         if connect_too:
             statements.append(sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC, {}").format(
                 sql.Identifier(self._db(which)), self._writers()))
@@ -231,6 +242,11 @@ class PostgresOfflineCopyAdapter:
                                 sql.Identifier(table))) as into:
                         for chunk in out:
                             into.write(chunk)
+                for name, (last, called) in self._sequences("source").items():
+                    target.execute(sql.SQL(
+                        "SELECT setval({}, coalesce(%s, (SELECT start_value FROM pg_sequences "
+                        "WHERE schemaname='public' AND sequencename=%s)), %s)").format(
+                            sql.Literal(name)), (last, name, called))
 
     def _check_copy_content(self):
         source, target = self._digests("source"), self._digests("target")
@@ -242,13 +258,18 @@ class PostgresOfflineCopyAdapter:
 
     def _check_verify_final_state(self):
         source, target = self._digests("source"), self._digests("target")
-        return source == target, {"source": source, "target": target}
+        sequences = self._sequences("source"), self._sequences("target")
+        return source == target and sequences[0] == sequences[1], {
+            "source": source, "target": target,
+            "sequences": {"source": sequences[0], "target": sequences[1]}}
 
     def _activate_target(self):
         self._execute("target", [
             sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
                 sql.Identifier(self.target_db), self._role()),
             sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public "
+                    "TO {}").format(self._role()),
+            sql.SQL("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public "
                     "TO {}").format(self._role()),
         ])
 
