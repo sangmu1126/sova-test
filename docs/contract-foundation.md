@@ -331,6 +331,7 @@ C0 검사와 단독 C3는 Identity 의미를 판정하지 않는다. 컴파일�
 | `policy` | 환경 | 구성원 자원 UID 또는 비움 | 없음 | 구성원 정책이면 계획 낡음 |
 | `identity` | 환경 | 선택 | 없음 | Identity 의무 포함 무효화 |
 | `code` | 선택 | 선택 | 없음 | 서비스(application) 기준 |
+| `vulnerability` | 환경 또는 비움 | 구성요소(선택) | 없음 | 그 환경의 보안 관련 증거만 무효화(보안 통제, 쓰기 거부, 경로, 권한 readback, Identity, 독립성 시험). 계획은 낡지 않음: 재진단이지 중단이 아님(§23.3, V.3-8). `postgres_change_feed_v3.sql` |
 | `verifier` | 선택 | 검증자 버전(모르면 비움) | 없음 | |
 | `adapter` | 선택 | adapter ID(모르면 비움) | 없음 | 계획 낡음, 재확인 불가 |
 | `contract` | 선택 | 선택 | 새 계약 digest | 서비스 기준. 등록소 사건은 snapshot 이전 것도 읽어, 컴파일한 revision이 기록된 최신이어야 함 |

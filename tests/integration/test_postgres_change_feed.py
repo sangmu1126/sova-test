@@ -130,3 +130,20 @@ def test_registry_history_is_read_regardless_of_the_snapshot_time(feeds):
     read = feed.events(application_id="orders-service", environments=("source-env",),
                        since=datetime.now(UTC) - timedelta(minutes=1))
     assert [e.event_id for e in read] == ["ev-contract-r8"]
+
+
+def test_vulnerability_events_are_accepted_by_the_v3_schema(feeds):
+    (tenant, _), (feed, _) = feeds
+    disclosed = ChangeEvent("ev-cve", tenant, "orders-service", ChangeKind.VULNERABILITY,
+                            "source-env", "openssl", None,
+                            datetime.now(UTC) - timedelta(seconds=1))
+    assert feed.record(disclosed, collector_id="vulnerability-feed") is True
+
+
+def test_v3_keeps_the_registry_digest_rule(feeds):
+    (tenant, _), (feed, _) = feeds
+    with feed.transaction() as conn, pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO sova_control.change_events (tenant_id,event_id,application_id,"
+            "kind,observed_at,collector_id,artifact_digest) VALUES (%s,'ev-x','orders',"
+            "'vulnerability',clock_timestamp(),'c',%s)", (tenant, "a" * 64))

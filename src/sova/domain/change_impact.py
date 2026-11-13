@@ -43,6 +43,7 @@ class ChangeKind(StrEnum):
     POLICY = "policy"  # permission, network, or security policy in an environment
     IDENTITY = "identity"  # IdP, OAuth client, JWKS, or user directory configuration
     CODE = "code"  # the service's own code or image
+    VULNERABILITY = "vulnerability"  # a newly disclosed weakness; nothing was changed
     VERIFIER = "verifier"  # implementation behind a named verifier version
     ADAPTER = "adapter"  # adapter implementation under a manifest
     CONTRACT = "contract"  # registry: service contract revision
@@ -77,6 +78,13 @@ _OBSERVES = {
     "exit_drill": {"source", "target", "platform", "edge"},
 }
 _SIDES = frozenset({"source", "target", "platform", "edge"})
+# Verifications whose conclusion a newly disclosed weakness can undermine
+# (§23.3, Part V.3-8). Data comparisons, placement and budgets are not.
+_SECURITY_KINDS = frozenset({
+    "target_control_test", "independent_write_denial_probe", "stale_route_probe",
+    "authority_readback", "identity_flow_test", "identity_leak_scan",
+    "identity_operations_check", "exit_drill",
+})
 
 
 @dataclass(frozen=True, slots=True)
@@ -393,6 +401,11 @@ def assess_impact(index, events, watermarks, *, issued, now, max_feed_lag=MAX_FE
         elif kind == ChangeKind.IDENTITY and side is not None:
             invalidate(lambda s, t, k, v: side in s or k.startswith("identity_"), at,
                        f"IDENTITY_CHANGED:{side}")
+        elif kind == ChangeKind.VULNERABILITY and (side is not None or unplaced):
+            # Re-diagnose, do not stop: security evidence on that side is no longer
+            # current, but the plan's structure and inputs did not change.
+            invalidate(lambda s, t, k, v: k in _SECURITY_KINDS and (side is None or side in s),
+                       at, f"VULNERABILITY_DISCLOSED:{side or 'any'}")
         elif kind == ChangeKind.CODE and event.application_id == index.application_id:
             invalidate(lambda s, t, k, v: True, at, "SERVICE_CODE_CHANGED")
         elif kind == ChangeKind.VERIFIER and event.subject is not None:

@@ -40,6 +40,7 @@ def postgres_database():
         admin.execute(migration_sql("postgres_handoff_authority_v1.sql"))
         admin.execute(migration_sql("postgres_change_feed_v1.sql"))
         admin.execute(migration_sql("postgres_change_feed_v2.sql"))
+        admin.execute(migration_sql("postgres_change_feed_v3.sql"))
         admin.execute(migration_sql("postgres_compiled_plans_v1.sql"))
         admin.execute(migration_sql("postgres_operations_v1.sql"))
         admin.execute(migration_sql("postgres_monitoring_v1.sql"))

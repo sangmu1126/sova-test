@@ -335,3 +335,15 @@ def test_a_revision_registered_before_the_snapshot_still_supersedes(compiled, no
                                digest="f" * 64))
     impact = changes(compiled["revision"], compiled["plan"], issued=0)
     assert impact.plan_stale and "PLAN_INPUT_SUPERSEDED:contract" in impact.reasons
+
+
+def test_a_disclosed_vulnerability_invalidates_security_evidence_only(compiled, now):
+    """Part V.3-8 and §23.3: re-diagnose, do not stop the plan."""
+    impact = assess(compiled, [event(compiled, ChangeKind.VULNERABILITY, at=now,
+                                     env=TARGET, subject="openssl")],
+                    now=now + timedelta(minutes=1))
+    assert impact.commands_allowed
+    invalidated = set(dict(impact.stale_since))
+    assert by_kind(compiled, "target_control_test", "authority_readback") <= invalidated
+    assert not by_kind(compiled, "final_content_comparison", "placement_evidence",
+                       "measured_budget") & invalidated
