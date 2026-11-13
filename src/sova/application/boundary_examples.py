@@ -15,8 +15,8 @@ from sova.domain.system_graph import (
 )
 
 
-def example_dependency_snapshot(now):
-    contract = example_service_contract()
+def example_dependency_snapshot(now, contract=None):
+    contract = contract or example_service_contract()
     kinds = {
         "api-a": ResourceKind.SERVICE,
         "api-b": ResourceKind.SERVICE,
