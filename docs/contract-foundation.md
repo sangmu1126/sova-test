@@ -130,7 +130,15 @@ C3 자격 판정과 C1~C2 경계 분석은 `authenticate(record)`가 정확히 `
 
 C10은 작업 ID 중복, 의존 순서, 단위 밖 자원 참조, 없는 작업을 가리키는 의무, 복구 경계 역전을 검사하며 위반은 상태가 아니라 컴파일러 결함으로 거부한다. C11은 평가 시각을 뺀 정규 문서를 동결한다. 같은 동결 입력이면 평가 시각이 달라도 같은 `plan_digest`다. 계획 유효기간은 자격 만료와 snapshot 유효기간 중 이른 쪽이다.
 
-결과 상태는 `COMPILED`, `REQUIRES_REMEDIATION`, `NEEDS_EVIDENCE`, `UNSUPPORTED` 중 하나다(우선순위도 이 역순: 미지원 > 사전 변경 > 근거 부족). `COMPILED`이면 `approval_available=true`지만 `executable=false`, `authorizes_execution=false`다. C9·C12와 계획 간 충돌은 아래 절에서 다룬다. 여러 전략을 탐색해 고르는 `NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`는 아직 없고, 지금은 manifest가 지정한 템플릿 하나만 컴파일한다.
+결과 상태는 `COMPILED`, `REQUIRES_REMEDIATION`, `NEEDS_EVIDENCE`, `UNSUPPORTED` 중 하나다(우선순위도 이 역순: 미지원 > 사전 변경 > 근거 부족). `COMPILED`이면 `approval_available=true`지만 `executable=false`, `authorizes_execution=false`다. C9·C12와 계획 간 충돌은 아래 절에서 다룬다.
+
+**후보 탐색(§12.3).** `search_plans`는 고정된 후보 목록(전략별 manifest와 자격)을 같은 인증 입력으로 모두 컴파일한다. 필수 조건을 비용과 상쇄하지 않고 후보를 충족(`COMPILED`), 미충족(`REQUIRES_REMEDIATION`·`UNSUPPORTED`), 근거 부족(`NEEDS_EVIDENCE`)으로 나눈다. 순위는 충족 후보에만 매기며 규칙은 하나다. 쓰기 정지 예산(§16.4)에 비춰, 차단 구간 안에서 전체 데이터를 복사하는 계획을 최종 변경분만 적용하는 계획보다 뒤에 둔다. 추천은 참고일 뿐이며, 승인자는 정확한 계획 digest 하나를 골라 승인한다. 결과 상태는 다음과 같다.
+
+- 충족 후보가 하나라도 있으면 `COMPILED`
+- 모든 후보를 판정했는데 충족이 없으면 `NO_FEASIBLE_PLAN`. 주어진 후보 집합 안의 결론이며, 기술적으로 불가능하다는 주장이 아니다.
+- 근거 부족·잘못된 입력·탐색 상한(16개) 초과로 판정하지 못한 후보가 있으면 `SEARCH_INCOMPLETE`. 충족 후보를 찾았어도 이때는 `search_complete=false`로 표시한다.
+
+요구를 완화하지 않으며(`requirements_relaxed=false`), 완화하려면 계약 revision과 승인이 따로 필요하다.
 
 **승인 전 검토.** 승인자는 승인하라고 받은 digest와 동결 계획의 정규 텍스트로 다음을 실행해 계획을 검토한다. 이 명령은 읽기 전용이며 아무것도 승인하지 않는다.
 
@@ -468,7 +476,7 @@ IAM-10(종료 뒤 이전 발급자 거부)과 IAM-11(브리지·이중 발급자
 | 실제 차단·복사·활성화·경로 adapter | 미검증 | 구현 없음 |
 | 실제 변경 수집기·witness의 WORM 저장소 | 미검증 | 구현 없음 |
 | 실제 IdP 이전·로그인 시험 | 미검증 | 판정과 의무 결속까지만 |
-| 여러 전략 탐색(`NO_FEASIBLE_PLAN`) | 지원하지 않음 | manifest 지정 템플릿 하나만 컴파일 |
+| 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |
 | 사고 보류·증거 기한·사고 복구 확장 | 지원하지 않음 | 있으면 `NEEDS_EVIDENCE` |
 | 부분 효과(`PARTIAL_EFFECT`) 원장 연결 | 지원하지 않음 | 기존 원장에 상태 없음 |
 
