@@ -51,3 +51,7 @@ sova service-contract-inspect .local-notes/service-contract.json --tenant org-ex
 - 첫 후보 조회는 compiler의 전체 C0~C12, all-writer fencing, 데이터 비교, 사고 복구, Cognito 이전, AI/Harbor E2E를 완성하지 않는다.
 
 다음 단계는 계약에 결속한 의존성 snapshot·조사 공백·강한 정합성 경계와 인증된 qualification 저장/조회다. 그 뒤 typed 계획과 기존 승인·원장을 연결한다.
+
+## 원격 CI 상태 · 2026-11-14
+
+개인 저장소의 Actions가 `enabled=false`여서 새 브랜치 push 뒤에도 실행이 생성되지 않았다. Python 3.11/3.14 workflow는 준비했지만 원격 통과로 표시하지 않는다. 현재 로컬 Python 3.12.16 시험 결과와 다음 인수 항목은 [개발 기록](development/contract-foundation-2026-11-14.md)을 따른다.

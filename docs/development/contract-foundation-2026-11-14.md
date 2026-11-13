@@ -31,7 +31,7 @@
 - SKIP 3개: `test_otel_collector.py`의 OTLP protobuf 미설치. 새 계약/자격 시험은 SKIP하지 않았다.
 - `ruff check src tests`: 통과.
 - 실제 `python -m sova` subprocess: 새 계약 생성/검사에서 JSON kind·service ID·비등록·비실행을 검증. 기존 example/inspect/assess도 JSON 내용을 대조했다.
-- 새 workflow: Ruby Psych로 YAML 구문 확인. GitHub 실행 결과는 해당 CI run으로 별도 확인하며 이 기록의 로컬 PASS와 합치지 않는다.
+- 새 workflow: Ruby Psych로 YAML 구문 확인. 개인 브랜치 push 후 GitHub runs는 0건이었다. Actions permissions 읽기 전용 조회에서 `enabled=false`를 확인했다. 따라서 Python 3.11/3.14 원격 검증은 설정만 준비됐고 미실행이다. 저장소 Actions/권한 설정은 변경하지 않았다. 확인된 실행 결과는 위 Python 3.12.16 로컬 시험이며 원격 PASS로 합치지 않는다.
 - 사용자 원문 파일과 저장소 보존본의 bytes·길이·SHA-256 일치.
 - 문서 내부 상대 링크·git diff 형식 검사는 최종 문서 변경 뒤 수행한다.
 
