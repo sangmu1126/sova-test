@@ -53,6 +53,10 @@ _GATES = {
     "stale_route_probe": Gate.POSTFLIGHT,
     "measured_budget": Gate.POSTFLIGHT,
     "restore_drill": Gate.POSTFLIGHT,
+    "identity_leak_scan": Gate.REQUIREMENTS,
+    "identity_mapping_check": Gate.DATA,
+    "identity_flow_test": Gate.PROTECTION,
+    "identity_operations_check": Gate.POSTFLIGHT,
 }
 
 

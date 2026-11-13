@@ -190,6 +190,7 @@ def assess_strategy(
     authenticate,
     clock,
     required_grade=EvidenceGrade.LIVE,
+    evaluated_extensions=frozenset(),
 ):
     """Evaluate just C3 at a trusted caller's scope, never the whole contract.
 
@@ -232,7 +233,11 @@ def assess_strategy(
             "authorizes_execution": False,
         }
 
-    if EXTENSIONS & set(contract.document["spec"]):
+    if type(evaluated_extensions) is not frozenset or not evaluated_extensions <= EXTENSIONS:
+        raise ContractError("Evaluated extensions must name known contract extensions")
+    # The caller (the compiler) evaluates some extensions itself; any other
+    # extension still holds the candidate rather than being silently dropped.
+    if (EXTENSIONS - evaluated_extensions) & set(contract.document["spec"]):
         return result("NEEDS_EVIDENCE", "CONTRACT_EXTENSION_NOT_EVALUATED")
     if contract.profile not in manifest.profiles:
         return result("UNSUPPORTED", "CAPABILITY_PROFILE_UNSUPPORTED")

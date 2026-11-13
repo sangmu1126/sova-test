@@ -26,6 +26,7 @@ from sova.domain.capability_catalog import (
     assess_strategy,
 )
 from sova.domain.contracts import ContractError, canonical_json, utc
+from sova.domain.identity_contract import evaluate_identity
 from sova.domain.migration_units import DependencySnapshot, analyze_boundary
 from sova.domain.service_contracts import MigrationProfile, ServiceContract
 from sova.domain.system_graph import ResourceKind
@@ -281,6 +282,16 @@ def compile_revision(
     for code in boundary["blockers"]:
         blockers.append(_blocker("C2", code))
 
+    # C4 (Part II): identity extension, evaluated here so C3 does not hold it.
+    identity = evaluate_identity(contract)
+    evaluated = frozenset({"identity"}) if identity is not None else frozenset()
+    for code, impact in identity.blockers if identity else ():
+        if impact == "UNSUPPORTED":
+            unsupported = True
+        else:
+            remediation = True
+        blockers.append(_blocker("C4", code, extension="identity"))
+
     # C3: directional capability for exactly this template's operations.
     operations = required_operations(manifest.strategy_id)
     assessment = None
@@ -298,7 +309,7 @@ def compile_revision(
             contract, expected_tenant=expected_tenant, source=source, target=target,
             manifest=manifest, qualification=qualification,
             required_operations=operations, rows=rows, authenticate=authenticate,
-            clock=clock, required_grade=required_grade,
+            clock=clock, required_grade=required_grade, evaluated_extensions=evaluated,
         )
         if assessment["status"] == "UNSUPPORTED":
             unsupported = True
@@ -337,7 +348,7 @@ def compile_revision(
     plan = None
     if status == "COMPILED":
         plan = _freeze(contract, snapshot, boundary, manifest, qualification,
-                       source, target, inputs, spec)
+                       source, target, inputs, spec, identity)
     return plan, {
         "schema_version": 1,
         "compiler_version": COMPILER_VERSION,
@@ -354,7 +365,7 @@ def compile_revision(
 
 
 def _freeze(contract, snapshot, boundary, manifest, qualification, source, target,
-            inputs, spec):
+            inputs, spec, identity=None):
     members = tuple(boundary["members"])
     resources = {r.node_id: r.kind for r in snapshot.graph.resources}
     scopes = {r.node_id: r.scope.environment_id for r in snapshot.graph.resources}
@@ -363,6 +374,13 @@ def _freeze(contract, snapshot, boundary, manifest, qualification, source, targe
     prefix = boundary["unit_digest"][:16]
     ids = {s.step_id: f"{prefix}.{i:02d}.{s.step_id}" for i, s in enumerate(template)}
     obligations = _obligations(spec, template)
+    if identity is not None:
+        steps = {s.step_id for s in template}
+        for o in identity.obligations:
+            if o["required_at"] not in steps:
+                raise ContractError("Compiler consistency violation")
+            obligations.append(dict(o))
+        obligations.sort(key=lambda o: o["id"])
     evidence_by_step = {}
     for o in obligations:
         evidence_by_step.setdefault(o["required_at"], []).append(o["id"])
@@ -433,7 +451,8 @@ def _freeze(contract, snapshot, boundary, manifest, qualification, source, targe
         "deferred": {
             "lowering": "C9_NOT_LOWERED",
             "exit_contract": {"remove": sorted(spec["exit"]["remove"]),
-                              "allowed_remaining": sorted(spec["exit"]["allowed_remaining"])},
+                              "allowed_remaining": sorted(spec["exit"]["allowed_remaining"]),
+                              "identity": None if identity is None else identity.document},
             "remaining_strategy_decisions": boundary["remaining_strategy_decisions"],
         },
         "valid_until": utc(valid_until).isoformat(),

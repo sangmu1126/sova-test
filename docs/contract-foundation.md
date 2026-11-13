@@ -10,7 +10,7 @@
 
 정합성 분할은 `verified_partition`을 명시하고 분할 계약과 교차 분할 거래 거부를 요구한다. 이 선언의 사실성은 경계 분석·실측이 추가로 증명해야 한다. 현재 코드가 계약 작성자를 인증하거나 DB에 계약을 등록하지는 않는다.
 
-Identity/사고 보류/증거 기한/사고 복구 확장은 원문과 digest에 보존하지만 현재 의미 판정은 미구현이다. 결과에 `unevaluated_extensions`로 표시하고 C3 후보도 보류한다. 필드를 버리고 유리한 계약으로 바꾸지 않는다.
+Identity/사고 보류/증거 기한/사고 복구 확장은 원문과 digest에 보존한다. C0 검사는 의미를 판정하지 않으므로 결과에 `unevaluated_extensions`로 표시하고, 단독 C3 판정도 후보를 보류한다. 필드를 버리고 유리한 계약으로 바꾸지 않는다. 계획 컴파일러는 Identity 확장만 직접 평가한다([아래](#identity-확장-part-ii)). 나머지 확장이 있으면 컴파일 결과도 계속 `NEEDS_EVIDENCE`다.
 
 ## 오프라인 사용
 
@@ -93,6 +93,7 @@ C3 자격 판정과 C1~C2 경계 분석은 `authenticate(record)`가 정확히 `
 | C1~C2 | 서명된 snapshot의 경계. 요청 밖 구성원이 필요하면 추가할 구성원을 돌려줌 | `BOUNDARY_MERGE_REQUIRED`(사전 변경), 경계 차단 사유 |
 | C3 | 템플릿이 요구하는 adapter 작업 전체에 대한 방향별 자격 | 빠진 작업 목록, 자격 사유 |
 | C4 | 판단 가능한 제약: 외부 효과가 멱등 키·결과 조회·불명 시 보류를 모두 갖추지 않으면 무인 실행에서 제외 | `EXTERNAL_EFFECT_NOT_RECONCILABLE` |
+| C4 (Part II) | Identity 확장의 v1 구조와 안전하지 않은 가정 | 아래 Identity 절의 차단 코드 |
 
 실측이 필요한 계약 요구는 통과로 가정하지 않고 실행 게이트의 **검증 의무**로 결속한다.
 
@@ -110,7 +111,7 @@ C3 자격 판정과 C1~C2 경계 분석은 `authenticate(record)`가 정확히 `
 
 C10은 작업 ID 중복, 의존 순서, 단위 밖 자원 참조, 없는 작업을 가리키는 의무, 복구 경계 역전을 검사하며 위반은 상태가 아니라 컴파일러 결함으로 거부한다. C11은 평가 시각을 뺀 정규 문서를 동결한다. 같은 동결 입력이면 평가 시각이 달라도 같은 `plan_digest`다. 계획 유효기간은 자격 만료와 snapshot 유효기간 중 이른 쪽이다.
 
-결과 상태는 `COMPILED`, `REQUIRES_REMEDIATION`, `NEEDS_EVIDENCE`, `UNSUPPORTED` 중 하나다(우선순위도 이 역순: 미지원 > 사전 변경 > 근거 부족). `COMPILED`이면 `approval_available=true`지만 `executable=false`, `authorizes_execution=false`다. 환경별 명령으로 내리는 C9와 승인 C12, `NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`·`CONFLICT`(계획 간 잠금 충돌)는 아직 없다.
+결과 상태는 `COMPILED`, `REQUIRES_REMEDIATION`, `NEEDS_EVIDENCE`, `UNSUPPORTED` 중 하나다(우선순위도 이 역순: 미지원 > 사전 변경 > 근거 부족). `COMPILED`이면 `approval_available=true`지만 `executable=false`, `authorizes_execution=false`다. C9·C12와 계획 간 충돌은 아래 절에서 다룬다. 여러 전략을 탐색해 고르는 `NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`는 아직 없고, 지금은 manifest가 지정한 템플릿 하나만 컴파일한다.
 
 ## 기존 승인·명령 계약으로 내리기 (C9) 와 실행 직전 재확인 (C12)
 
@@ -123,7 +124,7 @@ C10은 작업 ID 중복, 의존 순서, 단위 밖 자원 참조, 없는 작업�
 - 검증 의무는 기존 `VerificationObligation`과 게이트로 옮긴다(위치 → REQUIREMENTS, 원본 차단·외부 효과 → PREFLIGHT, 데이터 → DATA, 업무 → BEHAVIOR, 보안 통제 → PROTECTION, 권한·경로·예산·복원 → POSTFLIGHT). 의무 종류마다 검증자 버전을 **반드시 이름으로** 지정해야 하며 기본값은 없다.
 - 목적은 `MIGRATION_PHASE`, `origin_plan_digest`는 컴파일 계획 digest, revision 묶음은 계약·manifest·자격·snapshot digest다. 같은 입력이면 같은 `LifecyclePlan` digest가 나온다.
 
-승인은 기존 `PlanApproval`을 그대로 쓴다. `verify_approved_plan`은 명령을 내기 전에 현재 인증된 입력으로 다시 컴파일하고 다시 내려서, 승인된 계획과 정확히 같을 때만 기존 `require_valid`(digest·목적·작성자≠승인자·기한)를 적용한다. 승인 뒤 계획이 바뀌었거나(AT-10), 같은 이름의 자원이 다시 만들어졌거나(AT-11), 검증자 키가 철회돼 입력이 인증되지 않으면(AT-13) 거부한다. 이 재확인은 명령 발급 경로에 아직 연결하지 않았다.
+승인은 기존 `PlanApproval`을 그대로 쓴다. `verify_approved_plan`은 명령을 내기 전에 현재 인증된 입력으로 다시 컴파일하고 다시 내려서, 승인된 계획과 정확히 같을 때만 기존 `require_valid`(digest·목적·작성자≠승인자·기한)를 적용한다. 승인 뒤 계획이 바뀌었거나(AT-10), 같은 이름의 자원이 다시 만들어졌거나(AT-11), 검증자 키가 철회돼 입력이 인증되지 않으면(AT-13) 거부한다. 이 재확인은 아래 수용 단계의 첫 관문이다.
 
 ## 계획 간 충돌 (§12.5, AT-38)
 
@@ -144,7 +145,7 @@ C10은 작업 ID 중복, 의존 순서, 단위 밖 자원 참조, 없는 작업�
 
 같은 키를 기다리면 상대 트랜잭션이 커밋한 잠금이 다음 문장에서 보이므로, 충돌하는 두 계획이 동시에 수용되지 않는다. 실제 PostgreSQL에서 두 스레드가 동시에 수용을 시도하는 시험을 새 DB로 15번 반복해 매번 하나만 수용됐다. 한 계획은 한 번만 수용되며, 해제한 뒤에도 같은 계획은 다시 수용하지 않는다. 다음 시도는 새 계획이어야 한다.
 
-새 마이그레이션 `postgres_handoff_claims_v1.sql`은 테넌트별 강제 RLS를 쓰고 권한을 부여하지 않는다. 실행 역할에는 이 테이블의 `SELECT`·`INSERT`·`UPDATE(released_at,released_by)`와 승인 테이블의 `UPDATE(lock_guard)`만 준다. 수용 결과는 `commands_issued=false`, `authorizes_execution=false`다. 실행권 발급은 기존 실행 원장이 맡으며 아직 이 수용 결과와 연결하지 않았다. 해제는 인계가 검증된 종료 상태에 도달한 뒤에만 호출해야 하며, 해제가 복구 결정을 대신하지 않는다.
+새 마이그레이션 `postgres_handoff_claims_v1.sql`은 테넌트별 강제 RLS를 쓰고 권한을 부여하지 않는다. 실행 역할에는 이 테이블의 `SELECT`·`INSERT`·`UPDATE(released_at,released_by)`와 승인 테이블의 `UPDATE(lock_guard)`만 준다. 수용 결과는 `commands_issued=false`, `authorizes_execution=false`다. 수용 자체는 명령을 내지 않는다. 명령은 아래 권한 기록을 거쳐서만 나오며, 권한 기록은 활성 잠금이 있는 수용된 계획에만 열린다. 해제는 인계가 검증된 종료 상태에 도달한 뒤에만 호출해야 하며, 해제가 복구 결정을 대신하지 않는다.
 
 ## 인계 권한 상태 (§15)
 
@@ -177,14 +178,57 @@ C10은 작업 ID 중복, 의존 순서, 단위 밖 자원 참조, 없는 작업�
 
 `PARTIAL_EFFECT`·`SECURITY_VIOLATION`·`CONTRACT_BREACH`는 효과 원장 상태가 아니라 검증·사고 경로에서 와야 하며 그 연결은 아직 없다. 실제 환경 adapter와 실제 데이터 이전은 수행하지 않았다.
 
+## Identity 확장 (Part II)
+
+계약의 `identity` 확장은 고정된 v1 구조만 받는다. 모르는 필드, 빠진 필드, 잘못된 타입, 빈 이름은 상태가 아니라 입력 오류로 거부한다. 판정 원칙은 명세 Part II §1이다. 비밀번호 해시·MFA 비밀·refresh token·세션이 사용자 프로필 내보내기와 함께 옮겨진다고 가정하지 않는다. 운영자 로그인은 이 확장의 범위가 아니다.
+
+**전략.** `remove_dependencies`가 비어 있으면 `RETAIN_SOURCE_IDP`다. 이 경우 계속 쓰는 IdP(`allowed_external_idps`)를 남는 의존으로 동결 계획에 적고, 독립성 증명 의무는 만들지 않는다. 남는 의존을 독립이라고 표시하지 않기 위해서다(IAM-AT-01). 제거할 의존이 있으면 `MIGRATE_IDENTITY`이며, 비밀번호 전환 정책에서 자격 증명 전략(`JUST_IN_TIME_ACCOUNT_BRIDGE`, `RESET_AND_REENROLL`)을 고른다.
+
+**탈출 조항과의 대조.** 인계 뒤에도 의존하는 IdP는 모두 서비스 계약의 `exit.allowed_remaining`에 있어야 한다. 그래서 탈출 조항이 Cognito 제거를 요구하는데 Identity 확장이 Cognito를 유지하면 컴파일하지 않는다(IAM-AT-02). 이전할 때 제거하는 IdP는 `exit.remove`에도 있어야 하며, 나중에 독립성을 시험할 기준이 이 탈출 조항이기 때문이다.
+
+**차단.** 다음 가정이 있으면 컴파일하지 않는다.
+
+| 조건 | 코드 | 결과 |
+|---|---|---|
+| refresh token 이식을 가정 | `REFRESH_TOKEN_PORTABILITY_ASSUMED` | 사전 변경 |
+| 교차 tenant 거부를 요구하지 않음 | `CROSS_TENANT_DENIAL_REQUIRED` | 사전 변경 |
+| 이중 발급자 허용인데 기간이 없거나 168시간 초과(`PT<n>H`만 허용) | `DUAL_ISSUER_WINDOW_UNBOUNDED` | 사전 변경 |
+| 이중 발급자를 쓰지 않는데 기간을 적음 | `DUAL_ISSUER_DURATION_WITHOUT_DUAL_ISSUER` | 사전 변경 |
+| 이전인데 안정적 주체 매핑을 요구하지 않음 | `STABLE_SUBJECT_MAPPING_REQUIRED` | 사전 변경 |
+| 알 수 없는 비밀번호 전환 정책(예: 해시 복사) | `CREDENTIAL_STRATEGY_UNSUPPORTED` | 미지원 |
+| MFA 필수인데 재등록을 허용하지 않음(MFA 비밀 이전 가정) | `MFA_TRANSFER_UNSUPPORTED` | 미지원 |
+| 재등록을 허용하지만 사용자 안내 승인이 없음 | `USER_COMMUNICATION_NOT_APPROVED` | 사전 변경 |
+| 강제 재인증도 이중 발급자도 허용하지 않음 | `REAUTHENTICATION_FORBIDDEN_WITHOUT_DUAL_ISSUER` | 사전 변경 |
+| 인계 뒤 쓸 IdP를 선언하지 않음 | `TARGET_IDP_UNDECLARED` | 사전 변경 |
+| 인계 뒤 쓸 IdP가 `exit.allowed_remaining`에 없음 | `IDP_NOT_ALLOWED_BY_EXIT_CONTRACT` | 사전 변경 |
+| 제거하는 IdP가 `exit.remove`에 없음 | `IDENTITY_REMOVAL_NOT_IN_EXIT_CONTRACT` | 사전 변경 |
+| 제거하는 IdP를 인계 뒤 쓸 IdP로도 적음 | `REMOVED_IDP_STILL_ALLOWED` | 사전 변경 |
+
+**Identity Gate 의무.** 통과하면 다음 의무를 계획 템플릿의 단계에 결속한다. 다른 계약 의무와 같이 서명 증거로만 충족된다.
+
+| 의무 | 결속 단계 | 게이트 | 조건 |
+|---|---|---|---|
+| IAM-07 비밀·개인정보 누출 없음 | 목적지 준비 | REQUIREMENTS | 항상 |
+| IAM-04 교차 tenant 거부 | 활성화 의도 기록 전 | PROTECTION | 항상 |
+| IAM-02 새 로그인·토큰 검증, 새 토큰 갱신 | 활성화 의도 기록 전 | PROTECTION | 증거 요구 시 |
+| IAM-03 MFA·복구 흐름 | 활성화 의도 기록 전 | PROTECTION | MFA 필수 시 |
+| IAM-04 원본·목적지 권한 동등성 | 활성화 의도 기록 전 | PROTECTION | 이전이고 요구 시 |
+| IAM-05 이중 발급자 수락 정책 | 경로 확정 | PROTECTION | 이중 발급자 사용 시 |
+| IAM-01 주체 매핑 유일성, IAM-06 계정 상태 동등성 | 최종 상태 검증 | DATA | 이전 시 |
+| IAM-09 감사·잠금·복구 경로, IAM-12 로그인 SLO | 안정화 | POSTFLIGHT | 항상 |
+
+IAM-08(원본 IdP 차단 상태의 cold start), IAM-10(종료 뒤 이전 발급자 거부), IAM-11(브리지·이중 발급자 퇴역)은 인계 뒤의 독립성 시험이다. 이 계획의 의무가 아니라 동결 계획의 `deferred.exit_contract.identity`에 남기며, 탈출 계약 시험(§20)에서 다룬다.
+
+C0 검사와 단독 C3는 Identity 의미를 판정하지 않는다. 컴파일러가 C4에서 직접 평가한 경우에만 C3가 Identity를 보류 사유에서 뺀다. 사고 보류·증거 기한·사고 복구 확장이 함께 있으면 여전히 `NEEDS_EVIDENCE`다. 실제 IdP 연결, 사용자 내보내기, 로그인 시험 실행은 하지 않는다. 이 단계는 계약이 안전한 가정만 담는지 판정하고, 실측해야 할 항목을 실행 게이트에 묶는다.
+
+동결 계획에 `deferred.exit_contract.identity` 항목이 새로 생겼다(Identity 확장이 없으면 `null`). 그래서 같은 입력이라도 이전 컴파일러의 계획과 digest가 다르다. 그 전에 승인한 계획은 C12 재확인에서 "계획이 바뀜"으로 거부되며, 다시 승인해야 한다. 개인 개발 브랜치 밖에 저장된 승인은 없다.
+
 ## 기존 구현 재사용
 
 - JSON decoder를 순수 domain 유틸리티로 옮기고 기존 `graph_codec.json_document` import를 유지했다. domain이 파일/네트워크 adapter에 의존하지 않도록 했다.
 - 기존 보안 서명·현재 등록·보류 판정은 security가 소유한다. 새 자격 인증용 host adapter는 기존 신뢰 경계를 소비하도록 후속 구현한다.
 - 계획·승인·PostgreSQL 원장·outbox·실행권·효과 조정, 기존 실제 대응 실행기는 변경하지 않았다.
-- 첫 후보 조회는 compiler의 전체 C0~C12, all-writer fencing, 데이터 비교, 사고 복구, Cognito 이전, AI/Harbor E2E를 완성하지 않는다.
-
-다음 단계는 수용된 계획만 기존 실행 원장(실행권·epoch·효과)에서 명령을 받을 수 있게 연결하고, 인계 상태 머신(§15.2)의 단계 전이를 원장에 기록하는 일이다.
+- 이 구현은 실제 all-writer fencing, 데이터 비교, 사고 복구, Cognito 사용자 이전, AI/Harbor E2E를 수행하지 않는다. 그런 실측은 adapter와 서명 증거 생산자가 맡고, 여기서는 그 결과를 요구하고 판정하는 쪽만 만든다.
 
 ## 원격 CI 상태 · 2026-11-14
 
