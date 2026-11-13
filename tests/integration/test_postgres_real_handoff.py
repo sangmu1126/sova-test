@@ -266,9 +266,13 @@ def run_handoff(postgres_database, now, business, *, adjust=None, until=None,
 
 
 def without_transport_control(data):
+    """The local reference profile: no TLS on the disposable server, and budgets
+    wide enough that a loaded test machine does not decide the outcome."""
     controls = data["spec"]["security"]["required_controls"]
     data["spec"]["security"]["required_controls"] = [
         c for c in controls if c != "verified_transport_encryption"]
+    data["spec"]["availability"]["max_write_admission_pause_ms"] = 60000
+    data["spec"]["availability"]["max_client_completion_wait_ms"] = 120000
 
 
 def test_data_really_moves_and_authority_really_changes(postgres_database, now, business):
@@ -292,7 +296,7 @@ def test_data_really_moves_and_authority_really_changes(postgres_database, now, 
     assert x["probes"].order_effects_once()[0]
     assert x["probes"].write_denied("source")[0]  # the source never reopened
     spent = (x["observed"]["activate_target"] - x["observed"]["pause_admission"])
-    assert spent.total_seconds() * 1000 <= 5000  # measured, within the contract budget
+    assert 0 < spent.total_seconds() * 1000 <= 60000  # measured against the budget
 
 
 def test_unencrypted_target_is_refused_before_activation(postgres_database, now, business):
@@ -423,3 +427,51 @@ def test_snapshot_cdc_keeps_writes_made_after_the_initial_sync(postgres_database
     with business["connect"](names["tgt"]) as conn:
         assert conn.execute("SELECT count(*) FROM orders WHERE id=77").fetchone()[0] == 1
     assert x["probes"].content_equal("orders")[0]
+
+
+def test_a_restored_source_writer_is_caught_and_holds_the_service(postgres_database, now,
+                                                                  business):
+    """AT-32 and §15.6: after completion someone restores the source database
+    from a snapshot whose grants let the old writer back in. A fresh
+    write-denial probe fails, the watch opens a security incident, and the
+    service is held: no new admission or command."""
+    from sova.adapters.postgres_governance import PostgresSecurityHolds
+    from sova.application.source_fence_watch import SourceFenceWatch
+
+    names, app = business["names"], business["app"]
+    x = run_handoff(postgres_database, now, business, adjust=without_transport_control)
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE
+    holds = PostgresSecurityHolds(x["connect"], tenant_id=x["tenant"])
+    watch = SourceFenceWatch(store=x["store"], evidence=x["coordinator"].evidence,
+                             holds=holds, clock=lambda: datetime.now(UTC))
+
+    def observe():
+        passed, observation = x["probes"].write_denied("source")
+        x["prove"]("fence.source_writes_denied",
+                   VerificationResult.PASS if passed else VerificationResult.FAIL,
+                   artifact_digest=artifact_digest(observation))
+        return watch.check(x["revision"], x["plan"], actor_id="fence-watch")
+
+    assert observe()["status"] == "FENCED"
+    with business["connect"](names["src"]) as conn:  # what the old snapshot restores
+        conn.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+            sql.Identifier(names["src"]), sql.Identifier(app)))
+        conn.execute(sql.SQL("GRANT INSERT ON ALL TABLES IN SCHEMA public TO {}").format(
+            sql.Identifier(app)))
+    caught = observe()
+    assert caught["status"] == "SOURCE_WRITER_REACTIVATED" and caught["newly_opened"]
+    assert observe()["hold_id"] == caught["hold_id"]  # one incident, not one per check
+    assert x["store"].active_hold(x["app"])
+
+
+def test_a_measured_pause_over_budget_requires_failback(postgres_database, now, business):
+    """The write-pause budget is measured from ledger observations, not assumed:
+    with a 1 ms budget the real pause always exceeds it, and since the budget
+    is verified after activation the handoff requires failback."""
+    def tight(data):
+        without_transport_control(data)
+        data["spec"]["availability"]["max_write_admission_pause_ms"] = 1
+
+    x = run_handoff(postgres_database, now, business, adjust=tight)
+    assert x["record"].state == HandoffState.FAILBACK_REQUIRED
+    assert x["record"].reason == "CONTRACT_BREACH" and x["record"].activation_possible

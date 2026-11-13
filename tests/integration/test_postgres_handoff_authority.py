@@ -134,7 +134,7 @@ def test_released_claims_and_unfinished_units_refuse_changes(handoff):
 
 
 def open_hold(h, hold_id="incident-1"):
-    from datetime import UTC, datetime
+    from datetime import UTC, datetime, timedelta
 
     from sova.adapters.postgres_governance import PostgresSecurityHolds
     from sova.domain.contracts import ResourceScope
@@ -143,7 +143,7 @@ def open_hold(h, hold_id="incident-1"):
     return PostgresSecurityHolds(h["connect"], tenant_id=h["tenant"]).open_hold(
         SecurityHold(hold_id, ResourceScope(h["tenant"], h["app"], "aws-source", "api-a"),
                      "incident-commander", "Suspected credential compromise",
-                     datetime.now(UTC)))
+                     datetime.now(UTC) - timedelta(seconds=1)))
 
 
 def test_security_hold_allows_only_safety_ward_transitions(handoff):

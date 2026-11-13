@@ -205,7 +205,7 @@ def test_active_security_hold_blocks_admission(stores, now):
     connect = stores["claims"].connect
     PostgresSecurityHolds(connect, tenant_id=stores["tenant"]).open_hold(SecurityHold(
         "incident-1", ResourceScope(stores["tenant"], "orders-service", "aws-source", "db"),
-        "incident-commander", "Suspected compromise", datetime.now(UTC)))
+        "incident-commander", "Suspected compromise", datetime.now(UTC) - timedelta(seconds=1)))
     with pytest.raises(RepositoryConflict, match="security hold"):
         admit(stores, orders)
     assert stores["claims"].active() == ()

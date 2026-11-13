@@ -59,7 +59,7 @@ def test_security_hold_mid_handoff_is_recorded_as_a_security_violation(started):
     advance_to(h, "copy_content")
     PostgresSecurityHolds(h["connect"], tenant_id=h["tenant"]).open_hold(SecurityHold(
         "incident-7", ResourceScope(h["tenant"], h["app"], "aws-source", "db"),
-        "incident-commander", "Suspected credential compromise", datetime.now(UTC)))
+        "incident-commander", "Suspected credential compromise", datetime.now(UTC) - timedelta(seconds=1)))
     held = h["coordinator"].supervise(h["revision"], h["plan"], actor_id="supervisor")
     assert held.state == HandoffState.SAFE_HOLD and held.reason == "SECURITY_VIOLATION"
     assert h["store"].current(h["app"], held.unit_digest) == held
@@ -80,7 +80,7 @@ def test_readiness_reports_the_hold_and_the_remaining_recovery(started):
     advance_to(h, "copy_content")
     PostgresSecurityHolds(h["connect"], tenant_id=h["tenant"]).open_hold(SecurityHold(
         "incident-9", ResourceScope(h["tenant"], h["app"], "aws-source", "db"),
-        "incident-commander", "Suspected credential compromise", datetime.now(UTC)))
+        "incident-commander", "Suspected credential compromise", datetime.now(UTC) - timedelta(seconds=1)))
     h["coordinator"].supervise(h["revision"], h["plan"], actor_id="supervisor")
     after = readiness.assess(h["revision"], h["plan"])
     assert after["commands"]["blocked_by"] == ["AUTHORITY_SAFE_HOLD", "SECURITY_HOLD_ACTIVE"]
