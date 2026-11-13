@@ -52,6 +52,19 @@ class PostgresHandoffProbes:
         return not wrote, {"probe": "write_denied", "database": self._db(which),
                            "outcome": outcome}
 
+    def cold_start_without_source(self):
+        """A fresh application session completes a write on the target while the
+        source cannot be reached at all (independence drill, §20.1, AT-35)."""
+        try:
+            with self.connect_as(self.source_db, self.app_role):
+                pass
+            source = "reachable"
+        except psycopg.OperationalError:
+            source = "unreachable"
+        wrote, outcome = self._try_write("target")
+        return source == "unreachable" and wrote, {
+            "probe": "cold_start_without_source", "source": source, "target": outcome}
+
     def single_writer(self):
         target, target_outcome = self._try_write("target")
         source, source_outcome = self._try_write("source")

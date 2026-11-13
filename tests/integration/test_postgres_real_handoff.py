@@ -475,3 +475,34 @@ def test_a_measured_pause_over_budget_requires_failback(postgres_database, now, 
     x = run_handoff(postgres_database, now, business, adjust=tight)
     assert x["record"].state == HandoffState.FAILBACK_REQUIRED
     assert x["record"].reason == "CONTRACT_BREACH" and x["record"].activation_possible
+
+
+def test_independence_is_measured_with_the_source_really_unreachable(
+        postgres_database, now, business):
+    """AT-35: with the source database blocked, a new application session still
+    does business on the target. What cannot be measured here (source compute,
+    platform revocation) stays UNKNOWN, so provider exit is not claimed."""
+    names = business["names"]
+    x = run_handoff(postgres_database, now, business, adjust=without_transport_control)
+    with psycopg.connect(business["dsn"], autocommit=True) as admin:
+        admin.execute(sql.SQL("ALTER DATABASE {} ALLOW_CONNECTIONS false").format(
+            sql.Identifier(names["src"])))
+    measured = {
+        "exit.removed.source-db.blocked_cold_start": x["probes"].cold_start_without_source,
+        "exit.restart.cold_start_fresh_credentials": x["probes"].cold_start_without_source,
+        "exit.operations.batch_backup_restore_audit_deploy":
+            lambda: x["probes"].restore_drill(names["scratch"]),
+    }
+    for o in x["readiness"].obligations(x["revision"], x["plan"]):
+        if o.obligation_id in measured:
+            passed, observation = measured[o.obligation_id]()
+            x["prove"](o.obligation_id, VerificationResult.PASS if passed else
+                       VerificationResult.FAIL, obligation=o,
+                       artifact_digest=artifact_digest(observation))
+    levels = {k: v["status"] for k, v in
+              x["readiness"].assess(x["revision"], x["plan"])["levels"].items()}
+    assert levels["DATA_IDENTITY_INDEPENDENT"] == "PASS"
+    assert levels["RESTART_VERIFIED"] == "PASS" and levels["OPERATIONS_VERIFIED"] == "PASS"
+    assert levels["COMPUTE_INDEPENDENT"] == "UNKNOWN"
+    assert levels["PLATFORM_EXIT_VERIFIED"] == "UNKNOWN"
+    assert levels["PROVIDER_EXIT_VERIFIED"] == "UNKNOWN"

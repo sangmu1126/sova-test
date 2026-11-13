@@ -8,7 +8,7 @@
 
 ## 먼저 볼 문서
 
-- [계약·방향별 자격 첫 구현](docs/contract-foundation.md): 새 CLI, 평가 API, 검증 범위와 다음 단계.
+- [계약·능력 기반 인계 구현 안내](docs/contract-foundation.md): 계약에서 인계 완료·failback·독립성 판정까지의 control plane, 로컬 PostgreSQL 실측 시나리오, 기능별 완료 표현.
 - [2026-11-14 개인 개발 기준](docs/adr/0001-contract-driven-foundation.md): 계약·능력 기반 통합 명세 1.1과 단계별 구현 순서. 기존 실검증 결과를 새 제품 전체 완료로 합산하지 않는다.
 
 - [전체 문서 목차](docs/README.md): 목표 설계, 현재 실행 안내, 과거 검증을 구분한다.
