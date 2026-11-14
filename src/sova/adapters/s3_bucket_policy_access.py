@@ -2,9 +2,12 @@
 
 For S3-compatible stores whose bucket policies name principals and give an
 explicit Deny precedence over any Allow: AWS S3, and gateways with the same
-policy semantics (measured locally with versitygw accounts). Principals are
-written exactly as the provider names them (an IAM ARN on AWS, an account on
-a gateway).
+policy semantics (measured locally with versitygw accounts).
+
+The handoff names writers logically ("app", "batch"); each store names them
+its own way (an IAM role ARN on AWS, an account on a gateway). ``principals``
+maps the logical names to this store's principals, so one handoff can fence
+the same writer on two providers. Without a mapping the names are used as is.
 
 The handoff owns the statements whose ``Sid`` starts with ``SovaHandoff`` and
 never changes any other statement. Every decision is taken from the policy
@@ -58,12 +61,23 @@ def _covers(patterns, value):
 
 
 class S3BucketPolicyAccess:
-    def __init__(self, client, bucket):
+    def __init__(self, client, bucket, *, principals=None):
         if not callable(getattr(client, "get_bucket_policy", None)):
             raise ContractError("S3 API client required")
+        if principals is not None and (type(principals) is not dict or not all(
+                type(k) is str and type(v) is str and v for k, v in principals.items())):
+            raise ContractError("Logical writer names mapped to principals required")
         self.client, self.bucket = client, bucket
+        self.principals = principals
         self.arn = f"arn:aws:s3:::{bucket}"
         self.objects = self.arn + "/*"
+
+    def _p(self, name):
+        if self.principals is None:
+            return name
+        if name not in self.principals:
+            raise ContractError("Writer has no principal on this store")
+        return self.principals[name]
 
     # -- policy document --------------------------------------------------------
     def _policy(self):
@@ -111,11 +125,12 @@ class S3BucketPolicyAccess:
         document = self._existing()
         self._put(document["Statement"], {
             "Sid": SID_PREFIX + name, "Effect": "Deny",
-            "Principal": {"AWS": sorted(principals)}, "Action": ["s3:*"],
+            "Principal": {"AWS": sorted(self._p(p) for p in principals)}, "Action": ["s3:*"],
             "Resource": [self.arn, self.objects]})
         self._store(document)
 
     def open_writer(self, principal):
+        principal = self._p(principal)
         document = self._existing()
         kept = []
         for statement in document["Statement"]:
@@ -146,13 +161,15 @@ class S3BucketPolicyAccess:
             and (by is None or s.get("Sid") == SID_PREFIX + by)
             and all(_covers(s.get("Action"), a) for a in _WRITES)
             and _covers(s.get("Resource"), self.objects)]
-        return {p: any(self._matches(s, p) for s in statements) for p in principals}
+        names = {p: self._p(p) for p in principals}  # an unknown writer is an error
+        return {p: any(self._matches(s, name) for s in statements) for p, name in names.items()}
 
     def _touches_objects(self, resources):
         return any(r == "*" or _covers(r, self.objects)
                    or r.lower().startswith(self.arn.lower() + "/") for r in _list(resources))
 
     def writable_by(self, principal):
+        principal = self._p(principal)
         document = self._policy()
         if document is None:
             return False

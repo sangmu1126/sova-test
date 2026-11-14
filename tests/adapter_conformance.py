@@ -61,6 +61,19 @@ ACTIONS = tuple(dict.fromkeys(a for steps in SEQUENCES.values() for a in steps))
 VERIFY_ONLY = frozenset({"verify_final_state", "verify_return_target"})
 
 
+def changed(before, after, path="state"):
+    """Where two observed states differ, for a failure message."""
+    if isinstance(before, tuple) and isinstance(after, tuple) and len(before) == len(after):
+        return [p for i, (a, b) in enumerate(zip(before, after))
+                for p in changed(a, b, f"{path}[{i}]")]
+    if before == after:
+        return []
+    a, b = str(before), str(after)
+    at = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))
+    start = max(0, at - 60)
+    return [f"{path} from char {at}: ...{a[start:at + 100]} -> ...{b[start:at + 100]}"]
+
+
 def command(adapter_id, action, *, step=None):
     now = datetime.now(UTC)
     return EffectCommand(
@@ -103,7 +116,7 @@ class HandoffAdapterConformance:
         for action in ACTIONS:
             if action not in VERIFY_ONLY:
                 assert readback(world.adapter(), action) == EffectStatus.UNKNOWN, action
-        assert world.state() == before  # reading changed nothing
+        assert world.state() == before, changed(before, world.state())  # reading changed nothing
 
     @pytest.mark.parametrize("strategy", sorted(SEQUENCES))
     def test_forward_handoff_holds_every_property(self, world, strategy):
@@ -111,16 +124,20 @@ class HandoffAdapterConformance:
             before = world.state()
             if action not in VERIFY_ONLY:
                 assert readback(world.adapter(), action) == EffectStatus.UNKNOWN, action
-            assert world.state() == before, f"readback of {action} changed the systems"
+            after = world.state()
+            assert after == before, (f"readback of {action} changed the systems",
+                                     changed(before, after))
             apply(world.adapter(), action)
             # A different instance, which never ran the action, confirms it.
             assert readback(world.adapter(), action) == EffectStatus.APPLIED, action
             once = world.state()
             apply(world.adapter(), action)
-            assert world.state() == once, f"{action} is not idempotent"
+            twice = world.state()
+            assert twice == once, (f"{action} is not idempotent", changed(once, twice))
             assert readback(world.adapter(), action) == EffectStatus.APPLIED, action
             if action in VERIFY_ONLY:
-                assert once == before, f"verification {action} changed the systems"
+                assert once == before, (f"verification {action} changed the systems",
+                                        changed(before, once))
             self._semantics(world, action)
 
     def _semantics(self, world, action):

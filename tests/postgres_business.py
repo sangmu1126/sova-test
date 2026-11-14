@@ -34,6 +34,31 @@ class Route:
         self.database = database
 
 
+def prepare(names, app, batch, connect, connect_as, *, schema_on):
+    """The order schema, the writers' grants on the source, and business history
+    written by the application before any handoff starts."""
+    for name in schema_on:
+        with connect(name) as conn:
+            conn.execute(SCHEMA)
+    with connect(names["src"]) as conn:
+        conn.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "
+                             "public TO {}").format(sql.Identifier(app)))
+        conn.execute(sql.SQL("GRANT USAGE, SELECT ON SEQUENCE order_number_seq TO {}").format(
+            sql.Identifier(app)))
+        conn.execute(sql.SQL("GRANT INSERT ON orders TO {}").format(sql.Identifier(batch)))
+        conn.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+            sql.Identifier(names["src"]), sql.Identifier(batch)))  # its own, not PUBLIC's
+    with connect_as(names["src"], app) as conn:  # business before the handoff
+        for i in range(1, 51):
+            conn.execute("INSERT INTO orders VALUES (%s, %s, %s, %s)",
+                         (i, f"customer-{i % 7}", f"key-{i}", i * 10))
+            conn.execute("INSERT INTO idempotency_results VALUES (%s, %s, 'confirmed')",
+                         (f"customer-{i % 7}", f"key-{i}"))
+            conn.execute("INSERT INTO work_items VALUES (%s, %s, 'done')", (i, i))
+        for _ in range(10):  # order numbers already handed out to customers
+            conn.execute("SELECT nextval('order_number_seq')")
+
+
 @pytest.fixture
 def business(postgres_database):
     """Source, target, scratch and another tenant's database, plus the app role."""
@@ -59,25 +84,7 @@ def business(postgres_database):
     def connect_as(database, role):
         return psycopg.connect(dsn, dbname=database, user=role)
 
-    for name in (names["src"], names["tgt"], names["scratch"]):
-        with connect(name) as conn:
-            conn.execute(SCHEMA)
-    with connect(names["src"]) as conn:
-        conn.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "
-                             "public TO {}").format(sql.Identifier(app)))
-        conn.execute(sql.SQL("GRANT USAGE, SELECT ON SEQUENCE order_number_seq TO {}").format(
-            sql.Identifier(app)))
-        conn.execute(sql.SQL("GRANT INSERT ON orders TO {}").format(sql.Identifier(batch)))
-        conn.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
-            sql.Identifier(names["src"]), sql.Identifier(batch)))  # its own, not PUBLIC's
-    with connect_as(names["src"], app) as conn:  # business before the handoff
-        for i in range(1, 51):
-            conn.execute("INSERT INTO orders VALUES (%s, %s, %s, %s)",
-                         (i, f"customer-{i % 7}", f"key-{i}", i * 10))
-            conn.execute("INSERT INTO idempotency_results VALUES (%s, %s, 'confirmed')",
-                         (f"customer-{i % 7}", f"key-{i}"))
-            conn.execute("INSERT INTO work_items VALUES (%s, %s, 'done')", (i, i))
-        for _ in range(10):  # order numbers already handed out to customers
-            conn.execute("SELECT nextval('order_number_seq')")
+    prepare(names, app, batch, connect, connect_as,
+            schema_on=(names["src"], names["tgt"], names["scratch"]))
     yield dict(names=names, app=app, batch=batch, connect=connect, connect_as=connect_as,
                dsn=dsn)

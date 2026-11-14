@@ -724,6 +724,38 @@ suspend는 새 실행만 막는다. 그래서 이미 도는 Job이 있으면 그
 
 Deployment 형태의 operator·GitOps 동기화 같은 다른 자동화의 멈춤, Ingress·Gateway·DNS 수준의 전환, 관리형 클러스터의 IAM 기반 인증(IRSA·Workload Identity)은 다루지 않았다.
 
+## 실제 AWS 계정 실측 (2026-11-14)
+
+개인 AWS 계정(ap-northeast-2)에서 사용자 승인을 받아 시험했다. 자원 이름은 모두 `sova-test-…-<실행번호>`이고 태그를 붙였으며, 시험 직후 실행 번호로 찾아 지웠다. 기존 자원은 읽기만 했다. 시험은 `aws_live` 표시가 있고, `SOVA_TEST_AWS_LIVE=1`과 실행 번호를 명시해야만 돈다.
+
+| 경로 | 결과 | 확인한 것 |
+|---|---|---|
+| AWS S3(클라우드 원본) → 로컬 S3 호환 저장소(온프레미스 목적지) | 공통 적합성 시험 9개 통과 | 쓰기 주체는 AWS 쪽 IAM role, 온프레미스 쪽 gateway 계정. 같은 논리 writer를 각 저장소의 주체 이름으로 차단·활성화. AWS 정책 평가가 실제로 쓰기를 거부·허용 |
+| AWS RDS PostgreSQL 17.11 → 로컬 PostgreSQL | 공통 적합성 시험 8개 통과, 1개 건너뜀 | superuser 없이도 기존 앱 세션 종료, 내용·sequence·ORDER-01 동일, 목적지에서 업무 지속. RDS는 prepared transaction이 기본으로 꺼져 있어 그 시험은 해당 없음 |
+| 전송 암호화 probe | RDS에서 통과 | TLS는 RDS CA로 `verify-full` 검증. 로컬 참조 서버는 계속 FAIL |
+| 권한 witness, S3 Object Lock | 2개 통과 | governance 모드 1시간 보존. 버전 삭제·보존 단축이 거부되고, 삭제 표식은 감지 |
+| CloudTrail 변경 수집기 | 1개 통과 | 실제 버킷 정책 변경이 91초 뒤 이벤트 이력에 보여 `policy` 사건으로 한 번 기록. watermark는 15분 지연 원칙 유지 |
+
+실측 중 드러난 것은 다음과 같다.
+- **provider마다 같은 writer를 다르게 부른다.** AWS는 IAM role ARN, 온프레미스 gateway는 계정 이름이다. 그래서 adapter는 논리 이름만 다루고, 각 쪽 `BucketAccess`가 자기 주체 이름으로 바꾼다. 매핑에 없는 writer는 조용히 넘기지 않고 오류다(처음에는 거부 문장이 없을 때 조용히 넘겼다).
+- **AWS는 같은 버킷 정책을 읽을 때마다 주체 목록의 순서를 다르게 돌려준다.** adapter는 원래 집합으로 판정해 영향이 없었다. 시험 world의 상태 비교가 텍스트였기에 집합 비교로 고쳤다. 증거나 상태를 정책 텍스트 그대로 비교하면 안 된다.
+- 한 클라이언트에서 버킷 정책을 쓴 직후 읽기에는 낡은 값이 보이지 않았다(각 20초, 38회).
+
+**CloudTrail 변경 수집기.** `AwsCloudTrailCollector`는 등록한 자원마다 이벤트 이력에서 쓰기 호출을 찾아 변경 사건으로 기록한다.
+- 권한을 바꾸는 호출(버킷 정책·ACL·공개 차단·보안 그룹 규칙 등)은 `policy`다.
+- 자원 자체를 바꾸는 호출(생성·삭제·버전 관리·암호화·복원·재시작 등)은 `resource`다.
+- 그 밖의 쓰기는 버리지 않고 `unclassified`다. 예를 들어 `ModifyDBInstance`는 크기 변경·네트워크 변경·역할 변경이 섞여 있다.
+- 읽기 호출과 AWS가 거부한 호출은 변경이 아니다.
+- CloudTrail은 호출 몇 분 뒤에 이력에 넣는다(최대 15분). 그래서 watermark는 `지금 - 15분`을 넘지 않는다. 매번 watermark부터 다시 찾으므로 늦게 들어온 사건도 한 번 기록된다. 재시작하면 피드의 watermark에서 이어 간다.
+- 이벤트 이력은 한 리전의 90일 관리 이벤트이며, 객체 쓰기 같은 데이터 이벤트는 없다. 운영에서는 조직 단위 trail이 원천이어야 한다.
+
+하지 않은 것은 다음과 같다.
+- S3 compliance 모드: 보존 기간 동안 지울 수 없어 실계정에서는 governance 모드만 시험했다.
+- RDS의 IAM DB 인증, snapshot 복원으로 원본 권한이 되살아나는 시나리오(AT-32)의 실계정 재현
+- 쓰기 정지 시간·처리량 측정
+- 다른 리전·다른 계정 사이의 경로
+- GCP·Azure·NAVER Cloud
+
 ## 완료 표현 (Part V.4)
 
 | 기능 | 상태 | 근거 |
@@ -742,13 +774,15 @@ Deployment 형태의 operator·GitOps 동기화 같은 다른 자동화의 멈�
 | 준비 상태 조회·계획 검토 명령 | 모의 시험 통과 | 단위, PostgreSQL |
 | 활성화 뒤 원본 차단 감시 | 모의 시험 통과 | 로컬 PostgreSQL에서 권한 복원 실측 |
 | PostgreSQL 간 offline copy 참조 adapter·실측 probe | 모의 시험 통과 | 로컬 일회용 PostgreSQL에서 실제 권한·세션·데이터 변경과 실측 |
+| AWS RDS PostgreSQL → 로컬 PostgreSQL offline copy | 실환경 시험 통과 | 개인 AWS 계정, RDS 17.11 db.t4g.micro → 로컬 17.11. 이 방향·프로필에 한함 |
 | adapter 공통 적합성 시험 | 모의 시험 통과 | PostgreSQL·S3 adapter, 결함 주입 9종 검출 |
-| S3 호환 객체 저장소 간 offline copy 참조 adapter | 모의 시험 통과 | 로컬 versitygw 두 개(독립 계정·저장소·정책)에서 실제 정책 판정·복사·실측. AWS S3·다른 클라우드에서는 미검증 |
+| S3 호환 객체 저장소 간 offline copy 참조 adapter | 모의 시험 통과 | 로컬 versitygw 두 개(독립 계정·저장소·정책)에서 실제 정책 판정·복사·실측 |
+| AWS S3 → 로컬 S3 호환 저장소 offline copy | 실환경 시험 통과 | 개인 AWS 계정, IAM role writer. 이 방향에 한함. 다른 클라우드 미검증 |
 | Kubernetes Service 경로 전환·CronJob 관리권 멈춤 실측 | 모의 시험 통과 | 로컬 kind, 최소 권한 token. 관리형 클러스터 미검증 |
 | 관리형 DB·클라우드 IAM 기반 접근 제어·Ingress/DNS 진입점용 adapter | 미검증 | 구현 없음 |
 | PostgreSQL 카탈로그 변경 수집기 | 모의 시험 통과 | 로컬 PostgreSQL, 시점 기반 귀속 |
-| 권한 witness의 Object Lock 저장소 | 모의 시험 통과 | 로컬 versitygw compliance 잠금에서 실제 삭제·단축·숨기기 시도. AWS S3 미검증 |
-| 클라우드 변경 수집기 | 미검증 | 구현 없음 |
+| 권한 witness의 Object Lock 저장소 | 실환경 시험 통과(governance) | AWS S3 governance 모드 실측, compliance 모드는 로컬 versitygw만 |
+| AWS CloudTrail 변경 수집기 | 실환경 시험 통과 | 이벤트 이력 조회, 실제 정책 변경 91초 뒤 기록. 조직 trail·GCP Audit Logs 미검증 |
 | Keycloak 간 계정 이전·OIDC 실측 probe | 모의 시험 통과 | 로컬 Keycloak 두 대에서 실제 로그인·서명 검증. 계획 템플릿 미연결 |
 | Cognito 등 운영 IdP 이전, MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |
@@ -757,7 +791,7 @@ Deployment 형태의 operator·GitOps 동기화 같은 다른 자동화의 멈�
 
 인계 기록(권한 이력, 변경 사건, watermark 소유, 동결 계획, 구조 재확인, 감사)은 실행 역할로 DELETE·UPDATE·TRUNCATE가 실제로 거부됨을 시험했다(AT-37). 보존 기간·WORM은 별도 저장소의 몫이다.
 
-어느 항목도 실환경 시험 통과가 아니다. 쓰기 정지 시간·복제 손실·세션 연속성은 측정하지 않았으므로 무중단·RPO=0·세션 무중단 이전을 주장하지 않는다.
+실환경 시험 통과는 위 표에 적은 AWS 경로와 그 방향·프로필에만 해당한다. 다른 클라우드·방향·관리형 서비스로 일반화하지 않는다. 쓰기 정지 시간·복제 손실·세션 연속성은 측정하지 않았으므로 무중단·RPO=0·세션 무중단 이전을 주장하지 않는다.
 
 ## 기존 구현 재사용
 

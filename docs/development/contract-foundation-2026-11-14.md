@@ -86,7 +86,9 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 | S3 호환 객체 저장소 adapter | `e390912` | 데이터 이전이 직접 운영하는 PostgreSQL 하나뿐이었음. 객체 저장소는 AWS·다른 클라우드·온프레미스가 공유하는 S3 API로 옮길 수 있어, 데이터 이동은 provider와 무관하게 두고 접근 제어만 `BucketAccess`로 분리. 서로 독립된 저장소 두 개 사이에서 공통 시험과 전용 시험을 통과. MinIO 공개 이미지는 Docker Hub·quay 모두 받을 수 없어 versitygw로 시험 |
 | 실제 IdP 간 계정 이전·OIDC probe | `fc2be7e` | Identity Gate가 계약 판정과 의무 결속까지만 있었음. 독립 Keycloak 두 대 사이에서 계정을 자격 증명 없이 옮기고(재설정·재등록 요구), 원본 subject를 관리자 전용 속성에 두며, 같은 이름의 기존 계정은 합치지 않음. 실제 로그인과 서명 검증으로 IAM-02·04·08과 refresh token 비이식성을 측정 |
 | Kubernetes 경로 전환·관리권 멈춤 | `ebce383` | 경로 확정이 메모리 속 값만 바꿨고, 관리권 인수 의무를 잴 수단이 없었음. 경로 저장소를 실제 Service로 구현해, 모든 엔드포인트가 목적지 Pod일 때만 경로로 인정. CronJob은 suspend뿐 아니라 실행 중 Job이 없어야 멈춤. 모든 변경은 resourceVersion 시험 JSON Patch |
-| 권한 witness의 Object Lock 저장소 | 이 커밋 | 파일 witness는 끝부분이 잘린 것을 증명할 수 없었음. 기록마다 보존 잠금 객체를 한 번만 쓰고, 버전 목록으로 읽어 삭제 표식·덮어쓰기·빈자리·잠금 없음·만료를 모두 거부. 잠긴 버전도 버전 없는 DELETE로 숨길 수 있다는 점을 실측으로 확인하고 막음 |
+| 권한 witness의 Object Lock 저장소 | `d4d019d` | 파일 witness는 끝부분이 잘린 것을 증명할 수 없었음. 기록마다 보존 잠금 객체를 한 번만 쓰고, 버전 목록으로 읽어 삭제 표식·덮어쓰기·빈자리·잠금 없음·만료를 모두 거부. 잠긴 버전도 버전 없는 DELETE로 숨길 수 있다는 점을 실측으로 확인하고 막음 |
+| AWS CloudTrail 변경 수집기 | `cc87fc9` | 클라우드 쪽 변경을 수집할 수단이 없었음. 등록 자원의 쓰기 호출만 정책·자원·미분류 사건으로 기록(버리지 않음). watermark는 전달 지연(15분)을 넘지 않고, 늦게 들어온 사건도 한 번 기록 |
+| 실제 AWS 계정 실측 | 이 커밋 | 사용자 승인으로 개인 계정에서 AWS S3→온프레미스, RDS→온프레미스, Object Lock witness, CloudTrail을 실측. provider마다 쓰기 주체 이름이 달라 논리 writer를 저장소별 주체로 바꾸게 했고, 매핑에 없는 writer를 조용히 넘기던 결함을 고침. AWS가 정책 주체 순서를 매번 다르게 돌려줘 시험 상태 비교를 집합으로 바꿈. 시험 실패 메시지가 달라진 상태 위치를 보여 줌 |
 
 인증기를 만들면서 신뢰 조회 콜백의 일반 예외(예: DB 연결 오류 문자열)가 정제되지 않고 올라오는 점을 시험으로 발견해 정제된 오류로 바꿨다. 예제 snapshot 생성기는 계약을 인자로 받도록 했다. 생성 뒤 tenant만 바꾸면 그래프 검증이 거부하기 때문이다.
 
@@ -135,6 +137,7 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 - Kubernetes: kind v1.34.0, 최소 권한 ServiceAccount token으로 7개 통과. 결함 주입 5종 모두 검출(처음 놓친 수렴 대기 제거는 결정적 시험 추가 뒤 검출). `kind create cluster`가 kubeconfig 현재 context를 새 클러스터로 바꿨다. 이전 값은 기록이 없어 되돌리지 못했다.
 - 로컬 환경 전체를 켠 새 DB 전체 회귀(PostgreSQL·S3·Keycloak·kind): **1351 PASS / 37 FAIL / 74 SKIP**, 새 실패 0건.
 - Object Lock witness: 7개와 기존 복원 감지 2개 통과, 결함 주입 5종 모두 검출. 회귀를 막 끝낸 DB에서 PostgreSQL 시험 하나가 마이그레이션 재적용 충돌로 fixture 오류가 났고, 새 DB에서는 통과했다(시험은 항상 새 DB 기준).
+- 실제 AWS(개인 계정, ap-northeast-2, 실행 번호 `4e0522`): AWS S3→온프레미스 공통 시험 9개, Object Lock witness 2개, RDS→온프레미스 10개(1개는 RDS에 prepared transaction이 없어 건너뜀), CloudTrail 1개 통과. AWS S3 시험의 첫 실행은 정책 주체 순서 차이로 실패했고, 집합 비교로 고친 뒤 통과. CloudTrail 시험의 첫 실행은 시험 자체의 시각 비교 결함(poll 시작 전 시각 사용)으로 실패했고, 고친 뒤 통과.
 
 ## 이전 기록 정정
 

@@ -47,10 +47,14 @@ def s3_stores():
                             config=config)
 
     endpoints = {"source": source_url, "target": target_url}
+    principals = {"app": writers[0][0], "other": writers[1][0]}
     return {
         "root": lambda side: client(endpoints[side], root),
         "as": lambda side, writer: client(endpoints[side],
                                           writers[0 if writer == "app" else 1]),
-        "principal": {"app": writers[0][0], "other": writers[1][0]},
-        "endpoints": endpoints,
+        # Logical writer -> this store's principal; the same accounts on both here.
+        "principals": {"source": principals, "target": principals},
+        "bucket_name": lambda side, suffix: (
+            f"orders-{'src' if side == 'source' else 'tgt'}-{suffix}"),
+        "create_bucket": lambda c, bucket: c.create_bucket(Bucket=bucket),
     }

@@ -33,7 +33,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests", "demo"]
 pythonpath = [".", "src", "demo", "tests"]
-markers = ["postgres: requires an explicitly isolated Sova PostgreSQL test cluster", "s3: requires disposable loopback S3-compatible stores", "keycloak: requires two disposable loopback Keycloak servers", "kubernetes: requires a disposable loopback kind cluster", "policy_engine: requires explicitly pinned OPA binary"]
+markers = ["postgres: requires an explicitly isolated Sova PostgreSQL test cluster", "s3: requires disposable loopback S3-compatible stores", "keycloak: requires two disposable loopback Keycloak servers", "kubernetes: requires a disposable loopback kind cluster", "aws_live: creates and deletes run-scoped resources in a real AWS account (opt-in)", "policy_engine: requires explicitly pinned OPA binary"]
 
 [tool.ruff]
 target-version = "py311"
