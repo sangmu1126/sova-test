@@ -216,3 +216,25 @@ def test_foreign_commands_and_unbounded_reads_are_refused(world):
     observation = bounded.readback(command(bounded), datetime.now(UTC))
     assert observation.status == EffectStatus.UNKNOWN
     assert observation.evidence["reason"] == "account bound exceeded"
+
+
+def test_independent_mapping_probes_agree_then_catch_a_second_claim_and_a_state_change(world):
+    from sova.adapters.identity_probes import IdentityMappingProbes
+
+    world.migrate()
+    probes = IdentityMappingProbes(source=world.adapter().source, target=world.admin("target"))
+    assert probes.subject_mapping_unique()[0] and probes.account_state_parity()[0]
+    # Someone gives another account alice's source subject.
+    alice = world.target_user("alice")
+    impostor = world.s["target"].user(world.realm, "mallory", "Mallory-pw-1!")
+    mallory = world.s["target"].call("GET", f"/{world.realm}/users/{impostor}")
+    world.s["target"].call("PUT", f"/{world.realm}/users/{impostor}", {
+        **mallory, "attributes": {SUBJECT: alice["attributes"][SUBJECT]}})
+    passed, observation = probes.subject_mapping_unique()
+    assert not passed and observation["claimed_twice"] == ["alice"]
+    world.s["target"].call("DELETE", f"/{world.realm}/users/{impostor}")
+    # The target account drifts from the source.
+    world.s["target"].call("PUT", f"/{world.realm}/users/{alice['id']}",
+                           {**alice, "enabled": False})
+    passed, observation = probes.account_state_parity()
+    assert not passed and observation["differing"] == ["alice"]
