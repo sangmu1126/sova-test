@@ -30,7 +30,8 @@ from sova.adapters.postgres_sequences import (
 )
 from sova.domain.data_manifest import compare_manifests
 
-pytestmark = pytest.mark.postgres
+# Its read-only boundary accepts only verified TLS or a private Unix socket.
+pytestmark = [pytest.mark.postgres, pytest.mark.postgres_tls]
 TABLES = tuple(
     ("consultation", name)
     for name in (

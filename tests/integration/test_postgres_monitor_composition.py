@@ -242,6 +242,7 @@ def test_revoked_baseline_key_produces_failure_alert_without_clean_result(compos
     )
 
 
+@pytest.mark.postgres_tls  # the worker accepts a remote database only over verified TLS
 def test_fixed_worker_cli_runs_from_private_configuration_and_records_current_review(
     composition, postgres_database, tmp_path
 ):

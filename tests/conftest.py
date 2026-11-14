@@ -48,3 +48,28 @@ def adapter():
 
 
 pytest_plugins = ["postgres_fixtures", "postgres_business", "s3_fixtures", "keycloak_fixtures", "aws_fixtures"]
+
+
+def _verified_postgres_transport(dsn):
+    from psycopg.conninfo import conninfo_to_dict
+
+    values = conninfo_to_dict(dsn)
+    return values.get("sslmode") == "verify-full" or values.get("host", "").startswith("/")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Tests of the read and write gates need a server they will accept:
+    certificate- and hostname-verified TLS, or a private Unix socket. Against
+    a plain TCP server they are skipped with the way to run them, never
+    reported as product failures."""
+    import os
+
+    dsn = os.environ.get("SOVA_TEST_POSTGRES_DSN")
+    if not dsn or _verified_postgres_transport(dsn):
+        return
+    skip = pytest.mark.skip(reason="verified-TLS PostgreSQL required: run with "
+                                   "SOVA_TEST_POSTGRES_DSN=$SOVA_TEST_POSTGRES_TLS_DSN "
+                                   "-m postgres_tls")
+    for item in items:
+        if "postgres_tls" in item.keywords:
+            item.add_marker(skip)

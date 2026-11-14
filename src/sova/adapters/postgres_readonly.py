@@ -14,7 +14,7 @@ def begin_registered_read(connection, registration):
         if not registration.allow_private_unix_fixture:
             raise ContractError("Unix fixture transport not authorized")
     elif (
-        not connection.info.ssl_in_use
+        not connection.pgconn.ssl_in_use
         or connection.info.get_parameters().get("sslmode") != "verify-full"
     ):
         raise ContractError("Certificate/hostname-verified PostgreSQL TLS required")

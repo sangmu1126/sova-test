@@ -18,7 +18,8 @@ from sova.application.effects import EffectExecutor, UncertainEffect
 from sova.domain.contracts import ContractError, EffectStatus
 from support import permit_for
 
-pytestmark = pytest.mark.postgres
+# The read and write gates accept only verified TLS or a private Unix socket.
+pytestmark = [pytest.mark.postgres, pytest.mark.postgres_tls]
 
 
 @pytest.fixture

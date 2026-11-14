@@ -391,6 +391,7 @@ def writer_phase_profile(saved, gate, now):
     return new_saved, services, factory
 
 
+@pytest.mark.postgres_tls  # the writer gate accepts only verified TLS
 def test_actual_database_writer_is_executed_by_phase_worker(saved, gate, now):
     new_saved, services, factory = writer_phase_profile(saved, gate, now)
     programs, operations, _ = services

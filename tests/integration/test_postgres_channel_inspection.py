@@ -10,7 +10,8 @@ import pytest
 from replication_support import logical_pair
 from sova.domain.contracts import ContractError
 
-pytestmark = pytest.mark.postgres
+# The read and write gates accept only verified TLS or a private Unix socket.
+pytestmark = [pytest.mark.postgres, pytest.mark.postgres_tls]
 
 
 @pytest.fixture

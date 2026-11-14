@@ -1,0 +1,49 @@
+# A second, TLS-only-verified PostgreSQL for the suites whose read and write
+# gates accept nothing weaker than certificate- and hostname-verified TLS.
+# test-env.sh fills in __TLS_DIR__ (the host directory holding the test CA) so
+# a subscription created inside the server finds the CA at the same path the
+# tests name in their connection strings. Test-only material; never reused.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: postgres-tls, namespace: sova-test-env}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: postgres-tls}}
+  template:
+    metadata: {labels: {app: postgres-tls}}
+    spec:
+      securityContext: {fsGroup: 999}  # the image's postgres group may read the key
+      containers:
+        - name: postgres
+          image: postgres:17.11
+          args: ["-c", "cluster_name=sova-persistence-test", "-c", "max_prepared_transactions=8",
+                 "-c", "port=55433", "-c", "ssl=on",
+                 "-c", "ssl_cert_file=/etc/sova-tls/server.crt",
+                 "-c", "ssl_key_file=/etc/sova-tls/server.key",
+                 "-c", "wal_level=logical", "-c", "max_replication_slots=32",
+                 "-c", "max_wal_senders=32", "-c", "max_logical_replication_workers=16",
+                 "-c", "max_worker_processes=32", "-c", "max_slot_wal_keep_size=1GB"]
+          env:
+            - {name: POSTGRES_HOST_AUTH_METHOD, value: trust}
+            - {name: POSTGRES_DB, value: sova_test}
+            - {name: PGPORT, value: "55433"}
+          ports: [{containerPort: 55433}]
+          readinessProbe:
+            exec: {command: ["pg_isready", "-U", "postgres", "-d", "sova_test"]}
+            periodSeconds: 2
+          resources: {limits: {memory: 768Mi}}
+          volumeMounts:
+            - {name: tls, mountPath: /etc/sova-tls, readOnly: true}
+            - {name: tls, mountPath: __TLS_DIR__/ca.pem, subPath: ca.pem, readOnly: true}
+      volumes:
+        - name: tls
+          secret: {secretName: postgres-tls, defaultMode: 0640}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: postgres-tls, namespace: sova-test-env}
+spec:
+  type: NodePort
+  selector: {app: postgres-tls}
+  ports: [{port: 55433, targetPort: 55433, nodePort: 30433}]

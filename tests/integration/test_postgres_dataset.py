@@ -17,7 +17,8 @@ from sova.adapters.postgres_dataset import (
 from sova.domain.contracts import ContractError
 from sova.domain.evidence import RevisionSet
 
-pytestmark = pytest.mark.postgres
+# The read and write gates accept only verified TLS or a private Unix socket.
+pytestmark = [pytest.mark.postgres, pytest.mark.postgres_tls]
 
 
 @pytest.fixture
@@ -212,7 +213,13 @@ def test_table_name_is_not_an_executable_sql_fragment(dataset):
 
 
 def test_private_unix_transport_requires_explicit_fixture_permission(dataset):
-    registration, collect, _ = dataset
+    registration, collect, dsn = dataset
+    from psycopg.conninfo import conninfo_to_dict
+
+    if not conninfo_to_dict(dsn).get("host", "").startswith("/"):
+        # Over TCP the TLS branch decides (tests/unit/test_postgres_transport_checks.py
+        # covers an unauthorized socket with a double).
+        pytest.skip("a private Unix-socket PostgreSQL fixture is required")
     with pytest.raises(ContractError, match="transport"):
         collect(replace(registration, allow_private_unix_fixture=False))
 

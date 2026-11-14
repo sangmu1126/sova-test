@@ -9,6 +9,7 @@ nodes:
     image: kindest/node:v1.34.0
     extraPortMappings:
       - {containerPort: 30432, hostPort: 55432, listenAddress: "127.0.0.1"}  # PostgreSQL
+      - {containerPort: 30433, hostPort: 55433, listenAddress: "127.0.0.1"}  # PostgreSQL (verified TLS)
       - {containerPort: 30070, hostPort: 57070, listenAddress: "127.0.0.1"}  # S3 source store
       - {containerPort: 30071, hostPort: 57071, listenAddress: "127.0.0.1"}  # S3 target store
       - {containerPort: 30080, hostPort: 58080, listenAddress: "127.0.0.1"}  # Keycloak source

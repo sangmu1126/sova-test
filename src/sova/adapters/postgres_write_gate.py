@@ -124,7 +124,7 @@ class PostgresWriteGateAdapter:
             if not r.allow_private_unix_fixture:
                 raise ContractError("Private writer fixture was not authorized")
         elif (
-            not conn.info.ssl_in_use
+            not conn.pgconn.ssl_in_use
             or conn.info.get_parameters().get("sslmode") != "verify-full"
         ):
             raise ContractError("Verified writer TLS required")
