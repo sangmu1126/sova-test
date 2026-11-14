@@ -806,6 +806,22 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 
 모두 통과해 `PLATFORM_EXIT_VERIFIED`가 PASS다. 고객이 Keycloak 관리자 회수를 빠뜨리면 그 자격 증명이 통해서 실패함을 확인했다. 에이전트 종료 중 업무 지속은 AT-34 시험이 따로 보인다.
 
+## DNS 수준 트래픽 전환 (Route 53)
+
+`Route53Route`는 호스팅 존의 레코드 하나로 클라이언트가 쓰는 이름을 한쪽 주소로 가리키는 경로 저장소다. 데이터 adapter의 경로 확정이 그대로 DNS 전환이 된다.
+- **전환:** 레코드를 읽은 그대로 지우는 동작과 새 레코드 생성을 한 변경 묶음으로 보낸다. 그 사이 다른 사람이 레코드를 바꿨으면 묶음 전체가 거부되고, 덮어쓰지 않는다. Route 53에 조건부 쓰기가 없어도 원자적 비교 후 교체가 된다. 변경이 전파 완료(`INSYNC`)될 때까지 상한 시간 안에서 기다린다.
+- **재조회:** 이 인스턴스가 낸 마지막 변경이 전파 완료이고, 설정된 레코드와 Route 53의 실제 응답(`TestDNSAnswer`)이 둘 다 한쪽 주소와 정확히 같을 때만 그쪽을 경로로 인정한다. 변경이 전파 중이면(다른 사람의 변경 포함) 둘이 달라서 어느 쪽도 아니다. 처음 구현은 응답만 봤는데, 외부 변경 직후 아직 전파 전인 예전 응답을 경로로 인정하는 것을 실측에서 발견해 고쳤다.
+- **TTL 캐시:** 클라이언트는 전환 뒤에도 TTL 동안 예전 주소를 쓸 수 있다. 이 창은 숨기지 않고 TTL로 보고하며, 인계는 원본 차단으로 그런 클라이언트를 원본에서 거부한다.
+
+실제 Route 53(실행 범위의 공개 호스팅 존, 위임하지 않고 바로 삭제, 요금 없음)에서 2개 시험이 통과했다.
+- PostgreSQL adapter의 경로 확정이 레코드를 원본 주소에서 목적지 주소로 바꾼다.
+- 그 존의 권한 네임서버 넷 모두에 `dig`로 직접 물어도 목적지 주소를 답한다.
+- 다시 적용하면 바꾸지 않는다.
+- 계획 밖 변경은 `UNKNOWN`이다.
+- 예전 읽기로 준비한 전환은 거부된다.
+
+주소는 문서용 범위를 써서, 경로 제어를 시험하며 도달성은 시험하지 않는다. 로드밸런서 가중치 전환은 다루지 않았다.
+
 ## AWS 전체 탈출 실측 (Part V.3)
 
 계약 하나가 RDS(`source-db`), S3(`source-object-store`), Secrets Manager(`source-secret-service`), Cognito(`aws-cognito-user-pool`)의 제거를 선언하고, Identity 확장으로 Cognito에서 Keycloak으로 옮기며, compute는 ECS에서 돈다. 모든 원본은 실제 AWS 계정의 실행 범위 자원이고, 목적지는 온프레미스(PostgreSQL, S3 호환 저장소, kind의 Kubernetes Secret, Keycloak, 새 앱 세션)다.
@@ -879,7 +895,7 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 하지 않은 것은 다음과 같다.
 - RDS의 IAM DB 인증, 다른 엔진(Aurora 등)
 - 처리량·대용량 이전 측정, 반복 측정에 의한 쓰기 정지 시간 분포
-- EKS 등 다른 앱 실행 환경, 로드밸런서·DNS 수준의 트래픽 전환
+- EKS 등 다른 앱 실행 환경, 로드밸런서 수준의 트래픽 전환
 - AWS 실측과 한 번에 묶은 플랫폼 탈출
 - 다른 리전·다른 계정 사이의 경로
 - GCP·Azure·NAVER Cloud
@@ -920,6 +936,7 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 | 사업자 탈출(`PROVIDER_EXIT_VERIFIED`), RDS+ECS → 온프레미스 | 실환경 시험 통과 | 네 수준을 모두 실측해 판정. 이 단위·프로필에 한함 |
 | AWS 전체 탈출(RDS·S3·Secrets Manager·Cognito·ECS를 한 계약으로) | 실환경 시험 통과 | 계약의 Identity 의무 9개와 탈출 의무 9개를 실측. 시험 규모의 한 단위에 한함. 플랫폼 탈출 미측정 |
 | 플랫폼 탈출(`PLATFORM_EXIT_VERIFIED`) | 모의 시험 통과 | 로컬 환경에서 플랫폼 자격 증명 넷의 실제 거부와 고객 단독 운영 실측 |
+| DNS 수준 트래픽 전환(Route 53) | 실환경 시험 통과 | 실제 호스팅 존에서 원자적 교체·권한 네임서버 응답 실측. 로드밸런서 전환 미시험 |
 | MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |
 | 사고 보류·증거 기한·사고 복구 확장 | 지원하지 않음 | 명세가 스키마를 정하지 않음(S.9, ADR 전제). 있으면 `NEEDS_EVIDENCE` |
