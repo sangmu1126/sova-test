@@ -46,8 +46,12 @@ class LosesResponse:
 
 def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation,
           approval_id, until=None, before=None, lose_response_at=(), events=None,
-          after_effect=None):
-    """Run a compiled plan's steps through the ledger with measured evidence."""
+          after_effect=None, measures=None):
+    """Run a compiled plan's steps through the ledger with measured evidence.
+
+    ``measures`` maps obligation IDs to measurements for obligations the data
+    probes do not cover (identity, objects, secrets); each takes the
+    obligation and returns ``(passed, observation)``."""
     lifecycle = h["lifecycle"]
     approval = lifecycle.get_approval(h["app"], approval_id)
     PostgresOperationRepository(lifecycle).submit(OperationRequest(
@@ -69,6 +73,8 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
 
     def measure(obligation):
         kind, oid = obligation["kind"], obligation["id"]
+        if measures and oid in measures:
+            return measures[oid](obligation)
         if kind == "placement_evidence":
             return probes.zone("target", set(contract["residency"][oid.split(".", 1)[1]]))
         if kind == "return_target_check":
@@ -206,7 +212,7 @@ def pieces(business, adapter_id, *, source, target, route, fenced=None):
 
 def run_handoff(postgres_database, now, business, *, adjust=None, until=None,
                 strategy="offline-copy", before=None, lose_response_at=(), events=None,
-                fenced=None, watch_catalog=None):
+                fenced=None, watch_catalog=None, measures=None):
     h = admitted_handoff(postgres_database, now, adjust=adjust, strategy=strategy)
     after_effect = None
     if watch_catalog:
@@ -219,7 +225,7 @@ def run_handoff(postgres_database, now, business, *, adjust=None, until=None,
                              other_db=names["other"], scratch_db=names["scratch"],
                              operation=OPERATION, approval_id="approval-1", until=until,
                              before=before, lose_response_at=lose_response_at,
-                             events=events, after_effect=after_effect)
+                             events=events, after_effect=after_effect, measures=measures)
     return dict(h, record=record, adapter=adapter, probes=probes, route=route,
                 business=business, observed=observed)
 

@@ -13,12 +13,8 @@ rule says, and platform exit, not measured here, is not claimed.
 """
 
 from datetime import UTC, datetime, timedelta
-import secrets
-import time
-import urllib.error
-import urllib.request
-from uuid import uuid4
 
+from aws_fixtures import answers
 from handoff_drive import run_handoff, without_transport_control
 import psycopg
 from psycopg import sql
@@ -31,73 +27,6 @@ from sova.domain.evidence import VerificationResult
 from sova.domain.handoff_authority import HandoffState
 
 pytestmark = [pytest.mark.aws_live, pytest.mark.postgres]
-IMAGE = "public.ecr.aws/docker/library/busybox:1.37.0"
-
-
-def _tags(aws):
-    return [{"key": t["Key"], "value": t["Value"]} for t in aws["tags"]]
-
-
-@pytest.fixture
-def ecs_app(aws):
-    session, run = aws["session"], aws["run"]
-    ecs, ec2 = session.client("ecs"), session.client("ec2")
-    vpc = ec2.describe_vpcs(Filters=[{"Name": "isDefault", "Values": ["true"]}])["Vpcs"][0]
-    subnets = [s["SubnetId"] for s in ec2.describe_subnets(Filters=[
-        {"Name": "vpc-id", "Values": [vpc["VpcId"]]},
-        {"Name": "default-for-az", "Values": ["true"]}])["Subnets"]]
-    me = urllib.request.urlopen("https://checkip.amazonaws.com", timeout=10).read().decode()
-    group = ec2.create_security_group(
-        GroupName=f"sova-test-ecs-{run}-{uuid4().hex[:6]}", VpcId=vpc["VpcId"],
-        Description="sova test source app, this machine only",
-        TagSpecifications=[{"ResourceType": "security-group", "Tags": aws["tags"]}])["GroupId"]
-    ec2.authorize_security_group_ingress(GroupId=group, IpProtocol="tcp", FromPort=80,
-                                         ToPort=80, CidrIp=me.strip() + "/32")
-    cluster, service = f"sova-test-ecs-{run}", f"sova-test-orders-{run}"
-    token = "sova-" + run + "-" + secrets.token_hex(8)
-    ecs.create_cluster(clusterName=cluster, tags=_tags(aws))
-    definition = ecs.register_task_definition(
-        family=f"sova-test-app-{run}", networkMode="awsvpc", cpu="256", memory="512",
-        requiresCompatibilities=["FARGATE"], tags=_tags(aws),
-        runtimePlatform={"cpuArchitecture": "ARM64", "operatingSystemFamily": "LINUX"},
-        containerDefinitions=[{
-            "name": "app", "image": IMAGE, "essential": True,
-            "portMappings": [{"containerPort": 80, "protocol": "tcp"}],
-            "command": ["sh", "-c", f"mkdir -p /www && echo {token} > /www/index.html"
-                        " && exec httpd -f -p 80 -h /www"]}],
-    )["taskDefinition"]["taskDefinitionArn"]
-    try:
-        ecs.create_service(
-            cluster=cluster, serviceName=service, taskDefinition=definition, desiredCount=1,
-            launchType="FARGATE", tags=_tags(aws), propagateTags="SERVICE",
-            networkConfiguration={"awsvpcConfiguration": {
-                "subnets": subnets, "securityGroups": [group], "assignPublicIp": "ENABLED"}})
-        ecs.get_waiter("services_stable").wait(cluster=cluster, services=[service],
-                                               WaiterConfig={"Delay": 10, "MaxAttempts": 60})
-        yield {"ecs": ecs, "ec2": ec2, "cluster": cluster, "service": service, "token": token}
-    finally:
-        ecs.update_service(cluster=cluster, service=service, desiredCount=0)
-        ecs.delete_service(cluster=cluster, service=service, force=True)
-        ecs.get_waiter("services_inactive").wait(cluster=cluster, services=[service],
-                                                 WaiterConfig={"Delay": 10, "MaxAttempts": 60})
-        ecs.deregister_task_definition(taskDefinition=definition)
-        ecs.delete_task_definitions(taskDefinitions=[definition])
-        ecs.delete_cluster(cluster=cluster)
-        for _ in range(18):  # the task's network interface is released a little later
-            try:
-                ec2.delete_security_group(GroupId=group)
-                break
-            except ec2.exceptions.ClientError:
-                time.sleep(10)
-
-
-def answers(address, token):
-    """True only if the source application itself answers at ``address``."""
-    try:
-        with urllib.request.urlopen(f"http://{address}/", timeout=5) as response:
-            return token in response.read(4096).decode(errors="replace")
-    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError):
-        return False
 
 
 def command(adapter):

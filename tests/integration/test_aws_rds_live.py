@@ -182,12 +182,12 @@ def test_the_rds_security_reader_reports_the_real_configuration(aws):
         ResourceScope(tenant, app, "aws-source", db["DBInstanceArn"]),
         session.client("sts").get_caller_identity()["Account"], aws["region"],
         db["DbiResourceId"], 1, 1, issued, issued + timedelta(hours=1))
-    for _ in range(30):  # tags and status settle shortly after a change
+    for _ in range(30):  # every check is unknown until status and tags settle
         snapshot = RdsSecurityCollector(
             registration, clients=lambda reg: fixed_clients(session, reg),
             authorize=lambda *_: None, clock=lambda: datetime.now(UTC),
             monotonic=time.monotonic).collect(actor="aws-live-test")
-        if "unknown" not in snapshot.checks.values():
+        if any(v != "unknown" for v in snapshot.checks.values()):
             break
         time.sleep(10)
     # AWS omits EnabledCloudwatchLogsExports when no log is exported, and the
@@ -196,6 +196,8 @@ def test_the_rds_security_reader_reports_the_real_configuration(aws):
     assert "EnabledCloudwatchLogsExports" not in db
     assert snapshot.checks == {
         "storage-encryption": "pass" if db["StorageEncrypted"] else "fail",
-        "backup-retention": "pass", "private-endpoint": "fail",
+        # minimum_backup_days is 1 in this registration
+        "backup-retention": "pass" if db["BackupRetentionPeriod"] >= 1 else "fail",
+        "private-endpoint": "fail",
         "deletion-protection": "fail", "postgres-log-export": "unknown",
         "multi-az-configuration": "fail"}, snapshot.checks

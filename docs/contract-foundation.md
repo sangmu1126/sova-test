@@ -781,6 +781,45 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 
 이 PASS는 이 시험의 프로필에만 해당한다. 주문 50건 규모의 한 단위, RDS 한 대와 ECS 서비스 한 개, 객체 저장소·비밀·Identity를 계약에 넣지 않은 경우다. 객체·비밀·Cognito까지 한 계약으로 묶은 탈출은 아직 한 번에 시험하지 않았다(각각은 따로 시험했다). 데이터 원본을 로컬 DB로 둔 첫 시도에서도 사업자 탈출이 PASS로 나왔는데, 원본이 AWS가 아니었으므로 그 결과는 주장하지 않고 RDS 원본으로 다시 측정했다.
 
+## AWS 전체 탈출 실측 (Part V.3)
+
+계약 하나가 RDS(`source-db`), S3(`source-object-store`), Secrets Manager(`source-secret-service`), Cognito(`aws-cognito-user-pool`)의 제거를 선언하고, Identity 확장으로 Cognito에서 Keycloak으로 옮기며, compute는 ECS에서 돈다. 모든 원본은 실제 AWS 계정의 실행 범위 자원이고, 목적지는 온프레미스(PostgreSQL, S3 호환 저장소, kind의 Kubernetes Secret, Keycloak, 새 앱 세션)다.
+
+진행 순서는 다음과 같다.
+1. **신원:** Cognito 계정을 Keycloak으로 옮기고 사용자가 재설정한다. 활성화 의도 단계에서 Identity 의무를 확인하므로 데이터 인계보다 먼저 한다.
+2. **비밀과 객체:** 비밀을 Kubernetes Secret으로, S3 객체를 온프레미스 저장소로 옮긴다(각 adapter, offline-copy 순서).
+3. **데이터:** control plane 전체 흐름으로 인계한다. 계약이 더한 Identity 의무 9개도 이 흐름 안에서 측정해 서명 증거로 넣는다.
+   - IAM-01·06: 계정 매핑·상태 재조회
+   - IAM-02: 새 로그인·갱신
+   - IAM-04: 테넌트 간 거부, Cognito 토큰과 목적지 토큰의 그룹 동등성
+   - IAM-07: 이전 시각 이전의 자격 증명이 목적지에 없음
+   - IAM-09: 감사 이벤트·무차별 대입 잠금·비밀번호 복구 설정
+   - IAM-12: 목적지 로그인 시간이 계약의 클라이언트 완료 대기 예산 안. 명세가 로그인 SLO 값을 따로 정하지 않아 이 예산으로 해석했다.
+4. **원본 차단:** 모든 AWS 원본을 실제로 막는다.
+   - ECS 서비스 중지(재조회 확인)
+   - RDS 원본 DB 접속 거부
+   - S3 원본은 인계의 차단 정책으로 앱 거부
+   - Secrets Manager는 모든 주체의 값 조회를 거부하는 자원 정책
+   - Cognito 앱 클라이언트 삭제
+5. **탈출 의무 측정:** 의무마다 측정해 서명 증거로 넣는다.
+   - compute: ECS 중지, 예전 주소 무응답, 새 세션 업무
+   - 제거 대상 넷: 원본은 앱을 거부하고, 목적지는 새 세션에 데이터·객체·비밀·로그인을 내줌
+   - IAM-08: Cognito 차단 중 목적지 로그인
+   - IAM-10: Cognito 토큰을 목적지 발급자 검증이 거부
+   - 재기동: 새 세션이 DB 쓰기, 새 토큰, 목적지 비밀을 모두 캐시 없이 얻음
+   - 운영: 빈 DB 복원
+
+결과(실행 번호 `930b87`, 첫 실행 통과, 4분)는 다음과 같다.
+- `COMPUTE_INDEPENDENT`, `DATA_IDENTITY_INDEPENDENT`, `RESTART_VERIFIED`, `OPERATIONS_VERIFIED`, `PROVIDER_EXIT_VERIFIED`: 모두 PASS
+- `PLATFORM_EXIT_VERIFIED`: 측정하지 않아 UNKNOWN
+- Identity: `SOURCE_IDENTITY_INDEPENDENT`. 예전 발급자 거부 통과, 이중 발급자 철회는 해당 없음
+
+이 결과의 범위는 다음과 같다.
+- 시험 규모의 한 단위다. 주문 50건, 객체 11개(9 MiB 하나 포함), 비밀 2개, Cognito 사용자 3명이다.
+- 데이터 인계는 offline-copy이며, 쓰기 정지 시간 등 성능은 주장하지 않는다.
+- 다음은 시험하지 않았다: 플랫폼 탈출, Identity Pool·IAM 연계, 페더레이션·MFA 사용자, 로드밸런서·DNS 수준의 트래픽 전환, EKS
+- 다른 계약·규모·리전·계정으로 일반화하지 않는다.
+
 ## 실제 AWS 계정 실측 (2026-11-14)
 
 개인 AWS 계정(ap-northeast-2)에서 사용자 승인을 받아 시험했다. 자원 이름은 모두 `sova-test-…-<실행번호>`이고 태그를 붙였으며, 시험 직후 실행 번호로 찾아 지웠다. 기존 자원은 읽기만 했다. 시험은 `aws_live` 표시가 있고, `SOVA_TEST_AWS_LIVE=1`과 실행 번호를 명시해야만 돈다.
@@ -853,7 +892,8 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 | AWS Cognito → Keycloak 계정 이전 | 실환경 시험 통과 | 실제 Cognito user pool에서 로컬 Keycloak으로. 페더레이션·MFA 사용자, Identity Pool은 미검증 |
 | AWS Secrets Manager → Kubernetes Secret 이전 | 실환경 시험 통과 | 실제 비밀 두 개에서 kind Secret으로. 원본 자격 증명 폐기는 별도 단계 |
 | ECS 원본 compute 중지·compute 독립성 실측 | 실환경 시험 통과 | 실제 ECS Fargate 서비스 중지와 재조회, 예전 주소 무응답 실측 |
-| 사업자 탈출(`PROVIDER_EXIT_VERIFIED`), RDS+ECS → 온프레미스 | 실환경 시험 통과 | 네 수준을 모두 실측해 판정. 이 단위·프로필에 한함. 객체·비밀·Identity를 함께 묶은 탈출은 미시험 |
+| 사업자 탈출(`PROVIDER_EXIT_VERIFIED`), RDS+ECS → 온프레미스 | 실환경 시험 통과 | 네 수준을 모두 실측해 판정. 이 단위·프로필에 한함 |
+| AWS 전체 탈출(RDS·S3·Secrets Manager·Cognito·ECS를 한 계약으로) | 실환경 시험 통과 | 계약의 Identity 의무 9개와 탈출 의무 9개를 실측. 시험 규모의 한 단위에 한함. 플랫폼 탈출 미측정 |
 | MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |
 | 사고 보류·증거 기한·사고 복구 확장 | 지원하지 않음 | 명세가 스키마를 정하지 않음(S.9, ADR 전제). 있으면 `NEEDS_EVIDENCE` |

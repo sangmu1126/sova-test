@@ -19,8 +19,8 @@ import json
 import time
 from uuid import uuid4
 
+from aws_fixtures import create_bucket_in
 from adapter_conformance import HandoffAdapterConformance
-from botocore.config import Config
 from botocore.exceptions import ClientError
 import pytest
 from s3_world import S3World
@@ -34,40 +34,6 @@ pytestmark = pytest.mark.aws_live
 HOUR = timedelta(hours=1)
 
 
-def _create(aws, client, bucket, **extra):
-    client.create_bucket(Bucket=bucket, CreateBucketConfiguration={
-        "LocationConstraint": aws["region"]}, **extra)
-    client.put_bucket_tagging(Bucket=bucket, Tagging={"TagSet": aws["tags"]})
-
-
-@pytest.fixture(scope="module")
-def cloud_to_onprem(aws, aws_writer_roles, s3_stores):
-    """Stores for S3World: source on AWS S3, target on the local gateway."""
-    config = Config(retries={"max_attempts": 3}, s3={"addressing_style": "virtual"})
-    admin = aws["session"].client("s3", config=config)
-
-    def role_client(writer):
-        c = aws_writer_roles["credentials"][writer]
-        return aws["session"].client(
-            "s3", aws_access_key_id=c["AccessKeyId"], aws_secret_access_key=c["SecretAccessKey"],
-            aws_session_token=c["SessionToken"], config=config)
-
-    writers = {"app": role_client("app"), "other": role_client("batch")}
-    return {
-        "root": lambda side: admin if side == "source" else s3_stores["root"]("target"),
-        "as": lambda side, writer: (writers[writer] if side == "source"
-                                    else s3_stores["as"]("target", writer)),
-        "principals": {
-            "source": {"app": aws_writer_roles["arn"]["app"],
-                       "other": aws_writer_roles["arn"]["batch"]},
-            "target": s3_stores["principals"]["target"]},
-        "bucket_name": lambda side, suffix: (
-            f"sova-test-src-{aws['run']}-{suffix}" if side == "source"
-            else f"orders-tgt-{suffix}"),
-        "create_bucket": lambda client, bucket: _create(aws, client, bucket),
-    }
-
-
 class TestAwsS3ToOnPremConformance(HandoffAdapterConformance):
     @pytest.fixture
     def world(self, cloud_to_onprem):
@@ -78,7 +44,7 @@ class TestAwsS3ToOnPremConformance(HandoffAdapterConformance):
 def locked_bucket(aws):
     client = aws["session"].client("s3")
     bucket = f"sova-test-witness-{aws['run']}-{uuid4().hex[:8]}"
-    _create(aws, client, bucket, ObjectLockEnabledForBucket=True)
+    create_bucket_in(aws, client, bucket, ObjectLockEnabledForBucket=True)
     return client, bucket
 
 
@@ -128,7 +94,7 @@ def test_compliance_mode_holds_even_against_the_bucket_owner(locked_bucket):
 def test_the_witness_refuses_a_bucket_without_object_lock(aws):
     client = aws["session"].client("s3")
     bucket = f"sova-test-plain-{aws['run']}-{uuid4().hex[:8]}"
-    _create(aws, client, bucket)
+    create_bucket_in(aws, client, bucket)
     with pytest.raises(ContractError, match="without Object Lock"):
         S3ObjectLockAuthorityWitness(client, bucket, tenant_id="tenant-a", retention=HOUR,
                                      mode="GOVERNANCE").require_locked_bucket()
@@ -148,7 +114,7 @@ class RecordingFeed:
 def test_cloudtrail_collector_records_a_real_policy_change(aws):
     client, trail = aws["session"].client("s3"), aws["session"].client("cloudtrail")
     bucket = f"sova-test-trail-{aws['run']}-{uuid4().hex[:8]}"
-    _create(aws, client, bucket)
+    create_bucket_in(aws, client, bucket)
     changed = datetime.now(UTC)
     client.put_bucket_policy(Bucket=bucket, Policy=json.dumps({
         "Version": "2012-10-17", "Statement": [{
