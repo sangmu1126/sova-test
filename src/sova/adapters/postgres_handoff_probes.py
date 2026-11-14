@@ -75,18 +75,21 @@ class PostgresHandoffProbes:
                                           "target": target_outcome,
                                           "source": source["outcomes"]}
 
-    def _rows(self, which, table, key):
-        with self.admin_connect(self._db(which)) as conn:
-            rows = conn.execute(sql.SQL("SELECT t::text FROM {} t ORDER BY {}").format(
-                sql.Identifier(table), sql.Identifier(key))).fetchall()
+    def _rows(self, which, table, *, database=None):
+        """Content as a multiset: row texts sorted bytewise and length-framed, so
+        neither physical order nor a non-unique key can make equal content differ."""
+        with self.admin_connect(database or self._db(which)) as conn:
+            rows = sorted(text.encode() for (text,) in conn.execute(
+                sql.SQL("SELECT t::text FROM {} t").format(sql.Identifier(table))))
         h = hashlib.sha256()
-        for (text,) in rows:
-            h.update(text.encode() + b"\n")
+        for row in rows:
+            h.update(len(row).to_bytes(8, "big") + row)
         return {"rows": len(rows), "sha256": h.hexdigest()}
 
     def content_equal(self, table):
-        key = dict(self.tables)[table]
-        source, target = self._rows("source", table, key), self._rows("target", table, key)
+        if table not in dict(self.tables):
+            raise ContractError("Unregistered table")
+        source, target = self._rows("source", table), self._rows("target", table)
         return source == target, {"probe": "content_equal", "table": table,
                                   "source": source, "target": target}
 
@@ -138,14 +141,7 @@ class PostgresHandoffProbes:
                                 sql.Identifier(table))) as into:
                         for chunk in out:
                             into.write(chunk)
-        restored = {}
-        for table, key in self.tables:
-            original = self._rows("target", table, key)
-            with self.admin_connect(scratch_db) as conn:
-                rows = conn.execute(sql.SQL("SELECT t::text FROM {} t ORDER BY {}").format(
-                    sql.Identifier(table), sql.Identifier(key))).fetchall()
-            h = hashlib.sha256()
-            for (text,) in rows:
-                h.update(text.encode() + b"\n")
-            restored[table] = original == {"rows": len(rows), "sha256": h.hexdigest()}
+        restored = {table: self._rows("target", table) == self._rows(None, table,
+                                                                      database=scratch_db)
+                    for table, _ in self.tables}
         return all(restored.values()), {"probe": "restore_drill", "tables": restored}

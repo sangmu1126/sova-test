@@ -20,8 +20,9 @@ own memory:
   sequence (so identifiers are never issued twice, AT-24), is copied inside
   one target transaction; this reference adapter applies the final changes by
   a full re-copy inside the fenced window rather than by change data capture;
-* verify_final_state - per-table row count and content digest, and every
-  sequence's position, are equal;
+* verify_final_state - per-table row count and content digest (independent of
+  row order and of whether the declared key is unique), and every sequence's
+  position, are equal;
 * activate_target - the role can connect to and write the target while the
   source stays fenced (single writer);
 * commit_route - the route points at the target.
@@ -44,6 +45,17 @@ ACTIONS = frozenset({"stage_target", "verify_return_target", "start_sync", "paus
                      "verify_final_state", "activate_target", "commit_route"})
 _MARKS = "sova_handoff_sync_marks"
 _WRITE = ("INSERT", "UPDATE", "DELETE", "TRUNCATE")
+
+
+def _content_digest(texts):
+    """Row count and SHA-256 over every row's text form, sorted bytewise and
+    length-framed. Equal content gives an equal digest whatever the physical
+    row order, the declared key's uniqueness or the server's collation."""
+    rows = sorted(text.encode() for text in texts)
+    h = hashlib.sha256()
+    for row in rows:
+        h.update(len(row).to_bytes(8, "big") + row)
+    return {"rows": len(rows), "sha256": h.hexdigest()}
 
 
 class PostgresOfflineCopyAdapter:
@@ -128,13 +140,10 @@ class PostgresOfflineCopyAdapter:
     def _digests(self, which):
         out = {}
         with self.connect(self._db(which)) as conn:
-            for table, key in self.tables:
-                rows = conn.execute(sql.SQL("SELECT t::text FROM {} t ORDER BY {}").format(
-                    sql.Identifier(table), sql.Identifier(key))).fetchall()
-                h = hashlib.sha256()
-                for (text,) in rows:
-                    h.update(text.encode() + b"\n")
-                out[table] = {"rows": len(rows), "sha256": h.hexdigest()}
+            for table, _ in self.tables:
+                rows = conn.execute(sql.SQL("SELECT t::text FROM {} t").format(
+                    sql.Identifier(table))).fetchall()
+                out[table] = _content_digest(text for (text,) in rows)
         return out
 
     def _structure(self, which):

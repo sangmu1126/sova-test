@@ -26,6 +26,7 @@ import pytest
 
 from sova.adapters.postgres_handoff_probes import artifact_digest
 from sova.application.handoff_admission import HandoffAdmission
+from sova.domain.contracts import EffectCommand, EffectStatus, ResourceScope
 from sova.domain.evidence import VerificationResult
 from sova.domain.handoff_authority import HandoffState
 from sova.domain.plan_compiler import FAILBACK_STRATEGY, compile_failback
@@ -434,3 +435,39 @@ def test_a_schema_difference_stops_staging_before_any_source_change(postgres_dat
     assert x["record"].state == HandoffState.SAFE_HOLD
     assert x["record"].reason == "EFFECT_UNKNOWN" and x["record"].next_operation == 0
     assert not x["probes"].write_denied("source")[0]  # business still runs on the source
+
+
+def test_equal_content_in_a_different_row_order_is_equal(business):
+    """A declared key need not be unique (idempotency_results is keyed by
+    customer, not customer and idempotency key). Equal content stored in another
+    physical order must still compare equal: in the adapter's final check, in
+    the content probe and in the restore drill."""
+    from postgres_business import Route
+
+    names = business["names"]
+    with business["connect"](names["src"]) as source, \
+            business["connect"](names["tgt"]) as target:
+        for table, key in TABLES:
+            rows = source.execute(sql.SQL("SELECT * FROM {} ORDER BY {}").format(
+                sql.Identifier(table), sql.Identifier(key))).fetchall()
+            with target.cursor().copy(sql.SQL("COPY {} FROM STDIN").format(
+                    sql.Identifier(table))) as copy:
+                for row in reversed(rows):  # same rows, another physical order
+                    copy.write_row(row)
+        last = source.execute("SELECT last_value, is_called FROM order_number_seq").fetchone()
+        target.execute("SELECT setval('order_number_seq', %s, %s)", last)
+    adapter, probes = pieces(business, "postgres-offline-copy", source="src", target="tgt",
+                             route=Route(names["src"]))
+    for table, _ in TABLES:
+        assert probes.content_equal(table)[0], table
+    assert probes.restore_drill(names["scratch"])[0]
+    observation = adapter.readback(_command(adapter.adapter_id, "verify_final_state"),
+                                   datetime.now(UTC))
+    assert observation.status == EffectStatus.APPLIED, observation.evidence
+
+
+def _command(adapter_id, action):
+    return EffectCommand(
+        ResourceScope("tenant-a", "app-a", "env-a", "unit-a"), "op", action, adapter_id,
+        action, f"op:{action}", "f" * 64, "revision-1", 1,
+        datetime.now(UTC) + timedelta(minutes=5), "{}")

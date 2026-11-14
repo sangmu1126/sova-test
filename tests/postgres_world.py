@@ -70,11 +70,10 @@ class PostgresWorld:
     def content(self, side):
         h = hashlib.sha256()
         with self.b["connect"](self._db(side)) as conn:
-            for table, key in TABLES:
-                for (text,) in conn.execute(sql.SQL("SELECT t::text FROM {} t ORDER BY {}")
-                                            .format(sql.Identifier(table),
-                                                    sql.Identifier(key))):
-                    h.update(table.encode() + b":" + text.encode() + b"\n")
+            for table, _ in TABLES:  # a multiset of rows per table: order never matters
+                for text in sorted(t for (t,) in conn.execute(
+                        sql.SQL("SELECT t::text FROM {} t").format(sql.Identifier(table)))):
+                    h.update(f"{table}:{len(text)}:{text}".encode())
             for row in conn.execute("SELECT sequencename, last_value FROM pg_sequences "
                                     "WHERE schemaname='public' ORDER BY 1"):
                 h.update(repr(row).encode())
