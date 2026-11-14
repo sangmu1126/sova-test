@@ -695,7 +695,7 @@ readback은 두 realm을 다시 읽고 다음이 모두 성립할 때만 확인�
 - `JUST_IN_TIME_ACCOUNT_BRIDGE` 전략
 - Cognito 같은 운영 IdP
 
-계획 템플릿에는 아직 Identity 이전 단계가 없다. 그래서 이 adapter는 효과 원장 계약(`validate`·`apply`·`readback`)을 따르지만, 컴파일러가 아직 일정에 넣지 않는다.
+계획 템플릿에는 아직 Identity 이전 단계가 없다. 그래서 이 adapter는 효과 원장 계약(`validate`·`apply`·`readback`)을 따르지만, 컴파일러가 아직 일정에 넣지 않는다. 계획 안으로 넣는 방법은 [ADR-0002](adr/0002-identity-migration-in-the-handoff-plan.md)에서 검토 중이다. 추천은 계정 집합을 독립된 인계 단위로 두는 안이다.
 
 ## 객체 저장소 단위의 control plane 전체 인계
 
