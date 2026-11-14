@@ -135,7 +135,9 @@ def signed_input_authority(connect, scope, values, *, revisions, clock):
         record = assessment_input_record(
             value, revisions=revisions, evidence_id="input-" + uuid4().hex
         )
-        now = clock()
+        # Approvals are written to a database whose clock can trail this host's
+        # by milliseconds; stamped a second early they are never "in the future".
+        now = clock() - timedelta(seconds=1)
         trust = VerifierTrust(
             signer.issuer_id,
             signer.key_id,
@@ -174,7 +176,7 @@ def signed_input_authority(connect, scope, values, *, revisions, clock):
 
     def revoke(kind):
         change = changes[kind]
-        now = clock()
+        now = clock() - timedelta(seconds=1)
         registry.publish(
             replace(
                 change,
