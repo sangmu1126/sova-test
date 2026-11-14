@@ -18,10 +18,9 @@ from uuid import uuid4
 
 from adapter_conformance import SEQUENCES, HandoffAdapterConformance, apply, readback
 from handoff_drive import run_handoff, without_transport_control
-from postgres_business import PROBE_INSERT, TABLES, prepare
+from postgres_business import PROBE_INSERT, TABLES
 from postgres_world import PostgresWorld
 import psycopg
-from psycopg import sql
 import pytest
 
 from sova.adapters.aws_rds_security import RdsSecurityCollector, fixed_clients
@@ -34,49 +33,6 @@ from sova.domain.handoff_authority import HandoffState
 from sova.domain.aws_security import RdsReadRegistration
 
 pytestmark = [pytest.mark.aws_live, pytest.mark.postgres]
-
-
-@pytest.fixture
-def cloud_business(aws, postgres_database):
-    rds, password = os.environ.get("SOVA_TEST_RDS_DSN"), os.environ.get(
-        "SOVA_TEST_RDS_ROLE_PASSWORD")
-    if not rds or not password:
-        pytest.skip("SOVA_TEST_RDS_DSN and SOVA_TEST_RDS_ROLE_PASSWORD are required")
-    if f"sova-test-pg-{aws['run']}." not in rds:
-        raise pytest.UsageError("Only this run's RDS instance may be used")
-    local = postgres_database[0]
-    suffix = uuid4().hex[:10]
-    names = {k: f"{k}_{suffix}" for k in ("src", "tgt", "scratch", "other")}
-    app, batch = "orders_app_" + suffix, "orders_batch_" + suffix
-    # The source on RDS; the target, a restore scratch and another tenant on premises.
-    servers = {names["src"]: rds, **{names[k]: local for k in ("tgt", "scratch", "other")}}
-    for dsn, databases, secret in ((rds, ("src",), password),
-                                   (local, ("tgt", "scratch", "other"), None)):
-        with psycopg.connect(dsn, autocommit=True) as admin:
-            for role in (app, batch):
-                admin.execute(sql.SQL("CREATE ROLE {} LOGIN" + (" PASSWORD {}" if secret else ""))
-                              .format(sql.Identifier(role),
-                                      *([sql.Literal(secret)] if secret else [])))
-            for key in databases:
-                admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(names[key])))
-                if key in ("src", "tgt"):
-                    admin.execute(sql.SQL("COMMENT ON DATABASE {} IS 'approved-zone-a'").format(
-                        sql.Identifier(names[key])))
-            if "other" in databases:
-                admin.execute(sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(
-                    sql.Identifier(names["other"])))
-
-    def connect(database):
-        return psycopg.connect(servers[database], dbname=database)
-
-    def connect_as(database, role):
-        extra = {"password": password} if servers[database] is rds else {}
-        return psycopg.connect(servers[database], dbname=database, user=role, **extra)
-
-    prepare(names, app, batch, connect, connect_as,
-            schema_on=(names["src"], names["tgt"], names["scratch"]))
-    return dict(names=names, app=app, batch=batch, connect=connect, connect_as=connect_as,
-                servers=servers, password=password)
 
 
 class TestRdsToOnPremConformance(HandoffAdapterConformance):

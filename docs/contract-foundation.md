@@ -758,6 +758,29 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 
 결함 3종을 일부러 넣으면 모두 잡는다: 존재만 비교, 값을 증거에 넣음, provider 메시지 전달.
 
+## 원본 compute 중지와 AWS 탈출 측정 (§20.1)
+
+원본 앱이 아직 돌 수 있으면 그 작업이 연결을 쥐거나 큐를 비우거나 다른 곳에 쓸 수 있으므로, 인계는 원본에서 독립했다고 할 수 없다. `EcsServiceCompute`는 등록된 ECS 서비스 하나를 멈추고 그 상태를 ECS에서 다시 읽는다.
+- 원하는 작업 수를 0으로 하고(멱등), 서비스의 작업이 모두 `STOPPED`가 될 때까지 상한 시간 안에서 기다린다.
+- readback은 원하는 작업 수가 0이고, ECS가 실행·대기 중인 작업을 하나도 세지 않고, 내려가는 중인 작업도 없을 때만 확인한다. 원하는 수가 0이어도 작업이 아직 내려가는 중이면 확인하지 않는다.
+- 서비스·작업 정의·이미지 삭제는 퇴역이며 별도 승인 단계다.
+
+`exit.compute.source_compute_blocked` 의무는 다음 셋을 함께 잰다.
+- ECS가 원본 서비스를 멈췄다고 보고함
+- 예전 앱 주소가 그 실행의 고유 표식으로 응답하지 않음. 작업이 멈춘 뒤 AWS가 그 공인 IP를 다른 고객에게 줄 수 있어서, 남의 서버 응답을 원본으로 착각하지 않도록 표식으로 확인한다.
+- 원본 DB에 닿지 못하는 상태에서 새 앱 세션이 목적지에서 업무를 처리함
+
+로컬에서는 원본 compute가 없어 이 의무가 판단 불가였다. 실제 AWS에서 데이터 원본은 RDS, compute 원본은 ECS Fargate 서비스(실행 범위, 이 기기 IP만 허용)로 두고 측정했다.
+1. control plane 전체 흐름으로 RDS → 온프레미스 PostgreSQL 인계를 완료했다.
+2. 멈추기 전에는 같은 측정이 FAIL이었다. 예전 앱이 응답하고 실행 중인 작업이 1개였다.
+3. adapter가 ECS를 멈추고 재조회로 확인했다.
+4. RDS의 원본 DB가 접속을 받지 않게 했다.
+5. 의무별로 측정해 서명 증거로 넣었다.
+
+결과는 `COMPUTE_INDEPENDENT`, `DATA_IDENTITY_INDEPENDENT`, `RESTART_VERIFIED`, `OPERATIONS_VERIFIED` 모두 PASS다. 그래서 규칙대로 `PROVIDER_EXIT_VERIFIED`도 PASS다. 측정하지 않은 `PLATFORM_EXIT_VERIFIED`는 판단 불가로 남는다.
+
+이 PASS는 이 시험의 프로필에만 해당한다. 주문 50건 규모의 한 단위, RDS 한 대와 ECS 서비스 한 개, 객체 저장소·비밀·Identity를 계약에 넣지 않은 경우다. 객체·비밀·Cognito까지 한 계약으로 묶은 탈출은 아직 한 번에 시험하지 않았다(각각은 따로 시험했다). 데이터 원본을 로컬 DB로 둔 첫 시도에서도 사업자 탈출이 PASS로 나왔는데, 원본이 AWS가 아니었으므로 그 결과는 주장하지 않고 RDS 원본으로 다시 측정했다.
+
 ## 실제 AWS 계정 실측 (2026-11-14)
 
 개인 AWS 계정(ap-northeast-2)에서 사용자 승인을 받아 시험했다. 자원 이름은 모두 `sova-test-…-<실행번호>`이고 태그를 붙였으며, 시험 직후 실행 번호로 찾아 지웠다. 기존 자원은 읽기만 했다. 시험은 `aws_live` 표시가 있고, `SOVA_TEST_AWS_LIVE=1`과 실행 번호를 명시해야만 돈다.
@@ -792,7 +815,8 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 하지 않은 것은 다음과 같다.
 - RDS의 IAM DB 인증, 다른 엔진(Aurora 등)
 - 처리량·대용량 이전 측정, 반복 측정에 의한 쓰기 정지 시간 분포
-- 앱 실행 환경(ECS·EKS) 전환
+- EKS 등 다른 앱 실행 환경, 로드밸런서·DNS 수준의 트래픽 전환
+- 플랫폼 탈출(`PLATFORM_EXIT_VERIFIED`) 실측
 - 다른 리전·다른 계정 사이의 경로
 - GCP·Azure·NAVER Cloud
 
@@ -828,6 +852,8 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 | Keycloak 간 계정 이전·OIDC 실측 probe | 모의 시험 통과 | 로컬 Keycloak 두 대에서 실제 로그인·서명 검증. 계획 템플릿 미연결 |
 | AWS Cognito → Keycloak 계정 이전 | 실환경 시험 통과 | 실제 Cognito user pool에서 로컬 Keycloak으로. 페더레이션·MFA 사용자, Identity Pool은 미검증 |
 | AWS Secrets Manager → Kubernetes Secret 이전 | 실환경 시험 통과 | 실제 비밀 두 개에서 kind Secret으로. 원본 자격 증명 폐기는 별도 단계 |
+| ECS 원본 compute 중지·compute 독립성 실측 | 실환경 시험 통과 | 실제 ECS Fargate 서비스 중지와 재조회, 예전 주소 무응답 실측 |
+| 사업자 탈출(`PROVIDER_EXIT_VERIFIED`), RDS+ECS → 온프레미스 | 실환경 시험 통과 | 네 수준을 모두 실측해 판정. 이 단위·프로필에 한함. 객체·비밀·Identity를 함께 묶은 탈출은 미시험 |
 | MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |
 | 사고 보류·증거 기한·사고 복구 확장 | 지원하지 않음 | 명세가 스키마를 정하지 않음(S.9, ADR 전제). 있으면 `NEEDS_EVIDENCE` |
