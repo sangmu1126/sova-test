@@ -18,11 +18,19 @@ spec:
       containers:
         - name: postgres
           image: postgres:17.11
-          args: ["-c", "cluster_name=sova-persistence-test", "-c", "max_prepared_transactions=8"]
+          # wal_level=logical: the logical-replication tests. The server listens on
+          # the same port inside the pod as the tests use on the host, so a
+          # subscription can reach its publisher at the address the tests know.
+          args: ["-c", "cluster_name=sova-persistence-test", "-c", "max_prepared_transactions=8",
+                 "-c", "port=55432",
+                 "-c", "wal_level=logical", "-c", "max_replication_slots=32",
+                 "-c", "max_wal_senders=32", "-c", "max_logical_replication_workers=16",
+                 "-c", "max_worker_processes=32", "-c", "max_slot_wal_keep_size=1GB"]
           env:
             - {name: POSTGRES_HOST_AUTH_METHOD, value: trust}
             - {name: POSTGRES_DB, value: sova_test}
-          ports: [{containerPort: 5432}]
+            - {name: PGPORT, value: "55432"}  # psql, pg_dump and the server itself
+          ports: [{containerPort: 55432}]
           readinessProbe:
             exec: {command: ["pg_isready", "-U", "postgres", "-d", "sova_test"]}
             periodSeconds: 2
@@ -34,7 +42,7 @@ metadata: {name: postgres, namespace: sova-test-env}
 spec:
   type: NodePort
   selector: {app: postgres}
-  ports: [{port: 5432, targetPort: 5432, nodePort: 30432}]
+  ports: [{port: 55432, targetPort: 55432, nodePort: 30432}]
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -281,11 +281,15 @@ class PostgresOfflineCopyAdapter:
                                 sql.Identifier(table))) as into:
                         for chunk in out:
                             into.write(chunk)
-                for name, (last, called) in self._sequences("source").items():
-                    target.execute(sql.SQL(
-                        "SELECT setval({}, coalesce(%s, (SELECT start_value FROM pg_sequences "
-                        "WHERE schemaname='public' AND sequencename=%s)), %s)").format(
-                            sql.Literal(name)), (last, name, called))
+                self._copy_sequences(target)
+
+    def _copy_sequences(self, target):
+        """Every sequence's position, so identifiers are never issued twice (AT-24)."""
+        for name, (last, called) in self._sequences("source").items():
+            target.execute(sql.SQL(
+                "SELECT setval({}, coalesce(%s, (SELECT start_value FROM pg_sequences "
+                "WHERE schemaname='public' AND sequencename=%s)), %s)").format(
+                    sql.Literal(name)), (last, name, called))
 
     def _check_copy_content(self):
         source, target = self._digests("source"), self._digests("target")

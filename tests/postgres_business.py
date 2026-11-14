@@ -2,6 +2,7 @@
 an application role and a second writer path (a batch job), with business
 history already written by the application before any handoff starts."""
 
+import os
 from uuid import uuid4
 
 import psycopg
@@ -21,6 +22,18 @@ CREATE SEQUENCE IF NOT EXISTS order_number_seq;
 """
 PROBE_INSERT = ("INSERT INTO orders (id, customer, idempotency_key, amount) "
                 "VALUES (-1, 'sova-probe', 'sova-probe', 0)")
+
+
+def replication_conninfo(database):
+    """How the PostgreSQL server reaches a database on itself for a subscription:
+    its local socket by default (the test servers trust local connections)."""
+    base = os.environ.get("SOVA_TEST_POSTGRES_REPLICATION_CONNINFO", "user=postgres")
+    return f"{base} dbname={database}"
+
+
+def logical_replication_available(connect, database):
+    with connect(database) as conn:
+        return conn.execute("SHOW wal_level").fetchone()[0] == "logical"
 
 
 class Route:

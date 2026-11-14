@@ -7,13 +7,14 @@ from datetime import UTC, datetime, timedelta
 import json
 
 from handoff_support import admitted_handoff
-from postgres_business import PROBE_INSERT, SCHEMA, TABLES, Route
+from postgres_business import PROBE_INSERT, SCHEMA, TABLES, Route, replication_conninfo
 import pytest
 from support import permit_for
 
 from sova.adapters.postgres_effects import PostgresEffectJournal
 from sova.adapters.postgres_execution import PostgresExecutionOwnership
 from sova.adapters.postgres_handoff_probes import PostgresHandoffProbes, artifact_digest
+from sova.adapters.postgres_logical_replication import PostgresLogicalReplicationAdapter
 from sova.adapters.postgres_offline_copy import PostgresOfflineCopyAdapter
 from sova.adapters.postgres_operations import PostgresOperationRepository
 from sova.application.effects import EffectExecutor, UncertainEffect
@@ -194,15 +195,18 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
     return record, observed
 
 
-def pieces(business, adapter_id, *, source, target, route, fenced=None):
+def pieces(business, adapter_id, *, source, target, route, fenced=None, cdc=False):
     """The adapter fences ``fenced`` writer roles (default: every registered one);
-    the probes always check every writer path that really exists."""
+    the probes always check every writer path that really exists. ``cdc``
+    selects the logical-replication adapter instead of the offline copy."""
     names, app = business["names"], business["app"]
     writers = (app, business["batch"])
-    adapter = PostgresOfflineCopyAdapter(
-        adapter_id, connect=business["connect"], source_db=names[source],
-        target_db=names[target], app_role=app, tables=TABLES, schema_sql=SCHEMA, route=route,
-        writer_roles=fenced or writers)
+    common = dict(connect=business["connect"], source_db=names[source],
+                  target_db=names[target], app_role=app, tables=TABLES, schema_sql=SCHEMA,
+                  route=route, writer_roles=fenced or writers)
+    adapter = (PostgresLogicalReplicationAdapter(
+        adapter_id, source_conninfo=replication_conninfo(names[source]), **common)
+        if cdc else PostgresOfflineCopyAdapter(adapter_id, **common))
     probes = PostgresHandoffProbes(
         connect_as=business["connect_as"], admin_connect=business["connect"],
         source_db=names[source], target_db=names[target], app_role=app, tables=TABLES,
@@ -212,7 +216,7 @@ def pieces(business, adapter_id, *, source, target, route, fenced=None):
 
 def run_handoff(postgres_database, now, business, *, adjust=None, until=None,
                 strategy="offline-copy", before=None, lose_response_at=(), events=None,
-                fenced=None, watch_catalog=None, measures=None, route=None):
+                fenced=None, watch_catalog=None, measures=None, route=None, cdc=False):
     h = admitted_handoff(postgres_database, now, adjust=adjust, strategy=strategy)
     after_effect = None
     if watch_catalog:
@@ -220,7 +224,8 @@ def run_handoff(postgres_database, now, business, *, adjust=None, until=None,
     names = business["names"]
     route = route or Route(names["src"])  # a real route store (Service, DNS) when given
     adapter, probes = pieces(business, h["world"]["manifest"].adapter_id,
-                             source="src", target="tgt", route=route, fenced=fenced)
+                             source="src", target="tgt", route=route, fenced=fenced,
+                             cdc=cdc)
     record, observed = drive(h, h["revision"], h["plan"], adapter=adapter, probes=probes,
                              other_db=names["other"], scratch_db=names["scratch"],
                              operation=OPERATION, approval_id="approval-1", until=until,
