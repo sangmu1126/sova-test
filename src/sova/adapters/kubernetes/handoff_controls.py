@@ -32,6 +32,7 @@ _DNS = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _LABEL_KEY = re.compile(r"(?:[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?/)?"
                         r"[A-Za-z0-9](?:[A-Za-z0-9._-]{0,61}[A-Za-z0-9])?")
 _LABEL_VALUE = re.compile(r"(?:[A-Za-z0-9](?:[A-Za-z0-9._-]{0,61}[A-Za-z0-9])?)?")
+_SECRET_KEY = re.compile(r"[-._a-zA-Z0-9]{1,253}")
 _TIMEOUT = 5
 
 
@@ -101,6 +102,22 @@ class KubernetesHandoffControls(KubernetesHTTPS):
             raise ContractError("Too many pods to decide")
         return {p["metadata"]["name"] for p in listed.get("items", ())
                 if not p["metadata"].get("deletionTimestamp")}
+
+    def secret(self, name):
+        """The Secret object; its values stay in memory, never in a message."""
+        return self._get(self._ns("/api/v1", "secrets", name))
+
+    def set_secret_value(self, name, resource_version, key, encoded):
+        if type(key) is not str or not _SECRET_KEY.fullmatch(key):
+            raise ContractError("Kubernetes Secret data key required")
+        if type(encoded) is not str:
+            raise ContractError("Base64 Secret value required")
+        pointer = "/data/" + key.replace("~", "~0").replace("/", "~1")
+        current = self.secret(name)
+        operations = ([{"op": "add", "path": pointer, "value": encoded}]
+                      if current.get("data") is not None
+                      else [{"op": "add", "path": "/data", "value": {key: encoded}}])
+        return self._patch(self._ns("/api/v1", "secrets", name), resource_version, operations)
 
     def cronjob(self, name):
         return self._get(self._ns("/apis/batch/v1", "cronjobs", name))

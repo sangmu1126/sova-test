@@ -8,22 +8,16 @@ kind node, so nothing is pulled. ``SOVA_TEST_KUBE_CONTEXT`` must name a kind
 context whose API server is on loopback.
 """
 
-import base64
 from datetime import UTC, datetime, timedelta
-import hashlib
 import json
-import os
-import shutil
-import subprocess
 from threading import Timer
 import time
-from urllib.parse import urlsplit
 from uuid import uuid4
 
 import pytest
+from kind_support import delete_namespace, kind_namespace, kubectl
 
 from sova.adapters.kubernetes.handoff_controls import (
-    KubernetesHandoffControls,
     KubernetesServiceRoute,
     controller_paused,
     pause_cronjob,
@@ -31,20 +25,11 @@ from sova.adapters.kubernetes.handoff_controls import (
 from sova.adapters.kubernetes.https import KubernetesRequestRefused
 from sova.adapters.postgres_offline_copy import PostgresOfflineCopyAdapter
 from sova.domain.contracts import ContractError, EffectCommand, EffectStatus, ResourceScope
-from sova.domain.discovery import KubernetesReadRegistration
 
 pytestmark = pytest.mark.kubernetes
 PAUSE = "registry.k8s.io/pause:3.10"
 SIDES = {"orders_src": {"app": "orders", "side": "source"},
          "orders_tgt": {"app": "orders", "side": "target"}}
-
-
-def kubectl(context, *args, stdin=None):
-    result = subprocess.run(["kubectl", "--context", context, *args], input=stdin,
-                            capture_output=True, text=True, timeout=180)
-    if result.returncode:
-        raise AssertionError(f"kubectl {args[0]} failed: {result.stderr[-400:]}")
-    return result.stdout
 
 
 def deployment(name, side):
@@ -59,33 +44,13 @@ def deployment(name, side):
 
 @pytest.fixture(scope="module")
 def cluster():
-    context = os.environ.get("SOVA_TEST_KUBE_CONTEXT")
-    if not context or not shutil.which("kubectl"):
-        pytest.skip("SOVA_TEST_KUBE_CONTEXT and kubectl are required for kind tests")
-    if not context.startswith("kind-"):
-        raise pytest.UsageError("Kubernetes handoff tests run only against kind clusters")
-    server = kubectl(context, "config", "view", "--minify", "-o",
-                     "jsonpath={.clusters[0].cluster.server}").strip()
-    if urlsplit(server).hostname != "127.0.0.1":
-        raise pytest.UsageError("Kubernetes handoff tests run only against loopback clusters")
-    namespace = "handoff-" + uuid4().hex[:8]
-    kubectl(context, "create", "namespace", namespace)
-    role = {"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "Role",
-            "metadata": {"name": "sova-handoff"}, "rules": [
-                {"apiGroups": [""], "resources": ["services"], "verbs": ["get", "patch"]},
-                {"apiGroups": [""], "resources": ["pods"], "verbs": ["list"]},
-                {"apiGroups": ["discovery.k8s.io"], "resources": ["endpointslices"],
-                 "verbs": ["list"]},
-                {"apiGroups": ["batch"], "resources": ["cronjobs"], "verbs": ["get", "patch"]},
-                {"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["list"]}]}
+    rules = [
+        {"apiGroups": [""], "resources": ["services"], "verbs": ["get", "patch"]},
+        {"apiGroups": [""], "resources": ["pods"], "verbs": ["list"]},
+        {"apiGroups": ["discovery.k8s.io"], "resources": ["endpointslices"], "verbs": ["list"]},
+        {"apiGroups": ["batch"], "resources": ["cronjobs"], "verbs": ["get", "patch"]},
+        {"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["list"]}]
     objects = [
-        {"apiVersion": "v1", "kind": "ServiceAccount", "metadata": {"name": "sova-handoff"}},
-        role,
-        {"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "RoleBinding",
-         "metadata": {"name": "sova-handoff"},
-         "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role",
-                     "name": "sova-handoff"},
-         "subjects": [{"kind": "ServiceAccount", "name": "sova-handoff"}]},
         deployment("orders-source", "source"), deployment("orders-target", "target"),
         {"apiVersion": "v1", "kind": "Service", "metadata": {"name": "orders"},
          "spec": {"selector": SIDES["orders_src"], "ports": [{"port": 80}]}},
@@ -95,29 +60,12 @@ def cluster():
              "containers": [{"name": "batch", "image": PAUSE,
                              "imagePullPolicy": "IfNotPresent"}]}}}}}},
     ]
-    kubectl(context, "-n", namespace, "apply", "-f", "-",
-            stdin=json.dumps({"apiVersion": "v1", "kind": "List", "items": objects}))
+    context, namespace, controls = kind_namespace(rules, objects)
     for name in ("orders-source", "orders-target"):
         kubectl(context, "-n", namespace, "rollout", "status", f"deployment/{name}",
                 "--timeout=120s")
-    uid = kubectl(context, "get", "namespace", namespace, "-o",
-                  "jsonpath={.metadata.uid}").strip()
-    ca = base64.b64decode(kubectl(
-        context, "config", "view", "--raw", "--minify", "-o",
-        "jsonpath={.clusters[0].cluster.certificate-authority-data}").strip())
-    token = kubectl(context, "-n", namespace, "create", "token", "sova-handoff",
-                    "--duration=3600s").strip()
-    now = datetime.now(UTC)
-
-    def controls(namespace_name=namespace, namespace_uid=uid):
-        registration = KubernetesReadRegistration(
-            "tenant-orders", "orders", "kind-local", "local", server, ("127.0.0.1",),
-            hashlib.sha256(ca).hexdigest(), namespace_name, namespace_uid, 1,
-            now - timedelta(minutes=1), now + timedelta(hours=1))
-        return KubernetesHandoffControls(registration, ca_pem=ca, token_provider=lambda: token)
-
     yield {"context": context, "namespace": namespace, "controls": controls}
-    kubectl(context, "delete", "namespace", namespace, "--wait=false")
+    delete_namespace(context, namespace)
 
 
 def run(cluster, *args, stdin=None):

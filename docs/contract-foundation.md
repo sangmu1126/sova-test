@@ -724,6 +724,40 @@ suspend는 새 실행만 막는다. 그래서 이미 도는 Job이 있으면 그
 
 Deployment 형태의 operator·GitOps 동기화 같은 다른 자동화의 멈춤, Ingress·Gateway·DNS 수준의 전환, 관리형 클러스터의 IAM 기반 인증(IRSA·Workload Identity)은 다루지 않았다.
 
+## Cognito에서 옮기기 (Part II §5~§7)
+
+이전 adapter의 원본 쪽은 계정 목록 연결부(`accounts(bound)`)로 분리했다. Keycloak realm과 AWS Cognito user pool이 그 구현이고, 목적지는 Keycloak realm이다.
+
+`CognitoUserPoolDirectory`는 `ListUsers`와 `AdminListGroupsForUser` 두 호출만으로 읽는다. 원칙은 다음과 같다.
+- Cognito는 비밀번호·해시·MFA 비밀을 내주지 않는다. 그래서 Cognito에서 나가는 이전은 항상 목적지에서 새 자격 증명을 만드는 방식(`RESET_AND_REENROLL`)이다. Cognito의 사용자 이전 트리거는 반대 방향(Cognito로 들어오는 이전)이라 쓰지 않는다.
+- 안정 식별자는 `sub` 속성이다. 사용자 이름이나 이메일로 계정을 합치지 않는다. 발급자(`https://cognito-idp.<region>.amazonaws.com/<pool>`)와 함께 원본 신원을 정한다.
+- 외부 IdP로 페더레이션된 사용자(`EXTERNAL_PROVIDER`)는 비밀번호 재설정으로 옮길 수 없다. 만들지 않고, readback이 `federated_accounts`로 보고하며 확인되지 않는다. 페더레이션 계획이 따로 다룬다.
+
+실제 AWS Cognito user pool(Lite 등급, 실행 범위, 이메일 발송 끔)에서 로컬 Keycloak으로 4개 시험이 통과했다.
+- 계정은 Cognito `sub`로 매핑되고 그룹이 함께 옮겨진다. 비활성 계정은 만들지 않는다.
+- Cognito 비밀번호로는 목적지에 로그인할 수 없다(`invalid_grant`). 재설정 뒤 목적지 로그인이 되고, 목적지 토큰의 그룹 claim이 Cognito ID 토큰의 `cognito:groups`와 같다. Cognito ID 토큰도 Cognito가 공개한 키로 같은 검증기가 서명을 확인했다.
+- Cognito refresh token은 목적지가 거부한다.
+- Cognito 앱 클라이언트를 지워 Cognito 로그인을 막아도 목적지 로그인은 계속된다(IAM-08).
+- 이전 뒤 Cognito에서 계정 비활성화·그룹 변경이 일어나면 readback이 `UNKNOWN`이고, 다시 동기화하면 반영된다.
+
+Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigger 조사, MFA 사용자, 페더레이션 사용자의 실계정 시험은 하지 않았다.
+
+## 비밀 이전: Secrets Manager → Kubernetes Secret
+
+`SecretsManagerToKubernetes`는 등록된 원본 비밀(AWS Secrets Manager)의 현재 값(`AWSCURRENT`)을 등록된 Kubernetes Secret의 키로 옮긴다.
+- 목적지 Secret은 환경 소유자가 미리 만든다. adapter의 token은 그 이름들에 대한 `get`·`patch`만 가진다. 쓰기는 resourceVersion을 시험하는 JSON Patch다.
+- readback은 양쪽을 다시 읽어, 모든 목적지 값이 원본의 현재 값과 같을 때만 확인한다. 복사 뒤 원본이 회전되면 목적지는 낡은 자격 증명을 내주게 되므로 `UNKNOWN`이다.
+- 값은 호출 동안 메모리에만 있다. 관측·오류에는 비밀 이름, 원본 버전 ID, 일치 여부만 담는다. 값, 값의 인코딩, 값의 해시는 담지 않는다. 짧은 비밀은 해시로부터 역산될 수 있기 때문이다. provider 오류 메시지도 전달하지 않는다.
+- 원본 비밀 뒤의 자격 증명을 폐기·회전해 클라우드에 남은 사본을 무효로 만드는 일은 별도 승인 단계다. 이 adapter는 그것을 주장하지 않으며, 읽을 수 있는 원본은 여전히 의존성이다.
+
+실제 Secrets Manager 비밀 두 개(JSON 문자열, 바이너리)에서 kind의 Secret으로 3개 시험이 통과했다.
+- 증거 어디에도 값·base64·비밀번호 문자열이 없다.
+- 원본 회전 뒤 낡은 사본이 감지되고, 다시 복사하면 확인된다.
+- 같은 namespace의 등록되지 않은 Secret은 403이다.
+- 없는 원본의 오류에는 provider 메시지가 없다.
+
+결함 3종을 일부러 넣으면 모두 잡는다: 존재만 비교, 값을 증거에 넣음, provider 메시지 전달.
+
 ## 실제 AWS 계정 실측 (2026-11-14)
 
 개인 AWS 계정(ap-northeast-2)에서 사용자 승인을 받아 시험했다. 자원 이름은 모두 `sova-test-…-<실행번호>`이고 태그를 붙였으며, 시험 직후 실행 번호로 찾아 지웠다. 기존 자원은 읽기만 했다. 시험은 `aws_live` 표시가 있고, `SOVA_TEST_AWS_LIVE=1`과 실행 번호를 명시해야만 돈다.
@@ -758,7 +792,7 @@ Deployment 형태의 operator·GitOps 동기화 같은 다른 자동화의 멈�
 하지 않은 것은 다음과 같다.
 - RDS의 IAM DB 인증, 다른 엔진(Aurora 등)
 - 처리량·대용량 이전 측정, 반복 측정에 의한 쓰기 정지 시간 분포
-- Cognito 계정 이전, Secrets Manager 비밀 이전, 앱 실행 환경(ECS·EKS) 전환
+- 앱 실행 환경(ECS·EKS) 전환
 - 다른 리전·다른 계정 사이의 경로
 - GCP·Azure·NAVER Cloud
 
@@ -792,7 +826,9 @@ Deployment 형태의 operator·GitOps 동기화 같은 다른 자동화의 멈�
 | 권한 witness의 Object Lock 저장소 | 실환경 시험 통과 | AWS S3 governance·compliance 모드 모두 실측 |
 | AWS CloudTrail 변경 수집기 | 실환경 시험 통과 | 이벤트 이력 조회, 실제 정책 변경 91초 뒤 기록. 조직 trail·GCP Audit Logs 미검증 |
 | Keycloak 간 계정 이전·OIDC 실측 probe | 모의 시험 통과 | 로컬 Keycloak 두 대에서 실제 로그인·서명 검증. 계획 템플릿 미연결 |
-| Cognito 등 운영 IdP 이전, MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
+| AWS Cognito → Keycloak 계정 이전 | 실환경 시험 통과 | 실제 Cognito user pool에서 로컬 Keycloak으로. 페더레이션·MFA 사용자, Identity Pool은 미검증 |
+| AWS Secrets Manager → Kubernetes Secret 이전 | 실환경 시험 통과 | 실제 비밀 두 개에서 kind Secret으로. 원본 자격 증명 폐기는 별도 단계 |
+| MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |
 | 사고 보류·증거 기한·사고 복구 확장 | 지원하지 않음 | 명세가 스키마를 정하지 않음(S.9, ADR 전제). 있으면 `NEEDS_EVIDENCE` |
 | 부분 효과(`PARTIAL_EFFECT`) 원장 연결 | 지원하지 않음 | 기존 원장에 상태 없음 |
