@@ -47,4 +47,4 @@ def adapter():
     return IngressAdapter()
 
 
-pytest_plugins = ["postgres_fixtures"]
+pytest_plugins = ["postgres_fixtures", "postgres_business"]
