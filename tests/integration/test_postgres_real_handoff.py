@@ -676,14 +676,18 @@ def test_sequences_move_with_the_data_so_numbers_are_never_reissued(postgres_dat
         assert conn.execute("SELECT nextval('order_number_seq')").fetchone()[0] == 11
 
 
+@pytest.mark.parametrize("difference", [
+    "ALTER TABLE orders ADD COLUMN channel text",
+    "ALTER TABLE orders ADD CONSTRAINT positive_amount CHECK (amount >= 0)",
+])
 def test_a_schema_difference_stops_staging_before_any_source_change(postgres_database, now,
-                                                                    business):
+                                                                    business, difference):
     """AT-24: the source has a column the target definition lacks. Staging is not
     confirmed, the handoff holds at its first step, and the source was never
     paused or fenced."""
     names = business["names"]
     with business["connect"](names["src"]) as conn:
-        conn.execute("ALTER TABLE orders ADD COLUMN channel text")
+        conn.execute(difference)
     x = run_handoff(postgres_database, now, business, adjust=without_transport_control)
     assert x["record"].state == HandoffState.SAFE_HOLD
     assert x["record"].reason == "EFFECT_UNKNOWN" and x["record"].next_operation == 0

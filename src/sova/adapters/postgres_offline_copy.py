@@ -4,9 +4,10 @@ It performs the handoff's external effects on two reachable databases and
 reads each postcondition back from the databases themselves, never from its
 own memory:
 
-* stage_target - the target tables exist with exactly the source's columns
-  and types, every extension the source uses is installed on the target
-  (AT-24), and no writer role can connect to or write the target;
+* stage_target - the target tables exist with exactly the source's columns,
+  types, constraints and triggers, every extension the source uses is
+  installed on the target (AT-24), and no writer role can connect to or
+  write the target;
 * verify_return_target (failback) - the original source still has its tables,
   stays fenced and has no application session;
 * start_sync - an initial copy taken while the source still accepts writes,
@@ -143,6 +144,18 @@ class PostgresOfflineCopyAdapter:
                 "SELECT table_name, column_name, data_type, is_nullable "
                 "FROM information_schema.columns WHERE table_schema='public' "
                 "AND table_name = ANY(%s) ORDER BY table_name, ordinal_position", (names,))]
+            # Constraints carry business rules (e.g. one order per idempotency key);
+            # triggers carry behaviour. Both must match, not only the columns.
+            columns += [["constraint", *r] for r in conn.execute(
+                "SELECT c.conrelid::regclass::text, pg_get_constraintdef(c.oid) "
+                "FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid "
+                "JOIN pg_namespace n ON n.oid = t.relnamespace "
+                "WHERE n.nspname='public' AND t.relname = ANY(%s) ORDER BY 1, 2", (names,))]
+            columns += [["trigger", *r] for r in conn.execute(
+                "SELECT t.relname, pg_get_triggerdef(g.oid) FROM pg_trigger g "
+                "JOIN pg_class t ON t.oid = g.tgrelid JOIN pg_namespace n "
+                "ON n.oid = t.relnamespace WHERE NOT g.tgisinternal AND n.nspname='public' "
+                "AND t.relname = ANY(%s) ORDER BY 1, 2", (names,))]
             extensions = sorted(r[0] for r in conn.execute("SELECT extname FROM pg_extension"))
         return columns, extensions
 
