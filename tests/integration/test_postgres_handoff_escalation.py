@@ -111,7 +111,7 @@ def test_security_incident_hold_release_reapproval_then_resume(started):
 
     with pytest.raises(RepositoryConflict, match="security hold"):
         resume("approval-1")
-    now = datetime.now(UTC)
+    now = datetime.now(UTC) - timedelta(milliseconds=500)  # after the hold, not ahead of the DB
     holds.release_hold(h["app"], HoldRelease(
         "incident-11", scope, h["plan"].revisions, 1, "security-requester",
         "security-approver", "Credentials rotated and access re-verified", "ev-rotation",

@@ -175,7 +175,7 @@ def test_new_hold_blocks_response_before_external_mutation(response):
             binding.source_resource.scope,
             "detector",
             "second incident",
-            datetime.now(UTC),
+            datetime.now(UTC) - timedelta(seconds=1),  # never ahead of the DB clock
         )
     )
     adapter = ResponseAdapter()
@@ -378,7 +378,7 @@ def test_late_revocation_or_new_incident_never_becomes_completed_response(
                     binding.target_resource.scope,
                     "detector",
                     "late violation",
-                    datetime.now(UTC),
+                    datetime.now(UTC) - timedelta(seconds=1),
                 )
             )
 
