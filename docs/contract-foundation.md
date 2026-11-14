@@ -607,33 +607,65 @@ IAM-10(종료 뒤 이전 발급자 거부)과 IAM-11(브리지·이중 발급자
 
 ### 로컬 쓰기 정지 측정 (참조값)
 
-`tests/perf/test_handoff_pause.py`는 참조 adapter로 인계를 끝까지 돌리고, 효과 원장 관측 시각으로 두 구간을 잰다.
+`tests/perf/test_handoff_pause.py`는 인계를 끝까지 돌리고, 효과 원장 관측 시각으로 두 구간을 잰다.
 
 - 쓰기 정지: 접수 정지부터 목적지 활성화까지. 계약 예산과 같은 정의다.
 - 경로 확정까지: 접수 정지부터 경로 확정까지.
 
-세 테이블(주문·멱등 결과·작업)에 같은 행 수를 넣는다. `SOVA_TEST_PERF=1`일 때만 돈다. 크기는 `SOVA_TEST_PERF_SIZES`(기본 `1000,10000`)로 고른다.
+단계별로 접수 정지 뒤 몇 ms에 효과가 확인됐는지도 기록한다. 세 테이블(주문·멱등 결과·작업)에 같은 행 수를 넣는다. `SOVA_TEST_PERF=1`일 때만 돈다. 크기는 `SOVA_TEST_PERF_SIZES`(기본 `1000,10000`)로 고른다.
+
+비교하는 세 가지는 다음과 같다.
+- offline-copy: 참조 adapter. 차단 구간 안에서 전체를 복사한다.
+- snapshot-cdc(참조): 같은 참조 adapter. 최종 변경을 전체 재복사로 반영한다.
+- snapshot-cdc(논리 복제): [논리 복제 adapter](#postgresql-논리-복제-adapter-snapshot-cdc). 차단 구간에서는 남은 변경분만 반영한다.
 
 측정 환경(2026-11-15):
-- Mac arm64(메모리 16GiB)의 Docker Desktop VM 위 [시험 환경](../infra/test-env/README.md)
-- PostgreSQL 17.11 서버 하나에 원본·목적지 DB를 둘 다 둔다.
-- 같은 기기에서 Lima VM 두 대(합계 8GiB)가 함께 돌았다.
+- MacBook Air M1(메모리 16GiB, 팬 없음)의 Docker Desktop VM(8GiB) 위 [시험 환경](../infra/test-env/README.md)
+- PostgreSQL 17.11 서버 하나에 원본·목적지 DB를 둘 다 둔다. `wal_level=logical`이다.
+- Lima VM은 멈춘 상태였다.
 
-| 전략 | 테이블당 행 | 횟수 | 쓰기 정지 ms (최소 / 중앙 / 최대) | 경로 확정까지 ms (중앙) |
+| 방식 | 테이블당 행 | 횟수 | 쓰기 정지 ms (최소 / 중앙 / 최대) | 경로 확정까지 ms (중앙) |
 |---|---:|---:|---|---:|
-| offline-copy | 1,000 | 3 | 1,274 / 1,407 / 1,448 | 1,628 |
-| offline-copy | 10,000 | 3 | 2,046 / 2,096 / 2,111 | 2,335 |
-| snapshot-cdc | 100,000 | 2 | 12,963 / — / 13,199 | 13,634 (2회 평균) |
+| offline-copy | 1,000 | 3 | 1,150 / 1,176 / 1,228 | 1,372 |
+| snapshot-cdc(참조) | 1,000 | 3 | 1,202 / 1,221 / 1,236 | 1,452 |
+| snapshot-cdc(논리 복제) | 1,000 | 3 | 1,168 / 1,206 / 1,213 | 1,408 |
+| offline-copy | 10,000 | 3 | 1,851 / 1,876 / 1,889 | 2,079 |
+| snapshot-cdc(참조) | 10,000 | 3 | 1,757 / 1,787 / 1,823 | 1,981 |
+| snapshot-cdc(논리 복제) | 10,000 | 3 | 1,703 / 1,760 / 1,882 | 1,973 |
+| offline-copy | 100,000 | 3 | 7,461 / 7,797 / 8,064 | 8,001 |
 
-측정하지 못한 조합:
-- snapshot-cdc 1천·1만 행, offline-copy 10만 행.
-- 첫 묶음에서는 18건 중 snapshot-cdc 10만 행 2건만 통과했다. 실패 기록을 보존하지 않아 원인을 확정하지 못했다.
-- 두 번째 묶음은 offline-copy 10만 행 도중 Docker Desktop VM이 비정상 종료했다("virtualization process exited without being asked to"). 그래서 10만 행은 기본 크기에서 뺐다.
+단계별 분해(중앙값, 접수 정지 뒤 ms):
+
+| 방식 | 행 | 차단 확인 | 복사·최종 반영 확인 | 최종 상태 검증 확인 | 활성화 확인 |
+|---|---:|---:|---:|---:|---:|
+| offline-copy | 10,000 | 172 | 718 | 931 | 1,876 |
+| snapshot-cdc(참조) | 10,000 | 164 | 676 | 874 | 1,787 |
+| snapshot-cdc(논리 복제) | 10,000 | 185 | 481 | 724 | 1,760 |
+| offline-copy | 100,000 | 176 | 2,696 | 3,332 | 7,797 |
+
+각 시각은 adapter의 readback이 끝난 때다. 복사·최종 반영과 최종 상태 검증의 readback은 양쪽 전체 내용 digest를 계산하므로 그 시간도 들어 있다.
 
 읽는 법:
-- **1천 행에서도 약 1.3~1.4초다.** 1천→1만 행에서 늘어난 것은 약 0.7초다. 그러므로 이 규모에서는 데이터 복사보다 고정 비용이 대부분이라고 추정한다. 고정 비용은 차단 readback·세션 정리·최종 내용 비교·서명 증거·활성화 의도 기록이다. 단계별로 나눠 재지는 않았다.
-- **snapshot-cdc도 차단 구간 안에서 전체를 다시 복사한다.** 참조 adapter는 최종 변경을 전체 재복사로 반영한다. 그래서 초기 동기화가 쓰기 정지를 줄이지 못한다. 10만 행에서 약 13초로, 기본 계약 예산 5,000ms를 넘는다. 이 결과에 따라 [후보 탐색](#계획-컴파일-c0c8-c10c11)은 단계 이름만으로 snapshot-cdc를 앞에 두지 않는다.
+- **논리 복제는 차단 구간의 데이터 이동을 줄였다.** 1만 행에서 최종 반영이 접수 정지 뒤 481ms에 끝났다. 전체 재복사(676~718ms)보다 약 200ms 빠르다.
+- **그러나 규모가 커지면 정지 시간은 활성화 전 검증이 지배한다.** 10만 행 offline-copy에서 복사 확인까지 2.7초, 최종 상태 검증 확인부터 활성화까지 4.5초였다. 그 구간에서 재는 것은 다음이다. 모두 목적지 전체 데이터에 비례한다.
+  - 데이터 집합별 전체 내용 비교
+  - 업무 불변식(ORDER-01)
+  - 보안 통제 `tested_restore`: 목적지를 빈 DB로 복원해 비교한다.
+
+  §16.4가 "전체 해시 비교를 짧은 정지 구간에 넣을 수 있는지 실측하라"고 한 지점이다. 차단 구간을 더 줄이려면 다음과 같은 별도 설계가 필요하다. 아직 하지 않았다.
+  - 복원 시험을 차단 전 동기화 상태로 옮기기
+  - digest를 서버 쪽에서 계산하기
+  - §16.4 조건(변경 누락 감지)을 갖춘 증분 검증
+- **1천 행에서도 약 1.2초다.** 이 규모에서는 데이터와 무관한 고정 비용이 대부분이다.
+- **참조 snapshot-cdc는 정지 시간을 줄이지 못한다.** 최종 반영을 전체 재복사로 하기 때문이다. 이 결과에 따라 [후보 탐색](#계획-컴파일-c0c8-c10c11)은 단계 이름만으로 snapshot-cdc를 앞에 두지 않는다.
 - 같은 서버 안 복사라 네트워크 경로가 없다. 운영 환경의 정지 시간을 예측하는 값이 아니다. 성능 주장이나 SLO 근거로 쓰지 않는다.
+
+측정하지 못한 것:
+- snapshot-cdc 10만 행(참조·논리 복제 모두). 10만 행 측정 중 Docker Desktop VM이 두 번 비정상 종료했다("virtualization process exited without being asked to").
+  - 첫 번째는 offline-copy, 두 번째는 참조 snapshot-cdc를 돌리던 중이었다.
+  - 두 번째 종료 뒤 오류 창에서 공장 초기화가 선택되어 Docker 안의 모든 컨테이너·이미지가 지워졌다.
+  - 그래서 10만 행은 기본 크기에서 뺐다. 이 기기에서는 다시 돌리지 않는다.
+- 같은 날 더 이른 묶음(Lima VM 실행 중, `wal_level=replica`)에서는 참조 snapshot-cdc 10만 행 2회가 12,963·13,199ms였다. 조건이 달라 위 표와 섞지 않는다.
 
 ## adapter 공통 적합성 시험
 
@@ -653,6 +685,54 @@ IAM-10(종료 뒤 이전 발급자 거부)과 IAM-11(브리지·이중 발급자
 두 템플릿(offline-copy, snapshot-cdc)의 adapter 단계 순서를 모두 걷는다. world는 쓰기 시도를 데이터를 남기지 않는 방식으로 해야 한다(PostgreSQL은 항상 되돌리는 트랜잭션).
 
 PostgreSQL adapter와 S3 호환 객체 저장소 adapter가 통과한다. 결함을 일부러 넣으면(PostgreSQL 4종, S3 5종) 각각 시험이 실패한다. S3에서 삭제 누락은 처음에 S3 전용 시험만 잡았기에, provider와 무관한 성질로 보고 공통 시험에 올렸다.
+
+## PostgreSQL 논리 복제 adapter (snapshot-cdc)
+
+`PostgresLogicalReplicationAdapter`는 snapshot-cdc를 이름 그대로 구현한다. 데이터는 차단 전에 옮기고, 차단 구간에서는 아직 반영되지 않은 변경분만 적용한다. 그 밖의 단계는 참조 adapter와 같다(목적지 준비, 접수 정지, 차단, 최종 상태 검증, 활성화, 경로 확정).
+
+**동기화 시작(`start_sync`).** 먼저 다음 두 가지를 확인한다. 하나라도 어긋나면 아무것도 만들지 않고, readback이 이유를 보고한다.
+- 원본 서버가 `wal_level=logical`이다.
+- 단위의 모든 테이블이 UPDATE·DELETE를 발행할 수 있다(primary key, replica identity 인덱스, `REPLICA IDENTITY FULL` 중 하나). 그렇지 않은 테이블을 발행하면 원본 앱의 UPDATE·DELETE가 실패한다.
+
+확인을 통과하면 차례로 만든다.
+1. 원본에 단위 테이블만 담은 publication과 logical slot. slot을 초기 복사보다 먼저 만들어야 그 사이 변경이 빠지지 않는다. slot 생성은 진행 중인 트랜잭션을 기다리므로 시간 상한을 둔다.
+2. 목적지에 초기 복사 뒤 변경을 계속 따라가는 subscription.
+
+모든 테이블이 준비(`r`) 상태가 되면 끝난다. readback은 publication 테이블 집합·slot·subscription 설정·테이블별 상태를 서버에서 읽는다.
+
+**최종 변경 적용(`apply_final_changes`).** 차단 뒤 다음 순서로 한다.
+1. 원본의 현재 WAL 위치를 읽는다.
+2. 같은 slot의 `confirmed_flush_lsn`이 그 위치에 이를 때까지 기다린다. §16.2가 요구하는 "같은 publisher·subscription의 최종 체크포인트가 목적지에 적용됨"을 확인하는 것이다. 지연 수치나 양쪽 WAL 위치를 비교하지 않는다.
+3. sequence 위치를 옮긴다. 논리 복제는 sequence를 옮기지 않는다.
+4. subscription·slot·publication을 지운다.
+
+시간 안에 확인되지 않으면 아무것도 지우지 않는다. 그래서 운영자가 고친 뒤 같은 동작을 다시 실행할 수 있다.
+
+readback은 다음이 모두 성립할 때만 APPLIED다.
+- 테이블별 내용 digest와 sequence 위치가 같다.
+- 복제 객체가 하나도 남지 않았다. 활성화 때 목적지에 두 번째 writer(apply worker)가 없어야 하고, 원본에 WAL을 붙잡는 slot이 없어야 한다.
+
+**중단.** `start_sync` 뒤 중단하면 `release_replication()`을 호출해야 한다. `replication_released()`가 남은 것이 없음을 서버에서 읽어 확인한다. 그 전까지 slot이 원본 WAL을 붙잡는다. 상한은 서버의 `max_slot_wal_keep_size`뿐이다.
+
+**연결 정보.** `source_conninfo`는 목적지 서버가 원본에 접속하는 정보다. 목적지의 subscription catalog에 저장되므로 비밀번호를 넣지 말고 password file이나 인증서를 쓴다. 증거에는 넣지 않는다.
+
+**시험(로컬, 2026-11-15).** 14개가 첫 실행에 통과했다.
+- adapter 공통 적합성 시험 전체: 두 템플릿, 읽기만 하는 readback, 새 인스턴스의 같은 판정, 멱등, 외부에서 되돌린 차단, 보류 중인 prepared transaction, failback 목적지. 업무 쓰기 뒤에는 world가 같은 slot 기준으로 따라잡기를 기다린다. 그래서 비동기 반영이 관측과 경합하지 않는다.
+- 차단 전 쓰기·삭제가 목적지에 반영되고, 최종 적용 뒤 복제 객체가 남지 않으며, sequence가 이어진다.
+- replica identity 없는 테이블: 아무것도 만들지 않고, 원본 앱의 INSERT·DELETE가 계속 된다.
+- 차단 전에 subscription이 멈춘 경우: 최종 적용이 확인되지 않아 복제를 그대로 두고 UNKNOWN이다. 다시 켜면 같은 동작이 완료된다.
+- 중단 뒤 slot 해제.
+- control plane을 거친 전체 인계: 초기 동기화 뒤 들어온 주문이 반영되고, 단일 writer가 확인된다.
+
+시험이 끝난 뒤 서버에 slot·subscription·walsender가 0개임을 확인했다.
+
+이 adapter의 manifest가 [후보 탐색](#계획-컴파일-c0c8-c10c11)의 `incremental_final_changes`를 선언할 근거는 이 시험과 [측정](#로컬-쓰기-정지-측정-참조값)이다. 실제 자격 기록 발급은 자격 등록 경계(검증자 서명)의 일이며, 여기서는 하지 않았다.
+
+로컬 서버 하나 안의 두 DB 사이에서만 시험했다. 다음은 다루지 않았다.
+- 서버 간 네트워크 경로
+- 관리형 DB의 논리 복제 권한(RDS의 `rds.logical_replication` 등)
+- DDL 변경 중 동기화. 원본 DDL이 바뀌면 적용이 멈추고, 최종 적용 확인이 시간 초과로 UNKNOWN이 된다.
+- large object
 
 ## S3 호환 객체 저장소 참조 adapter
 
@@ -743,7 +823,7 @@ readback은 두 realm을 다시 읽고 다음이 모두 성립할 때만 확인�
 - `JUST_IN_TIME_ACCOUNT_BRIDGE` 전략
 - Cognito 같은 운영 IdP
 
-계획 템플릿에는 아직 Identity 이전 단계가 없다. 그래서 이 adapter는 효과 원장 계약(`validate`·`apply`·`readback`)을 따르지만, 컴파일러가 아직 일정에 넣지 않는다. 계획 안으로 넣는 방법은 [ADR-0002](adr/0002-identity-migration-in-the-handoff-plan.md)에서 검토 중이다. 추천은 계정 집합을 독립된 인계 단위로 두는 안이다.
+이 adapter는 계정 복사만 한다. 계정 집합 전체를 인계 단위로 옮기는 것은 [아래 절](#계정-집합을-독립-인계-단위로-adr-0002)의 `KeycloakIdentityHandoff`가 하고, 계정 복사는 이 adapter에 맡긴다. 의존성 그래프에 IdP 노드가 없는 계약에서는 이 adapter를 계획 밖에서 실행하고 IAM 의무를 증거로 확인한다(ADR-0002의 A).
 
 ## 객체 저장소 단위의 control plane 전체 인계
 
@@ -801,6 +881,57 @@ suspend는 새 실행만 막는다. 그래서 이미 도는 Job이 있으면 그
 단순 라벨 일치가 아닌 selector는 추측하지 않고 거부한다. 멈춘 뒤 누군가(예: GitOps 동기화) 다시 늘리면 다음 측정이 실패한다. kind에서 확인했고, Pod 조건은 가짜 controls 단위 시험으로 결정적으로 확인했다. Pod 조건을 빼는 결함을 넣으면 잡는다.
 
 GitOps 도구 자체의 동기화 중지 API, Ingress·Gateway 수준의 전환, 관리형 클러스터의 IAM 기반 인증(IRSA·Workload Identity)은 다루지 않았다.
+
+## 계정 집합을 독립 인계 단위로 (ADR-0002)
+
+[ADR-0002](adr/0002-identity-migration-in-the-handoff-plan.md)의 C를 채택해 구현했다. 계정 집합은 데이터와 같은 템플릿·권한 프로토콜·효과 원장·서명 증거로 인계된다. 승인·잠금·불명 효과 복구도 데이터 단위와 같다.
+
+**단위와 순서.** 의존성 그래프의 `identity` 노드(예: 서비스가 `uses`로 쓰는 로그인 IdP)만 요청하면 계정 단위다.
+- 계정 단위의 의무
+  - 데이터 내용 비교·업무 불변식·외부 효과 의무는 없다.
+  - IAM-01·06(계정 매핑·상태 비교)이 최종 검증에 걸린다.
+  - 목적지 로그인은 이 단위의 활성화에서야 열린다. 그래서 IAM 흐름 시험(IAM-02·03·04)은 안정화 단계에서 확인한다.
+- 데이터 단위와의 순서
+  - 계약이 원본 IdP를 제거하고(`MIGRATE_IDENTITY`) 그래프에 IdP 노드가 있으면, 데이터 단위 계획에 `identity.unit_handoff_complete` 의무가 생긴다.
+  - 컴파일러가 같은 계약·snapshot으로 계정 단위의 `unit_digest`를 계산해 이 의무에 박아 둔다.
+  - 활성화 의도 기록 때 `UnitCompletion`이 그 단위의 현재 권한 기록이 `HANDOFF_COMPLETE`인지 읽는다. 아니면 데이터 단위는 목적지 활성화 전에 보류된다.
+- 경계 분석
+  - 서비스→IdP `uses`·`calls`가 단위 경계를 넘는 것은 이 프로토콜이 의미를 정하므로 막지 않는다.
+  - IdP를 남기는 계약(`RETAIN_SOURCE_IDP`)에서는 이전처럼 미정 효과로 막는다.
+- 잠금
+  - 계정 단위의 경로 키는 앱이 신뢰하는 발급자다. 한 서비스의 두 단위는 서로 막지 않는다.
+  - 같은 IdP를 옮기는 두 계획은 충돌한다.
+- failback
+  - 계정 단위의 failback은 UNSUPPORTED다. 인계 뒤 목적지에서 생긴 계정을 되돌릴 수단이 없다.
+
+**Keycloak adapter(`KeycloakIdentityHandoff`).** 계정을 만들거나 바꾸는 경로가 writer다.
+- 앱: 셀프 가입, 사용자의 본인 프로필(사용자명·이메일·이름) 수정
+- 다른 writer: 사용자 관리 권한을 가진 백오피스 client
+
+| 단계 | 서버에서 다시 읽어 확인하는 것 |
+|---|---|
+| 목적지 준비 | 목적지 realm이 로그인·가입·본인 수정을 거부하고, 원본 subject 속성은 관리자 전용이며, 백오피스 client에 사용자 관리 권한이 없다 |
+| 동기화 시작 | 원본이 열린 채 한 번 복사됐다(목적지 realm의 표시) |
+| 접수 정지 | 원본이 가입을 거부한다 |
+| 원본 차단 | 원본이 가입·본인 수정을 거부하고 백오피스 권한이 없다. 다음 셋이 하나도 없어야 확인된다(어댑터가 사용자의 동작을 대신 취소하지 않는다). ① 계정을 만드는 다른 경로(IdP 중개 로그인, 사용자 연합) ② 프로필이나 이메일 확인 상태를 바꿀 미완료 필수 동작(`UPDATE_PROFILE`·`VERIFY_EMAIL`·`UPDATE_EMAIL`)을 가진 활성 계정 |
+| 복사·최종 반영 | 계정 이전(`KeycloakIdentityMigration`)의 전체 비교 |
+| 활성화 | 목적지가 로그인·필요한 가입·본인 수정을 받고, 백오피스는 여전히 권한이 없으며, 원본은 차단 상태다 |
+| 경로 확정 | 앱의 발급자 설정이 목적지 realm이다 |
+
+차단 전 설정은 원본 realm에 남긴다. 중단 때 `restore_source()`가 되돌리고, `source_restored()`가 서버에서 확인한다.
+
+**독립 probe(`KeycloakWriterProbes`).** adapter와 코드를 공유하지 않는다.
+- realm의 셀프 가입 폼을 실제로 제출한다. Keycloak의 세션 쿠키는 Secure라서 평문 loopback에서는 명시적으로 보낸다.
+- 백오피스 client가 자기 자격으로 사용자를 만든다.
+- 만든 계정은 지운다.
+- 결과는 생성(True), 거부(False), 판단 불가(None)다. False만 거부로 센다.
+
+**시험(로컬 Keycloak 두 대 + PostgreSQL, 2026-11-15).**
+- 컴파일·잠금 단위 시험 5개.
+- adapter 시험 12개: 공통 적합성 시험 전체, 중단 뒤 원본 writer 복원, 켜진 IdP 중개 로그인 때문에 차단이 확인되지 않음, 독립 probe와 adapter 판정 일치.
+- control plane 두 단위 시험 2개: 계정 단위 미완료 때 데이터 단위 보류, 계정 → 데이터 순서로 둘 다 완료.
+
+Cognito 원본은 아직 독립 단위가 아니다. Cognito에는 "계정 변경 차단"이 정확히 없어서, 근사 차단을 자격으로 인정할지 정해야 한다. 그때까지 Cognito는 계획 밖 이전 + 증거 게이트(A)로 다룬다.
 
 ## Cognito에서 옮기기 (Part II §5~§7)
 
@@ -995,7 +1126,11 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 - Keycloak 두 대
 - Kubernetes 시험용 namespace
 
-호스트 주소는 기존 시험이 쓰는 loopback 주소 그대로라 시험 코드는 바꾸지 않았다. kubeconfig는 별도 파일에만 써서 사용자의 kubectl 현재 context를 건드리지 않는다. 고객 백업용 DB 도구 실행 방식은 `SOVA_TEST_POSTGRES_EXEC`로 바꿀 수 있게 했다. 이 환경에서 전체 회귀가 이전 개별 컨테이너 환경과 같은 결과(새 실패 0)를 낸다. 사용법은 [infra/test-env](../infra/test-env/README.md).
+호스트 주소는 기존 시험이 쓰는 loopback 주소 그대로라 시험 코드는 바꾸지 않았다.
+
+검증된 TLS만 받는 PostgreSQL을 하나 더 둔다(`localhost:55433`). 이 저장소의 읽기 전용 경계와 쓰기 게이트는 인증서·호스트명이 검증된 TLS나 허가된 private Unix socket만 받기 때문이다. `run-suite.sh`가 평문 서버로 전체를, TLS 서버로 게이트 시험(`postgres_tls`)을 돌린다.
+
+이 TLS 서버를 붙이다가 실제 결함을 찾아 고쳤다. 두 게이트가 TLS 사용 여부를 `connection.info.ssl_in_use`로 읽었는데, psycopg 3에는 그 속성이 없다(`connection.pgconn.ssl_in_use`가 맞다). 그래서 TCP 연결에서는 TLS 검사가 늘 `AttributeError`로 끝났다. 검증된 TLS로도 게이트를 지날 수 없었고, 평문 연결도 계약 오류가 아닌 예외로 끝났다. 그동안 "기준선 실패"로 분류된 37건 가운데 33건이 이 결함이었다. 고친 뒤 단위 시험이 검증된 TLS 통과와 평문·검증 없는 TLS·허가 없는 socket 거부를 확인한다. kubeconfig는 별도 파일에만 써서 사용자의 kubectl 현재 context를 건드리지 않는다. 고객 백업용 DB 도구 실행 방식은 `SOVA_TEST_POSTGRES_EXEC`로 바꿀 수 있게 했다. 이 환경에서 전체 회귀가 이전 개별 컨테이너 환경과 같은 결과(새 실패 0)를 낸다. 사용법은 [infra/test-env](../infra/test-env/README.md).
 
 ## 완료 표현 (Part V.4)
 

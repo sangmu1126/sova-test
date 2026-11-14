@@ -191,6 +191,23 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
   - manifest와 자격에 닫힌 어휘의 `properties`(`incremental_final_changes`)를 더했다. 계획 탐색은 둘 다 선언할 때만 앞에 둔다.
   - 속성이 비면 fingerprint가 바뀌지 않는다. 변경 전 코드로 계산한 manifest digest와 같음을 확인했다.
   - 단위 회귀 **686 PASS / 4 SKIP**, ruff 통과. Docker가 꺼져 있어 통합 회귀는 돌리지 않았다. 바뀐 코드는 계획 탐색(단위 시험만 사용)과 속성 없는 기본값이라, 통합 시험 입력의 digest는 같다.
+- 논리 복제 adapter(2026-11-15): 사용자 지시로 Lima VM 두 대(`sova-rke2-target`, `sky-vm`)를 멈추고 Docker를 다시 켰다. 시험 PostgreSQL에 `wal_level=logical`을 켰다.
+  - 새 시험 14개가 첫 실행에 통과했다. 시험 뒤 서버의 slot·subscription·walsender는 0개였다.
+  - 측정: 기본 크기 18건과 offline-copy 10만 행 3건이 통과했다. 결과는 [구현 안내](../contract-foundation.md#로컬-쓰기-정지-측정-참조값)에 있다.
+  - 참조 snapshot-cdc 10만 행 도중 Docker Desktop VM이 다시 비정상 종료했다. 15초 뒤 오류 창에서 **공장 초기화**가 선택됐다(Docker 로그 `action: Reset to factory defaults`, 이쪽 재시작 명령보다 앞선 시각).
+  - 이 초기화로 Docker 안의 모든 컨테이너·이미지·볼륨이 지워졌다. `sova-test-env`와 `bravo-security-20261103` kind 클러스터도 포함된다. 시험 환경은 `test-env.sh up`으로 다시 만들었다. `bravo-security-20261103`은 이 저장소의 것이 아니어서 다시 만들지 않았다.
+  - 10만 행은 이 기기에서 다시 돌리지 않는다.
+- 시험 환경 정비와 기준선 실패 해소(2026-11-15).
+  - 시험 PostgreSQL이 Pod 안에서도 55432로 듣게 했다. 그래서 서버 안의 subscription이 시험과 같은 주소로 자신에게 접속한다. 그동안 논리 WAL이 없어 건너뛰던 논리 복제 시험들이 실제로 돌기 시작했다.
+  - 검증된 TLS만 받는 PostgreSQL을 하나 더 두었다(`localhost:55433`, 시험용 CA). `postgres_tls` 표식 시험은 평문 DSN에서는 건너뛰고 TLS DSN에서 돈다. `run-suite.sh`가 둘을 차례로 돌린다.
+  - 그 과정에서 읽기 전용 경계와 쓰기 게이트의 TLS 검사 결함을 찾아 고쳤다. psycopg 3에 없는 `connection.info.ssl_in_use`를 읽고 있었다. 기준선 실패 37건 중 33건이 이것이었다.
+  - 나머지 3건은 `python -I` 자식 프로세스가 고정 security 패키지를 찾지 못한 것이었다. 이 저장소 전용 venv에 고정 security 패키지(extra 포함)와 이 저장소를 설치해 해결했다. 이전에는 다른 저장소의 venv에 PYTHONPATH만 얹어 쓰고 있었다.
+  - 마지막 1건(모니터 worker)은 원격 DB에 검증된 TLS를 요구하는 설계라 TLS 묶음으로 옮겼다.
+  - 결과(새 DB): 평문 **1470 PASS / 0 FAIL**(2건은 TLS 묶음으로 옮긴 뒤 재확인), TLS **55 PASS / 2 SKIP**(Unix socket 전용 1, 두 번째 클러스터 전용 1).
+- ADR-0002 채택과 구현(2026-11-15). 계정 집합을 독립 인계 단위로 두었다. 내용은 [구현 안내](../contract-foundation.md#계정-집합을-독립-인계-단위로-adr-0002)와 [ADR](../adr/0002-identity-migration-in-the-handoff-plan.md)에 있다.
+  - 단위 시험 5개, Keycloak adapter 시험 12개, control plane 두 단위 시험 2개가 통과했다.
+  - adapter 시험과 두 단위 시험은 첫 실행에 통과했다. 컴파일 시험은 두 번 고쳤다. 계획 문서의 `required_at`이 단위 접두어가 붙은 operation ID였고, 같은 입력으로 만든 "다른 계획"이 실제로는 같은 계획이었다.
+  - 두 단위를 처음 함께 수용할 때 "겹치는 잠금"으로 거부됐다. 두 단위가 같은 서비스 경로 키를 쓰고 있었기 때문이다. 계정 단위의 경로는 앱이 신뢰하는 발급자라는 점을 계획에 반영하고(`route/identity`), IdP 노드를 계정 단위의 옮겨지는 자원으로 잠그게 했다.
 - AWS 자원은 두 실행 모두 `sova-test-` 접두어로 조회해 남은 것이 없음을 확인했다. compliance 잠금 버킷은 보존 1시간이 끝난 21:44에 지웠다.
 - AWS 2차(실행 번호 `53ffc2`): compliance 모드 1개, RDS control plane 인계 1개, snapshot 복원 감지 1개, RDS 보안 수집기 1개 통과.
   - snapshot 복원 시험의 첫 실행은 시험 결함으로 실패했다. snapshot에 5분이 걸린 뒤 시험 시작 시각으로 승인을 만들어 신뢰 승인이 만료돼 있었다. 시각을 새로 잡게 고친 뒤 통과했다.
@@ -209,7 +226,7 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 - 등록 문서 인증(기존 서명 증거·검증자 신뢰에 결속)은 있지만, 계약·자격을 등록하는 API와 revision CAS 저장은 아직 없다. 등록 사건은 변경 수집기 규약으로만 받는다.
 - §28.4의 부하·네트워크·failure model 전체 qualification schema와 실제 서명 소비 연결은 후속이다. 현 C3를 범용 운영 지원 행렬로 사용하지 않는다.
 - 정합성 경계·컴파일·내리기·수용·권한 상태·효과 원장 연결은 구현했다. 사고 보류·증거 기한·사고 복구 확장의 의미 판정은 하지 않는다. 명세(Part IV S.9)가 필드 이름만 제안하고 스키마는 ADR·단계별 마이그레이션을 전제로 두므로, 스키마를 지어내지 않고 이 확장이 있으면 `NEEDS_EVIDENCE`로 막는다. 서명된 수집기 증명, 실제 역방향 동기화 adapter, 기존 효과 원장의 부분 효과(`PARTIAL_EFFECT`) 상태 연결은 후속이다. 권한 witness의 Object Lock 저장소는 로컬에서만 시험했다.
-- Identity: 로컬 Keycloak 두 대 사이 계정 이전과 IAM-02·04·08 실측까지 했다. Cognito 같은 운영 IdP, MFA·복구 흐름, 앱의 이중 발급자 정책, 유출 검사, SLO는 측정하지 않았고, 계획 템플릿에 Identity 이전 단계가 아직 없다.
+- Identity: 로컬 Keycloak 두 대 사이 계정 이전과 IAM-02·04·08 실측까지 했다. 계정 집합은 이제 독립 인계 단위로 계획 안에 들어간다(ADR-0002, Keycloak 원본만). Cognito 원본의 독립 단위, MFA·복구 흐름, 앱의 이중 발급자 정책은 아직이다.
 - 보안 사고 상태 머신·클라우드 변경 수집기·AI/Harbor·패치·고객별 정책·중앙 단절·HA/DR·범용 데이터 이전의 새 실환경 시험은 수행하지 않았다.
 - 원본 제공자의 보안·법규·제품 관련 인용을 이번 원문 보존으로 독립 검증한 것은 아니다.
 - 실제 클라우드·VM·팀 공용 앱/DB·운영 권한·승인 호스트는 변경하지 않았다. S3 adapter는 로컬 gateway에서만 시험했고 AWS S3·다른 클라우드의 정책 판정과는 대조하지 않았다.
