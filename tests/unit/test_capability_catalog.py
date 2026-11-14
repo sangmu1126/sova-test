@@ -2,19 +2,21 @@
 
 from dataclasses import replace
 from datetime import timedelta
+import hashlib
 import json
 
 import pytest
 
 from sova.application.service_contracts import example_service_contract
 from sova.domain.capability_catalog import (
+    INCREMENTAL_FINAL_CHANGES,
     CapabilityManifest,
     EnvironmentProfile,
     EvidenceGrade,
     StrategyQualification,
     assess_strategy,
 )
-from sova.domain.contracts import ContractError
+from sova.domain.contracts import ContractError, canonical_json
 from sova.domain.service_contracts import MigrationProfile, ServiceContract
 
 
@@ -265,3 +267,27 @@ def test_inputs_and_profile_facts_are_immutable_and_unambiguous(inputs):
         replace(inputs["qualification"], operations=("copy_content", "copy_content"))
     with pytest.raises(ContractError):
         assess(inputs, expected_tenant="other-tenant")
+
+
+def test_strategy_properties_are_closed_bound_and_digest_stable(inputs):
+    manifest, qualification = inputs["manifest"], inputs["qualification"]
+    # Claiming nothing keeps the digest every earlier signature was made over.
+    legacy = {"adapter_id": "pg-offline", "adapter_version": "1.0.0",
+              "adapter_digest": "a" * 64, "strategy_id": "offline-copy",
+              "strategy_version": "1.0.0", "operations": ["copy_content", "fence_writes"],
+              "profiles": ["PLANNED_SINGLE_AUTHORITY"]}
+    assert manifest.fingerprint == hashlib.sha256(
+        canonical_json(legacy, limit=65536).encode()).hexdigest()
+    claimed = replace(manifest, properties=(INCREMENTAL_FINAL_CHANGES,))
+    assert claimed.fingerprint != manifest.fingerprint
+    # A qualification issued for the plain manifest does not cover the claim.
+    assert (assess(inputs, manifest=claimed)["reason"]
+            == "QUALIFICATION_BINDING_MISMATCH")
+    assert replace(qualification, properties=(INCREMENTAL_FINAL_CHANGES,)).fingerprint != (
+        qualification.fingerprint)
+    for bad in (("faster",), [INCREMENTAL_FINAL_CHANGES],
+                (INCREMENTAL_FINAL_CHANGES, INCREMENTAL_FINAL_CHANGES)):
+        with pytest.raises(ContractError):
+            replace(manifest, properties=bad)
+        with pytest.raises(ContractError):
+            replace(qualification, properties=bad)

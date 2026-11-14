@@ -183,6 +183,14 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 - 로컬 항목: 계정 매핑 probe 1개, kind 8개(operator 멈춤 포함), Deployment 멈춤 단위 5개 통과. 매핑 probe의 중복 무시 결함, 멈춤 판정의 Pod 무시 결함을 각각 시험이 잡음.
 - 로컬 항목 뒤 전체 회귀(PostgreSQL·S3·Keycloak·kind, 새 DB): **1403 PASS / 37 FAIL / 112 SKIP**, 새 실패 0건.
 - 클러스터 하나 시험 환경: `up` 2분 36초. 전체 회귀 **1403 PASS / 37 FAIL / 112 SKIP**, 새 실패 0건(이전 환경과 동일). 기존 컨테이너 다섯 개와 `sova-handoff` kind는 지웠고, 그 kind가 바꿔 둔 현재 context는 비워진 상태로 남음.
+- 로컬 쓰기 정지 측정(2026-11-15): offline-copy 1천·1만 행 각 3회, snapshot-cdc 10만 행 2회. 결과는 [구현 안내](../contract-foundation.md#로컬-쓰기-정지-측정-참조값)에 있다.
+  - 첫 실행은 SQL 안의 나머지 연산자 `%`가 매개변수 기호로 읽혀 18건 모두 실패했다. `%%`로 고쳤다.
+  - 고친 뒤 첫 묶음은 snapshot-cdc 10만 행 2건만 통과했다. 실패 기록을 보존하지 않아 원인은 확정하지 못했다.
+  - 두 번째 묶음은 1천·1만 행 6건이 통과했다. 그 뒤 offline-copy 10만 행 도중 Docker Desktop VM이 비정상 종료했고, 오류 창에서 종료가 선택됐다. Docker는 다시 켜지 않았다. 10만 행은 기본 측정 크기에서 빼고 `SOVA_TEST_PERF_SIZES`로 명시할 때만 돌게 했다.
+- 측정에서 찾은 결함: 계획 탐색이 단계 이름(`apply_final_changes`)만 보고 snapshot-cdc를 "차단 구간 전체 복사 없음"으로 앞에 두었다. 참조 adapter는 그 단계를 전체 재복사로 구현하므로 근거 없는 순위였다.
+  - manifest와 자격에 닫힌 어휘의 `properties`(`incremental_final_changes`)를 더했다. 계획 탐색은 둘 다 선언할 때만 앞에 둔다.
+  - 속성이 비면 fingerprint가 바뀌지 않는다. 변경 전 코드로 계산한 manifest digest와 같음을 확인했다.
+  - 단위 회귀 **686 PASS / 4 SKIP**, ruff 통과. Docker가 꺼져 있어 통합 회귀는 돌리지 않았다. 바뀐 코드는 계획 탐색(단위 시험만 사용)과 속성 없는 기본값이라, 통합 시험 입력의 digest는 같다.
 - AWS 자원은 두 실행 모두 `sova-test-` 접두어로 조회해 남은 것이 없음을 확인했다. compliance 잠금 버킷은 보존 1시간이 끝난 21:44에 지웠다.
 - AWS 2차(실행 번호 `53ffc2`): compliance 모드 1개, RDS control plane 인계 1개, snapshot 복원 감지 1개, RDS 보안 수집기 1개 통과.
   - snapshot 복원 시험의 첫 실행은 시험 결함으로 실패했다. snapshot에 5분이 걸린 뒤 시험 시작 시각으로 승인을 만들어 신뢰 승인이 만료돼 있었다. 시각을 새로 잡게 고친 뒤 통과했다.

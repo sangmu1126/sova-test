@@ -29,6 +29,31 @@ def _names(value, *, minimum=1):
     return tuple(sorted(value))
 
 
+# Measured behaviour a strategy may claim beyond its operation names. A claim
+# counts only when the manifest declares it and a qualification - whose
+# signature covers its fingerprint - was issued for it.
+INCREMENTAL_FINAL_CHANGES = "incremental_final_changes"
+STRATEGY_PROPERTIES = frozenset({INCREMENTAL_FINAL_CHANGES})
+
+
+def _properties(value):
+    if type(value) is not tuple or len(value) != len(set(value)):
+        raise ContractError("Unique immutable strategy properties required")
+    if not set(value) <= STRATEGY_PROPERTIES:
+        raise ContractError("Known strategy property required")
+    return tuple(sorted(value))
+
+
+def _without_empty_properties(value):
+    """Documents that claim no property keep the digest they had before
+    properties existed, so earlier signatures stay valid."""
+    if not value["properties"]:
+        del value["properties"]
+    else:
+        value["properties"] = list(value["properties"])
+    return value
+
+
 def _row_count(value):
     if type(value) is not int or not 0 <= value <= 2**53 - 1:
         raise ContractError("Bounded exact row count required")
@@ -99,6 +124,7 @@ class CapabilityManifest:
     strategy_version: str
     operations: tuple[str, ...]
     profiles: tuple[MigrationProfile, ...]
+    properties: tuple[str, ...] = ()
 
     def __post_init__(self):
         for field in (
@@ -117,10 +143,11 @@ class CapabilityManifest:
         ):
             raise ContractError("Typed supported profiles required")
         object.__setattr__(self, "profiles", _names(self.profiles))
+        object.__setattr__(self, "properties", _properties(self.properties))
 
     @property
     def fingerprint(self):
-        value = asdict(self)
+        value = _without_empty_properties(asdict(self))
         value["operations"] = list(self.operations)
         value["profiles"] = [str(p) for p in self.profiles]
         return _fingerprint(value)
@@ -145,6 +172,7 @@ class StrategyQualification:
     test_definition_digest: str
     raw_evidence_digest: str
     grade: EvidenceGrade
+    properties: tuple[str, ...] = ()
 
     def __post_init__(self):
         for field in ("record_id", "tenant_id", "service_id", "verifier_identity"):
@@ -169,10 +197,11 @@ class StrategyQualification:
         object.__setattr__(self, "expires_at", utc(self.expires_at))
         if self.issued_at >= self.expires_at:
             raise ContractError("Positive qualification lifetime required")
+        object.__setattr__(self, "properties", _properties(self.properties))
 
     @property
     def fingerprint(self):
-        value = asdict(self)
+        value = _without_empty_properties(asdict(self))
         value["operations"] = list(self.operations)
         value["profile"] = str(self.profile)
         value["grade"] = str(self.grade)

@@ -7,7 +7,12 @@ against cost: a candidate is feasible (COMPILED), not satisfied
 Only feasible candidates are ranked, by one explainable rule taken from the
 write-pause budget (§16.4): a plan that copies the whole data set inside the
 fenced window pauses writes longer than one that applies final changes
-only. The approver still chooses and approves one exact plan digest.
+only. A step named ``apply_final_changes`` is not taken as proof of that: an
+adapter may apply the final changes by a full re-copy (the reference
+adapters do). Only a manifest that declares incremental final changes, with a
+qualification issued for that claim, ranks ahead; any other plan counts as
+copying in the fenced window. The approver still chooses and approves one
+exact plan digest.
 
 ``NO_FEASIBLE_PLAN`` means none of the candidates given here qualifies; it
 never claims that no technical way exists. ``SEARCH_INCOMPLETE`` means some
@@ -17,19 +22,28 @@ search budget), so the absence of a feasible plan is not concluded.
 
 import json
 
+from sova.domain.capability_catalog import INCREMENTAL_FINAL_CHANGES
 from sova.domain.contracts import ContractError
 from sova.domain.plan_compiler import compile_revision
 
 MAX_CANDIDATES = 16
 _FULL_COPY = "copy_content"
+_FINAL_CHANGES = "apply_final_changes"
 
 
-def _fenced_full_copy(revision):
+def _fenced_window(revision, manifest, qualification):
+    """``(full_copy_in_fenced_window, basis)`` for one compiled plan."""
     ops = json.loads(revision.canonical)["operations"]
     kinds = [op["kind"] for op in ops]
-    fence = kinds.index("fence_source_writes")
-    activate = kinds.index("activate_target")
-    return _FULL_COPY in kinds[fence:activate]
+    window = kinds[kinds.index("fence_source_writes"):kinds.index("activate_target")]
+    if _FULL_COPY in window:
+        return True, "FULL_COPY_STEP_IN_FENCED_WINDOW"
+    if _FINAL_CHANGES not in window:
+        return True, "FENCED_WINDOW_COPY_UNDECLARED"
+    if (INCREMENTAL_FINAL_CHANGES in manifest.properties
+            and INCREMENTAL_FINAL_CHANGES in getattr(qualification, "properties", ())):
+        return False, "QUALIFIED_INCREMENTAL_FINAL_CHANGES"
+    return True, "FINAL_CHANGES_NOT_QUALIFIED_INCREMENTAL"
 
 
 def search_plans(contract, snapshot, candidates, **compile_inputs):
@@ -56,7 +70,8 @@ def search_plans(contract, snapshot, candidates, **compile_inputs):
                      plan_digest=None if revision is None else revision.digest)
         if revision is not None:
             revisions[revision.digest] = revision
-            entry["full_copy_in_fenced_window"] = _fenced_full_copy(revision)
+            (entry["full_copy_in_fenced_window"],
+             entry["fenced_window_basis"]) = _fenced_window(revision, manifest, qualification)
         if result["status"] == "NEEDS_EVIDENCE":
             undecided = True
         evaluated.append(entry)

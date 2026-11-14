@@ -1,9 +1,11 @@
 """Candidate strategy search: feasible, not satisfied, or undecided (§12.3, §12.4)."""
 
+from dataclasses import replace
+
 from contract_world import build_world
 import pytest
 
-from sova.domain.capability_catalog import CapabilityManifest
+from sova.domain.capability_catalog import INCREMENTAL_FINAL_CHANGES, CapabilityManifest
 from sova.domain.contracts import ContractError
 from sova.domain.plan_compiler import required_operations
 from sova.domain.plan_search import MAX_CANDIDATES, search_plans
@@ -32,18 +34,48 @@ def pair(world):
 
 def test_feasible_candidates_are_ranked_by_the_fenced_window(now):
     copy = candidate(now, "offline-copy")
-    # A second strategy qualified in the same registry for the same contract.
-    cdc = build_world(now, strategy="snapshot-cdc", contract=copy["contract"])
+    # A second strategy qualified in the same registry for the same contract,
+    # whose final changes were qualified as incremental.
+    cdc = build_world(now, strategy="snapshot-cdc", contract=copy["contract"],
+                      properties=(INCREMENTAL_FINAL_CHANGES,))
     copy["sign"](cdc["qualification"])
     revisions, result = search(copy, (pair(copy), pair(cdc)), now)
     assert result["status"] == "COMPILED" and result["search_complete"]
     by_strategy = {c["strategy_id"]: c for c in result["candidates"]}
     assert by_strategy["offline-copy"]["full_copy_in_fenced_window"] is True
+    assert by_strategy["offline-copy"]["fenced_window_basis"] == (
+        "FULL_COPY_STEP_IN_FENCED_WINDOW")
     assert by_strategy["snapshot-cdc"]["full_copy_in_fenced_window"] is False
+    assert by_strategy["snapshot-cdc"]["fenced_window_basis"] == (
+        "QUALIFIED_INCREMENTAL_FINAL_CHANGES")
     assert result["recommended"] == by_strategy["snapshot-cdc"]["plan_digest"]
     assert set(result["feasible"]) == set(revisions)
     assert result["requirements_relaxed"] is False
     assert result["authorizes_execution"] is False
+
+
+def test_a_final_changes_step_alone_earns_no_rank(now):
+    """The reference adapters apply the final changes by a full re-copy: a
+    snapshot-cdc plan whose manifest does not claim incremental final changes,
+    or whose qualification was not issued for that claim, is ranked as copying
+    in the fenced window - measured, it paused writes longer, not shorter."""
+    copy = candidate(now, "offline-copy")
+    undeclared = build_world(now, strategy="snapshot-cdc", contract=copy["contract"])
+    claimed = build_world(now, strategy="snapshot-cdc", contract=copy["contract"],
+                          properties=(INCREMENTAL_FINAL_CHANGES,))
+    unqualified = replace(claimed["qualification"], properties=())
+    for qualification in (undeclared["qualification"], unqualified):
+        copy["sign"](qualification)
+    for cdc in ((undeclared["manifest"], undeclared["qualification"]),
+                (claimed["manifest"], unqualified)):
+        _, result = search(copy, (pair(copy), cdc), now)
+        assert result["status"] == "COMPILED"
+        by_strategy = {c["strategy_id"]: c for c in result["candidates"]}
+        assert by_strategy["snapshot-cdc"]["full_copy_in_fenced_window"] is True
+        assert by_strategy["snapshot-cdc"]["fenced_window_basis"] == (
+            "FINAL_CHANGES_NOT_QUALIFIED_INCREMENTAL")
+        # No basis to prefer either: the order falls back to the stable tie-break.
+        assert result["recommended"] == by_strategy["offline-copy"]["plan_digest"]
 
 
 def test_no_feasible_plan_only_when_every_candidate_was_decided(now):
