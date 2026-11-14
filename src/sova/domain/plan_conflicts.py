@@ -3,7 +3,8 @@
 Symbolic read/write sets in a frozen plan are resolved to absolute keys:
 source resources by (environment, resource UID), target placements by
 (target profile, tenant, service, node), unit authority per member source
-resource, and the service route. Two plans conflict when one writes a key the
+resource, and the service route (the data route, or for an account unit the
+issuer the application trusts). Two plans conflict when one writes a key the
 other reads or writes. A reference that cannot be resolved is treated as a
 conflict, never as "no overlap". The deterministic lock order lets a lock
 service acquire claims without deadlock; holding locks is a separate concern.
@@ -43,6 +44,8 @@ def _resolve(ref, plan):
         ]
     if ref == "route/unit":
         return [("route", tenant, service)]
+    if ref == "route/identity":  # the issuer the application trusts (ADR-0002)
+        return [("route", tenant, service, "identity")]
     return None
 
 

@@ -60,6 +60,8 @@ _GATES = {
     "identity_mapping_check": Gate.DATA,
     "identity_flow_test": Gate.PROTECTION,
     "identity_operations_check": Gate.POSTFLIGHT,
+    # A prerequisite unit's completion, read from its authority record (ADR-0002).
+    "unit_handoff_complete": Gate.PREFLIGHT,
 }
 
 

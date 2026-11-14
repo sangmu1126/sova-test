@@ -44,91 +44,112 @@ def complete_feeds(feed, revision, plan):
 
 
 def admitted_handoff(postgres_database, now, *, witness_for=None, adjust=None,
-                     strategy="offline-copy"):
-    """A compiled, lowered, stored, approved and admitted synthetic handoff."""
+                     strategy="offline-copy", nodes=("api-a", "api-b", "database"),
+                     identity_provider=None, alongside=None, approval_id="approval-1"):
+    """A compiled, lowered, stored, approved and admitted synthetic handoff.
+
+    ``alongside`` (an earlier result) adds this handoff to the same tenant and
+    service: the same contract, snapshot instant, authority store, coordinator
+    and evidence producer, as a second unit of one migration would be."""
     dsn, role = postgres_database
-    tenant = "tenant-" + uuid4().hex
+    shared = alongside or {}
+    tenant = shared.get("tenant") or "tenant-" + uuid4().hex
+    now = shared.get("now") or now
 
     def connect():
         return psycopg.connect(dsn, user=role)
 
-    data = example_service_contract().document
-    data["metadata"]["tenant_id"] = tenant
-    if adjust:
-        adjust(data)
-    world = build_world(now, contract=ServiceContract.from_document(data), strategy=strategy)
+    if alongside:
+        data = json.loads(json.dumps(shared["contract_data"]))
+    else:
+        data = example_service_contract().document
+        data["metadata"]["tenant_id"] = tenant
+        if adjust:
+            adjust(data)
+    world = build_world(now, contract=ServiceContract.from_document(
+        json.loads(json.dumps(data))), strategy=strategy, identity_provider=identity_provider)
     for subject in (world["contract"], world["snapshot"], world["qualification"]):
         world["sign"](subject)
 
     def recompile():
         return compile_revision(
             world["contract"], world["snapshot"],
-            requested_nodes=("api-a", "api-b", "database"), expected_tenant=tenant,
+            requested_nodes=nodes, expected_tenant=tenant,
             source=world["source"], target=world["target"], manifest=world["manifest"],
             qualification=world["qualification"], rows=2000, authenticate=world["auth"],
             clock=lambda: datetime.now(UTC),
         )
 
     revision, result = recompile()
-    assert result["status"] == "COMPILED"
+    assert result["status"] == "COMPILED", result["blockers"]
     kinds = {o["kind"] for o in json.loads(revision.canonical)["obligations"]}
     verifiers = {k: VERIFIER for k in kinds}
     plan = lower_plan(revision, created_by="planner", verifiers=verifiers)
     app = plan.application_id
-    lifecycle = PostgresLifecycleRepository(connect, tenant_id=tenant,
-                                            clock=lambda: datetime.now(UTC))
+    lifecycle = shared.get("lifecycle") or PostgresLifecycleRepository(
+        connect, tenant_id=tenant, clock=lambda: datetime.now(UTC))
     lifecycle.save_plan(plan)
-    lifecycle.save_approval(app, plan.plan_id, "approval-1", PlanApproval(
+    lifecycle.save_approval(app, plan.plan_id, approval_id, PlanApproval(
         plan.fingerprint, "security-approver", PlanPurpose.MIGRATION_PHASE,
         now + timedelta(minutes=3)))
-    claims = PostgresHandoffClaims(connect, tenant_id=tenant)
-    feed = PostgresChangeFeed(connect, tenant_id=tenant)
-    changes = ChangeImpactSource(feed=feed, clock=lambda: datetime.now(UTC))
+    claims = shared.get("claims") or PostgresHandoffClaims(connect, tenant_id=tenant)
+    feed = shared.get("feed") or PostgresChangeFeed(connect, tenant_id=tenant)
+    changes = shared.get("changes") or ChangeImpactSource(feed=feed,
+                                                          clock=lambda: datetime.now(UTC))
     complete_feeds(feed, revision, plan)
-    compiled = PostgresCompiledPlans(connect, tenant_id=tenant)
+    compiled = shared.get("compiled") or PostgresCompiledPlans(connect, tenant_id=tenant)
     HandoffAdmission(lifecycle=lifecycle, claims=claims, changes=changes, compiled=compiled,
                      clock=lambda: datetime.now(UTC)).admit(
-        app, "approval-1", recompile=recompile, verifiers=verifiers)
+        app, approval_id, recompile=recompile, verifiers=verifiers)
 
-    # One registered evidence producer for every obligation scope of this plan.
-    signer = Ed25519EvidenceSigner(Ed25519PrivateKey.generate(),
-                                   issuer_id="handoff-producer", key_id="k1")
     scopes = tuple(sorted({o.scope for o in plan.obligations},
                           key=lambda s: (s.environment_id, s.resource_id)))
-    registry = PostgresVerifierRegistry(connect, tenant_id=tenant, application_id=app)
-    trusted = {"revision": 0, "scopes": set()}
+    if alongside:
+        signer, registry, trust_scopes = (shared["signer"], shared["registry"],
+                                          shared["trust_scopes"])
+        signed, witness, store, coordinator = (shared["signed"], shared["witness"],
+                                               shared["store"], shared["coordinator"])
+        counter = shared["counter"]
+        trust_scopes(scopes)
+    else:
+        # One registered evidence producer for every obligation scope of this plan.
+        signer = Ed25519EvidenceSigner(Ed25519PrivateKey.generate(),
+                                       issuer_id="handoff-producer", key_id="k1")
+        registry = PostgresVerifierRegistry(connect, tenant_id=tenant, application_id=app)
+        trusted = {"revision": 0, "scopes": set()}
 
-    def trust_scopes(more):
-        """Publish the producer's trust over its current scopes plus ``more``."""
-        trusted["revision"] += 1
-        trusted["scopes"] |= set(more)
-        # Approved when published: a later publish (a failback, minutes on a slow
-        # machine) must not carry an approval window that already closed.
-        approved = datetime.now(UTC) - timedelta(seconds=1)
-        registry.publish(VerifierTrustChange(
-            tenant, app, trusted["revision"],
-            VerifierTrust(signer.issuer_id, signer.key_id, signer.public_key_hex,
-                          tuple(sorted(trusted["scopes"],
-                                       key=lambda s: (s.environment_id, s.resource_id))),
-                          (VERIFIER,), now - timedelta(minutes=1), now + timedelta(hours=1)),
-            "security-requester", "security-approver", "Register handoff evidence producer",
-            approved, approved + timedelta(minutes=1)))
+        def trust_scopes(more):
+            """Publish the producer's trust over its current scopes plus ``more``."""
+            trusted["revision"] += 1
+            trusted["scopes"] |= set(more)
+            # Approved when published: a later publish (a failback, minutes on a slow
+            # machine) must not carry an approval window that already closed.
+            approved = datetime.now(UTC) - timedelta(seconds=1)
+            registry.publish(VerifierTrustChange(
+                tenant, app, trusted["revision"],
+                VerifierTrust(signer.issuer_id, signer.key_id, signer.public_key_hex,
+                              tuple(sorted(trusted["scopes"],
+                                           key=lambda s: (s.environment_id, s.resource_id))),
+                              (VERIFIER,), now - timedelta(minutes=1), now + timedelta(hours=1)),
+                "security-requester", "security-approver", "Register handoff evidence producer",
+                approved, approved + timedelta(minutes=1)))
 
-    trust_scopes(scopes)
-    signed = SignedEvidenceAuthority(
-        PostgresSignedEvidence(connect, tenant_id=tenant),
-        Ed25519EvidenceVerifier(registry.resolve), clock=lambda: datetime.now(UTC))
-    witness = witness_for(tenant) if witness_for else MemoryAuthorityWitness()
-    store = PostgresHandoffAuthority(connect, tenant_id=tenant, witness=witness)
-    coordinator = HandoffCoordinator(
-        store=store,
-        evidence=SignedObligationEvidence(
-            current_envelope=PostgresSignedEvidence(connect, tenant_id=tenant).current_envelope,
-            resolve_trust=registry.resolve, issuers={VERIFIER: signer.issuer_id},
-            clock=lambda: datetime.now(UTC)),
-        changes=changes,
-        clock=lambda: datetime.now(UTC))
-    counter = iter(range(10_000))
+        trust_scopes(scopes)
+        signed = SignedEvidenceAuthority(
+            PostgresSignedEvidence(connect, tenant_id=tenant),
+            Ed25519EvidenceVerifier(registry.resolve), clock=lambda: datetime.now(UTC))
+        witness = witness_for(tenant) if witness_for else MemoryAuthorityWitness()
+        store = PostgresHandoffAuthority(connect, tenant_id=tenant, witness=witness)
+        coordinator = HandoffCoordinator(
+            store=store,
+            evidence=SignedObligationEvidence(
+                current_envelope=PostgresSignedEvidence(connect,
+                                                        tenant_id=tenant).current_envelope,
+                resolve_trust=registry.resolve, issuers={VERIFIER: signer.issuer_id},
+                clock=lambda: datetime.now(UTC)),
+            changes=changes,
+            clock=lambda: datetime.now(UTC))
+        counter = iter(range(10_000))
 
     def prove(obligation_id, result=VerificationResult.PASS, *, revisions=None,
               obligation=None, artifact_digest="a" * 64):
@@ -151,4 +172,7 @@ def admitted_handoff(postgres_database, now, *, witness_for=None, adjust=None,
                 connect=connect, lifecycle=lifecycle, world=world, feed=feed,
                 trust_scopes=trust_scopes, changes=changes, verifier=VERIFIER,
                 witness=witness, compiled=compiled,
-                complete_feeds=lambda: complete_feeds(feed, revision, plan))
+                complete_feeds=lambda: complete_feeds(feed, revision, plan),
+                # for a further unit of the same migration (``alongside``)
+                now=now, contract_data=data, signer=signer, registry=registry,
+                signed=signed, counter=counter, approval_id=approval_id)

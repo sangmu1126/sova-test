@@ -16,7 +16,9 @@ from sova.domain.system_graph import (
 
 
 def example_dependency_snapshot(now, contract=None, *, environment="synthetic-source",
-                                uid_prefix="synthetic-uid-"):
+                                uid_prefix="synthetic-uid-", identity_provider=None):
+    """``identity_provider`` names an identity node both services use for sign-in
+    (absent by default, which keeps the original example unchanged)."""
     contract = contract or example_service_contract()
     kinds = {
         "api-a": ResourceKind.SERVICE,
@@ -24,6 +26,11 @@ def example_dependency_snapshot(now, contract=None, *, environment="synthetic-so
         "database": ResourceKind.DATABASE,
         "audit": ResourceKind.OBSERVABILITY,
     }
+    uses = ()
+    if identity_provider is not None:
+        kinds[identity_provider] = ResourceKind.IDENTITY
+        uses = tuple(SystemRelation(api, identity_provider, RelationKind.USES, True)
+                     for api in ("api-a", "api-b"))
     graph = SystemGraph(
         contract.tenant_id,
         contract.service_id,
@@ -50,6 +57,7 @@ def example_dependency_snapshot(now, contract=None, *, environment="synthetic-so
             SystemRelation("api-a", "database", RelationKind.WRITES, True),
             SystemRelation("api-b", "database", RelationKind.WRITES, True),
             SystemRelation("api-a", "audit", RelationKind.READS, True),
+            *uses,
         ),
     )
     return DependencySnapshot(

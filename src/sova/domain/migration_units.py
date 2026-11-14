@@ -10,8 +10,9 @@ from enum import StrEnum
 import hashlib
 
 from sova.domain.contracts import ContractError, canonical_json, digest, identifier, utc
+from sova.domain.identity_contract import evaluate_identity
 from sova.domain.service_contracts import ServiceContract
-from sova.domain.system_graph import RelationKind, SystemGraph
+from sova.domain.system_graph import RelationKind, ResourceKind, SystemGraph
 
 
 MAX_SNAPSHOT_BYTES = 1048576
@@ -160,6 +161,27 @@ class DependencySnapshot:
         ).hexdigest()
 
 
+def migrates_identity(contract):
+    """True when the contract moves the accounts off the source IdP (Part II)."""
+    try:
+        identity = evaluate_identity(contract)
+    except ContractError:
+        return False  # the compiler reports an invalid extension itself
+    return identity is not None and identity.strategy == "MIGRATE_IDENTITY"
+
+
+def _identity_protocol_link(link, nodes, contract):
+    """A service calling or using an identity provider across the unit boundary
+    has defined semantics when the accounts move as their own handoff unit
+    (ADR-0002): the issuer switch is that unit's route and the data unit's
+    activation waits for it. Any other crossing call stays undecided."""
+    if link["kind"] not in (str(RelationKind.CALLS), str(RelationKind.USES)):
+        return False
+    ends = [nodes[link["source"]].kind == ResourceKind.IDENTITY,
+            nodes[link["target"]].kind == ResourceKind.IDENTITY]
+    return ends[0] != ends[1] and migrates_identity(contract)
+
+
 def analyze_boundary(
     contract, snapshot, *, requested_nodes, expected_tenant, authenticate, clock
 ):
@@ -231,7 +253,8 @@ def analyze_boundary(
     required_sets = set(contract.document["spec"]["data"]["protected_sets"])
     if set(dict(snapshot.dataset_nodes)) != required_sets:
         blockers.append("PROTECTED_DATASET_MAPPING_INCOMPLETE")
-    crossing = {link["kind"] for link in boundary_links}
+    crossing = {link["kind"] for link in boundary_links
+                if not _identity_protocol_link(link, nodes, contract)}
     if crossing & {str(RelationKind.CALLS), str(RelationKind.USES)}:
         blockers.append("CROSS_BOUNDARY_EFFECT_SEMANTICS_UNKNOWN")
     if str(RelationKind.REPLICATES) in crossing:

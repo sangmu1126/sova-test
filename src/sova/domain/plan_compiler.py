@@ -178,7 +178,9 @@ def _reconcilable(effect):
     )
 
 
-def _obligations(spec, steps):
+def _obligations(spec, steps, *, identity_unit=False):
+    """``identity_unit``: the unit is an account set, not business data; its
+    content is checked by the identity mapping obligations instead."""
     at = {s.step_id: s for s in steps}
 
     def ob(obligation_id, kind, step_id, **extra):
@@ -203,17 +205,19 @@ def _obligations(spec, steps):
                          "verify_return_target",
                          checks=["same_resource_uids", "still_fenced",
                                  "not_restored_from_snapshot"]))
-    for name in sorted(spec["data"]["protected_sets"]):
+    for name in () if identity_unit else sorted(spec["data"]["protected_sets"]):
         result.append(ob(f"data.{name}", "final_content_comparison",
                          "verify_final_state",
                          comparison_contract=spec["data"]["comparison_contract_ref"]))
-    for invariant in sorted(spec["business"]["invariants"], key=lambda i: i["id"]):
+    invariants = () if identity_unit else spec["business"]["invariants"]
+    for invariant in sorted(invariants, key=lambda i: i["id"]):
         result.append(ob(f"business.{invariant['id']}", "business_invariant",
                          "verify_final_state"))
     for control in sorted(spec["security"]["required_controls"]):
         result.append(ob(f"security.{control}", "target_control_test",
                          "record_activation_intent"))
-    for effect in sorted(spec["business"]["external_effects"], key=lambda e: e["id"]):
+    effects = () if identity_unit else spec["business"]["external_effects"]
+    for effect in sorted(effects, key=lambda e: e["id"]):
         result.append(ob(f"effect.{effect['id']}", "external_result_lookup",
                          "pause_admission"))
     availability = spec["availability"]
@@ -231,9 +235,13 @@ def _obligations(spec, steps):
 _DATA_KINDS = {ResourceKind.DATABASE, ResourceKind.STORAGE, ResourceKind.QUEUE}
 
 
-def _sets(step, members, resources):
-    """Symbolic read/write sets over the unit's members (§12.5 conflict input)."""
-    data = sorted(m for m in members if resources[m] in _DATA_KINDS)
+def _sets(step, members, resources, *, identity_unit=False):
+    """Symbolic read/write sets over the unit's members (§12.5 conflict input).
+    In an account unit the identity provider holds what moves; its route is
+    the application's issuer setting, not the service's data route."""
+    kinds = _DATA_KINDS | ({ResourceKind.IDENTITY} if identity_unit else set())
+    data = sorted(m for m in members if resources[m] in kinds)
+    route = "route/identity" if identity_unit else "route/unit"
     authority = ["authority/unit"]
     source_data = [f"source/{m}" for m in data]
     target_data = [f"target/{m}" for m in data]
@@ -250,7 +258,7 @@ def _sets(step, members, resources):
         "verify_final_state": (source_data + target_data, []),
         "record_activation_intent": (authority, authority),
         "activate_target": (authority, authority + [f"{t}/write-policy" for t in target_data]),
-        "commit_route": (authority, ["route/unit"]),
+        "commit_route": (authority, [route]),
         "stabilize": (authority + target_all, []),
     }
     reads, writes = table[step.step_id]
@@ -326,6 +334,38 @@ def compile_revision(
             remediation = True
         blockers.append(_blocker("C4", code, extension="identity"))
 
+    # ADR-0002: an account set is its own handoff unit, ordered before the data.
+    kinds = {r.node_id: r.kind for r in snapshot.graph.resources}
+    members = tuple(boundary.get("members") or ())
+    identity_unit = bool(members) and all(
+        kinds[m] == ResourceKind.IDENTITY for m in members)
+    migrating = identity is not None and identity.strategy == "MIGRATE_IDENTITY"
+    prerequisite = None
+    if identity_unit:
+        if not migrating:
+            unsupported = True
+            blockers.append(_blocker("C4", "IDENTITY_UNIT_REQUIRES_MIGRATE_IDENTITY"))
+        if failback is not None:
+            # No reverse account migration exists: accounts created at the
+            # target after the handoff could not return (ADR-0002, question 3).
+            unsupported = True
+            blockers.append(_blocker("C3", "IDENTITY_UNIT_FAILBACK_UNSUPPORTED"))
+    elif migrating:
+        idps = tuple(sorted(n for n, k in kinds.items()
+                            if k == ResourceKind.IDENTITY and n not in members))
+        if idps:
+            accounts = analyze_boundary(
+                contract, snapshot, requested_nodes=idps, expected_tenant=expected_tenant,
+                authenticate=authenticate, clock=clock)
+            if accounts["status"] != "PARTITIONABLE" or any(
+                    kinds[m] != ResourceKind.IDENTITY for m in accounts["members"]):
+                remediation = True
+                blockers.append(_blocker("C2", "IDENTITY_UNIT_BOUNDARY_UNRESOLVED",
+                                         identity_nodes=list(idps)))
+            else:
+                prerequisite = {"members": accounts["members"],
+                                "unit_digest": accounts["unit_digest"]}
+
     # C3: directional capability for exactly this template's operations.
     operations = required_operations(manifest.strategy_id)
     assessment = None
@@ -400,7 +440,8 @@ def compile_revision(
     plan = None
     if status == "COMPILED":
         plan = _freeze(contract, snapshot, boundary, manifest, qualification,
-                       source, target, inputs, spec, identity, failback)
+                       source, target, inputs, spec, identity, failback,
+                       identity_unit=identity_unit, prerequisite=prerequisite)
     return plan, {
         "schema_version": 1,
         "compiler_version": COMPILER_VERSION,
@@ -417,7 +458,8 @@ def compile_revision(
 
 
 def _freeze(contract, snapshot, boundary, manifest, qualification, source, target,
-            inputs, spec, identity=None, failback=None):
+            inputs, spec, identity=None, failback=None, *, identity_unit=False,
+            prerequisite=None):
     members = tuple(boundary["members"])
     resources = {r.node_id: r.kind for r in snapshot.graph.resources}
     scopes = {r.node_id: r.scope.environment_id for r in snapshot.graph.resources}
@@ -425,7 +467,7 @@ def _freeze(contract, snapshot, boundary, manifest, qualification, source, targe
     template = TEMPLATES[manifest.strategy_id]
     prefix = boundary["unit_digest"][:16]
     ids = {s.step_id: f"{prefix}.{i:02d}.{s.step_id}" for i, s in enumerate(template)}
-    obligations = _obligations(spec, template)
+    obligations = _obligations(spec, template, identity_unit=identity_unit)
     # §14.4: existing automation that writes a member must be verifiably paused
     # before the platform's first source write; the plan names it for approval.
     controlled = {}
@@ -440,16 +482,30 @@ def _freeze(contract, snapshot, boundary, manifest, qualification, source, targe
     if identity is not None:
         steps = {s.step_id for s in template}
         for o in identity.obligations:
+            o = dict(o)
+            if identity_unit and o["required_at"] == "record_activation_intent":
+                # Target sign-in opens only with this unit's activation, so the
+                # flow tests confirm it afterwards; the data unit still gates on
+                # them before its own activation.
+                o["required_at"] = "stabilize"
             if o["required_at"] not in steps:
                 raise ContractError("Compiler consistency violation")
-            obligations.append(dict(o))
+            obligations.append(o)
+        obligations.sort(key=lambda o: o["id"])
+    if prerequisite is not None:
+        # The data unit activates only after the account unit completed (ADR-0002).
+        obligations.append({"id": "identity.unit_handoff_complete",
+                            "kind": "unit_handoff_complete",
+                            "required_at": "record_activation_intent",
+                            "unit_digest": prerequisite["unit_digest"],
+                            "members": list(prerequisite["members"])})
         obligations.sort(key=lambda o: o["id"])
     evidence_by_step = {}
     for o in obligations:
         evidence_by_step.setdefault(o["required_at"], []).append(o["id"])
     operations, previous = [], None
     for step in template:
-        reads, writes = _sets(step, members, resources)
+        reads, writes = _sets(step, members, resources, identity_unit=identity_unit)
         operations.append({
             "operation_id": ids[step.step_id],
             "kind": step.step_id,
