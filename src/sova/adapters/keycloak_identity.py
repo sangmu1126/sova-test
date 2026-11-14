@@ -1,8 +1,9 @@
-"""Reference identity migration between two Keycloak realms (Part II, RESET_AND_REENROLL).
+"""Reference identity migration into a Keycloak realm (Part II, RESET_AND_REENROLL).
 
-``KeycloakIdentityMigration`` moves accounts from a source realm to a target
-realm on another server: profile, enabled and email-verified state, top-level
-group membership, and the stable source subject. It never moves credentials:
+``KeycloakIdentityMigration`` moves accounts from a source directory (another
+Keycloak realm, an AWS Cognito user pool: anything with ``accounts(bound)``)
+to a target realm: profile, enabled and email-verified state, top-level group
+membership, and the stable source subject. It never moves credentials:
 passwords and MFA secrets are not portable between identity providers, so
 every migrated account must set a new password (and enrol MFA again when the
 contract requires MFA) before it can sign in at the target.
@@ -23,7 +24,10 @@ The readback reads both realms again and holds only if
   whoever owned the source one); the operator resolves it.
 
 Only top-level groups are supported; a nested group membership keeps the
-readback unconfirmed. ``max_users`` bounds every listing.
+readback unconfirmed. A federated source account (it signs in at an external
+identity provider) cannot be moved by a password reset: it is never created
+and keeps the readback unconfirmed, for a federation plan to handle.
+``max_users`` bounds every listing.
 """
 
 import httpx
@@ -85,7 +89,7 @@ class _Realm:
             page = self.get("/users", first=first, max=_PAGE, briefRepresentation="false")
             users += page
             if len(users) > bound:
-                raise _TooMany
+                raise AccountBoundExceeded
             if len(page) < _PAGE:
                 return users
             first += _PAGE
@@ -101,8 +105,26 @@ class _Realm:
         return self.get("/users/profile")
 
 
-class _TooMany(ContractError):
+class AccountBoundExceeded(ContractError):
     """More accounts than this adapter is bounded to read."""
+
+
+class KeycloakDirectory:
+    """A Keycloak realm as a migration source."""
+
+    def __init__(self, admin):
+        if not isinstance(admin, KeycloakAdmin):
+            raise ContractError("Keycloak realm administration required")
+        self.admin = admin
+
+    def accounts(self, bound):
+        with self.admin.session() as src:
+            return [{"subject": u["id"], "username": u["username"], "email": u.get("email"),
+                     "firstName": u.get("firstName"), "lastName": u.get("lastName"),
+                     "enabled": u["enabled"], "emailVerified": u.get("emailVerified", False),
+                     "groups": src.groups_of(u["id"]), "federated": bool(
+                         u.get("federationLink"))}
+                    for u in src.users(bound)]
 
 
 def _subject(user):
@@ -112,8 +134,11 @@ def _subject(user):
 
 class KeycloakIdentityMigration:
     def __init__(self, adapter_id, *, source, target, mfa_required, max_users=10_000):
-        if not isinstance(source, KeycloakAdmin) or not isinstance(target, KeycloakAdmin):
-            raise ContractError("Source and target realm administration required")
+        if isinstance(source, KeycloakAdmin):
+            source = KeycloakDirectory(source)
+        if not callable(getattr(source, "accounts", None)) or not isinstance(
+                target, KeycloakAdmin):
+            raise ContractError("A source directory and target realm administration required")
         if type(mfa_required) is not bool:
             raise ContractError("Explicit MFA requirement required")
         if type(max_users) is not int or not 1 <= max_users <= 1_000_000:
@@ -134,7 +159,7 @@ class KeycloakIdentityMigration:
     def readback(self, command, now):
         try:
             holds, detail = self._check()
-        except _TooMany:
+        except AccountBoundExceeded:
             holds, detail = False, {"reason": "account bound exceeded",
                                     "max_users": self.max_users}
         return EffectObservation(
@@ -149,14 +174,15 @@ class KeycloakIdentityMigration:
                 "groups": groups}
 
     def _snapshot(self):
-        with self.source.session() as src, self.target.session() as tgt:
-            source = {u["id"]: self._wanted(u, src.groups_of(u["id"]))
-                      for u in src.users(self.max_users)}
+        accounts = self.source.accounts(self.max_users)
+        source = {a["subject"]: self._wanted(a, a["groups"]) for a in accounts}
+        federated = sorted(a["username"] for a in accounts if a["federated"])
+        with self.target.session() as tgt:
             target_users = tgt.users(self.max_users)
             target = {u["id"]: {**self._wanted(u, tgt.groups_of(u["id"])),
                                 "subject": _subject(u)} for u in target_users}
             profile = tgt.profile()
-        return source, target, profile
+        return source, target, profile, federated
 
     def _protected(self, profile):
         for attribute in profile.get("attributes", ()):
@@ -168,7 +194,7 @@ class KeycloakIdentityMigration:
         return False
 
     def _check(self):
-        source, target, profile = self._snapshot()
+        source, target, profile, federated = self._snapshot()
         claims = {}
         for tid, t in target.items():
             if t["subject"] is not None:
@@ -195,14 +221,16 @@ class KeycloakIdentityMigration:
                            {s["username"] for s in source.values()}
                            and t["username"] not in mapped_names)
         protected = self._protected(profile)
+        unmapped = [u for u in unmapped if u not in federated]
         holds = protected and not any((duplicates, unmapped, mismatched, nested, orphans,
-                                       conflicts))
+                                       conflicts, federated))
         return holds, {
             "source_accounts": len(source), "mapped": len(claims),
             "subject_attribute_admin_only": protected,
             "duplicate_subjects": len(duplicates), "unmapped": unmapped[:20],
             "mismatched": mismatched[:20], "nested_groups": nested[:20],
-            "active_orphans": orphans[:20], "username_conflicts": conflicts[:20]}
+            "active_orphans": orphans[:20], "username_conflicts": conflicts[:20],
+            "federated_accounts": federated[:20]}
 
     # -- migration -------------------------------------------------------------
     def _ensure_protected_attribute(self, tgt):
@@ -214,18 +242,18 @@ class KeycloakIdentityMigration:
         tgt.send("PUT", "/users/profile", {**profile, "attributes": attributes})
 
     def _migrate(self):
-        with self.source.session() as src, self.target.session() as tgt:
+        source = self.source.accounts(self.max_users)
+        with self.target.session() as tgt:
             self._ensure_protected_attribute(tgt)
-            source = src.users(self.max_users)
             target = tgt.users(self.max_users)
             by_subject = {_subject(u): u for u in target if _subject(u)}
             by_name = {u["username"]: u for u in target}
             groups = tgt.top_groups()
             for user in source:
-                wanted_groups = src.groups_of(user["id"])
-                if any(g.count("/") > 1 for g in wanted_groups):
-                    continue  # nested groups are reported by the readback
-                existing = by_subject.get(user["id"])
+                wanted_groups = user["groups"]
+                if user["federated"] or any(g.count("/") > 1 for g in wanted_groups):
+                    continue  # federated accounts and nested groups: see the readback
+                existing = by_subject.get(user["subject"])
                 if existing is None and user["username"] in by_name:
                     continue  # an unmapped account with this name: never merged
                 if existing is None and not user["enabled"]:
@@ -234,14 +262,15 @@ class KeycloakIdentityMigration:
                         "firstName": user.get("firstName"), "lastName": user.get("lastName"),
                         "enabled": user["enabled"],
                         "emailVerified": user.get("emailVerified", False),
-                        "attributes": {SUBJECT: [user["id"]]}}
+                        "attributes": {SUBJECT: [user["subject"]]}}
                 if existing is None:
                     body["requiredActions"] = list(self.required_actions)
                     location = tgt.send("POST", "/users", body).headers["Location"]
                     target_id = location.rstrip("/").rsplit("/", 1)[1]
                 else:
                     target_id = existing["id"]
-                    attributes = {**(existing.get("attributes") or {}), SUBJECT: [user["id"]]}
+                    attributes = {**(existing.get("attributes") or {}),
+                                  SUBJECT: [user["subject"]]}
                     tgt.send("PUT", f"/users/{target_id}", {**body, "attributes": attributes})
                 current = set(tgt.groups_of(target_id))
                 for path in sorted(set(wanted_groups) - current):
@@ -251,7 +280,7 @@ class KeycloakIdentityMigration:
                     tgt.send("PUT", f"/users/{target_id}/groups/{groups[path]}")
                 for path in sorted(current - set(wanted_groups)):
                     tgt.send("DELETE", f"/users/{target_id}/groups/{groups[path]}")
-            sources = {u["id"] for u in source}
+            sources = {u["subject"] for u in source}
             for user in target:
                 if _subject(user) and _subject(user) not in sources and user["enabled"]:
                     tgt.send("PUT", f"/users/{user['id']}", {**user, "enabled": False})
