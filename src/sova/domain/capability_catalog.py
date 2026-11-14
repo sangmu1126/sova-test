@@ -11,6 +11,7 @@ from enum import StrEnum
 import hashlib
 
 from sova.domain.contracts import ContractError, canonical_json, digest, identifier, utc
+from sova.domain.environments import Provider
 from sova.domain.service_contracts import EXTENSIONS, MigrationProfile, ServiceContract
 
 
@@ -63,6 +64,9 @@ class EnvironmentProfile:
         ):
             identifier(getattr(self, field))
             object.__setattr__(self, field, str(getattr(self, field)))
+        # A known provider only: a misspelt one would split qualifications.
+        if self.provider not in set(Provider):
+            raise ContractError("Registered provider required")
         _row_count(self.revision)
         if self.revision == 0:
             raise ContractError("Positive profile revision required")

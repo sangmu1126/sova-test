@@ -237,6 +237,19 @@ def test_unbounded_or_inexact_limits_fail_before_authentication(inputs, rows):
         assess(inputs, rows=rows)
 
 
+@pytest.mark.parametrize("provider", ["azure", "ncp", "gcp", "on_prem"])
+def test_every_registered_provider_is_a_profile_axis(inputs, provider):
+    other = replace(inputs["source"], provider=provider)
+    assert other.provider == provider
+    assert other.fingerprint != inputs["source"].fingerprint  # a different direction
+
+
+@pytest.mark.parametrize("provider", ["amazon", "AWS", "naver-cloud", "k8s"])
+def test_an_unregistered_provider_name_is_refused(inputs, provider):
+    with pytest.raises(ContractError):
+        replace(inputs["source"], provider=provider)
+
+
 def test_inputs_and_profile_facts_are_immutable_and_unambiguous(inputs):
     assert (
         replace(

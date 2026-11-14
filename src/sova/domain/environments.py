@@ -8,8 +8,13 @@ from sova.domain.contracts import ContractError, digest, identifier, utc
 
 
 class Provider(StrEnum):
+    """Who supplies the resources. A provider name implies no backend: AWS does
+    not imply Kubernetes, and an S3-compatible API does not imply AWS."""
+
     AWS = "aws"
     GCP = "gcp"
+    AZURE = "azure"
+    NCP = "ncp"  # NAVER Cloud Platform
     ON_PREM = "on_prem"
     LOCAL = "local"
 

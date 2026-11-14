@@ -85,6 +85,8 @@ sova service-contract-inspect .local-notes/service-contract.json --tenant org-ex
 
 `EnvironmentProfile`은 profile ID/revision, provider, compute backend, data engine, identity, network, architecture, component versions를 독립 축으로 가진다. AWS라고 Kubernetes를 가정하지 않는다. 같은 기술 조합도 profile ID/revision이 바뀌면 기존 결속을 재평가한다.
 
+provider는 등록된 값만 받는다: `aws`, `gcp`, `azure`, `ncp`(NAVER Cloud Platform), `on_prem`, `local`. 자유 문자열이면 `amazon`·`AWS` 같은 표기 차이가 서로 다른 방향을 만들어 자격이 갈라진다. 등록은 이름일 뿐이다. 해당 provider를 다루는 adapter와 방향별 자격이 없으면 그 방향은 여전히 `UNSUPPORTED`나 `NEEDS_EVIDENCE`다.
+
 `CapabilityManifest`는 adapter/strategy의 버전·code digest·지원 operation/profile을 동결한다. manifest에 지원이라고 적는 것만으로 qualification이 생기지 않는다.
 
 `StrategyQualification`은 tenant·service·정확한 계약 digest, manifest digest, 순서 있는 source/target profile, operation 집합, 행 수 상한, 증거 등급, 발급/만료, verifier와 시험 코드·원본 증거 지문을 결속한다. 이는 일반 자격 기록의 **첫 제한 모델**이다. 현재 부하·지연·손실·스토리지·failure model의 모든 축을 구현한 §28.4 전체 자격 레코드로 광고하지 않는다. 추가 축은 profile/contract에 명시적으로 동결하거나 후속 스키마를 정의하고 재자격해야 한다.
