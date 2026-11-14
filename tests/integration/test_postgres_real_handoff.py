@@ -238,7 +238,8 @@ def test_data_really_moves_and_authority_really_changes(postgres_database, now, 
     lingering = business["connect_as"](names["src"], app)  # an app session left open
     lingering.execute("SELECT 1")
     x = run_handoff(postgres_database, now, business, adjust=without_transport_control)
-    assert x["record"].state == HandoffState.HANDOFF_COMPLETE
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE, (x["record"].reason,
+                                                         x["record"].held_from)
     assert x["record"].owner_environment == "onprem-target"
     # The fence ended existing sessions, not only new logins (§15.5).
     with pytest.raises(psycopg.OperationalError):
@@ -294,7 +295,8 @@ def test_failback_brings_back_writes_made_on_the_target(postgres_database, now, 
     names, app = business["names"], business["app"]
     x = run_handoff(postgres_database, now, business, adjust=without_transport_control,
                     until="stabilize")
-    assert x["record"].state == HandoffState.ROUTE_CONFIRMED
+    assert x["record"].state == HandoffState.ROUTE_CONFIRMED, (x["record"].reason,
+                                                         x["record"].held_from)
     with business["connect_as"](x["route"].get(), app) as conn:  # business on the target
         for i in range(51, 56):
             conn.execute("INSERT INTO orders VALUES (%s, %s, %s, %s)",
@@ -341,7 +343,7 @@ def test_failback_brings_back_writes_made_on_the_target(postgres_database, now, 
     record, _ = drive(x, revision, plan, adapter=back_adapter, probes=back_probes,
                       other_db=names["other"], scratch_db=names["scratch"],
                       operation="real-failback", approval_id="approval-failback")
-    assert record.state == HandoffState.HANDOFF_COMPLETE
+    assert record.state == HandoffState.HANDOFF_COMPLETE, (record.reason, record.held_from)
     assert record.owner_environment == "aws-source" and record.predecessor == (
         x["revision"].digest)
     assert x["route"].get() == names["src"]
@@ -364,7 +366,8 @@ def test_lost_activation_response_is_held_then_reconciled_from_the_databases(
     lost, resumed = events
     assert lost == ("activate_target", "SAFE_HOLD", "EFFECT_UNKNOWN", True)
     assert resumed[:2] == ("activate_target", "TARGET_ACTIVE_OBSERVED")
-    assert x["record"].state == HandoffState.HANDOFF_COMPLETE
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE, (x["record"].reason,
+                                                         x["record"].held_from)
     assert x["probes"].single_writer()[0]
 
 
@@ -381,7 +384,8 @@ def test_snapshot_cdc_keeps_writes_made_after_the_initial_sync(postgres_database
 
     x = run_handoff(postgres_database, now, business, adjust=without_transport_control,
                     strategy="snapshot-cdc", before=write_during_sync)
-    assert x["record"].state == HandoffState.HANDOFF_COMPLETE
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE, (x["record"].reason,
+                                                         x["record"].held_from)
     with business["connect"](names["tgt"]) as conn:
         assert conn.execute("SELECT count(*) FROM orders WHERE id=77").fetchone()[0] == 1
     assert x["probes"].content_equal("orders")[0]
@@ -398,7 +402,8 @@ def test_a_restored_source_writer_is_caught_and_holds_the_service(postgres_datab
 
     names, app = business["names"], business["app"]
     x = run_handoff(postgres_database, now, business, adjust=without_transport_control)
-    assert x["record"].state == HandoffState.HANDOFF_COMPLETE
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE, (x["record"].reason,
+                                                         x["record"].held_from)
     holds = PostgresSecurityHolds(x["connect"], tenant_id=x["tenant"])
     watch = SourceFenceWatch(store=x["store"], evidence=x["coordinator"].evidence,
                              holds=holds, clock=lambda: datetime.now(UTC))
@@ -541,7 +546,8 @@ def test_catalog_changes_by_the_plan_itself_do_not_stop_it(postgres_database, no
                                                           business):
     x = run_handoff(postgres_database, now, business, adjust=without_transport_control,
                     watch_catalog=catalog_watch(business))
-    assert x["record"].state == HandoffState.HANDOFF_COMPLETE
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE, (x["record"].reason,
+                                                         x["record"].held_from)
     recorded = x["feed"].events(application_id=x["app"],
                                 environments=("synthetic-source", "onprem-target"),
                                 since=now)
@@ -575,7 +581,8 @@ def test_business_continues_on_the_confirmed_route_while_the_platform_is_down(
     dsn, runtime_role = postgres_database
     app = business["app"]
     x = run_handoff(postgres_database, now, business, adjust=without_transport_control)
-    assert x["record"].state == HandoffState.HANDOFF_COMPLETE
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE, (x["record"].reason,
+                                                         x["record"].held_from)
     with psycopg.connect(dsn, autocommit=True) as admin:
         admin.execute(sql.SQL("ALTER ROLE {} NOLOGIN").format(sql.Identifier(runtime_role)))
     try:
@@ -597,7 +604,8 @@ def test_sequences_move_with_the_data_so_numbers_are_never_reissued(postgres_dat
     """AT-24: rows alone are not the state. The source issued order numbers 1-10;
     after the handoff the target continues at 11 instead of issuing 1 again."""
     x = run_handoff(postgres_database, now, business, adjust=without_transport_control)
-    assert x["record"].state == HandoffState.HANDOFF_COMPLETE
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE, (x["record"].reason,
+                                                         x["record"].held_from)
     with business["connect_as"](x["route"].get(), business["app"]) as conn:
         assert conn.execute("SELECT nextval('order_number_seq')").fetchone()[0] == 11
 
