@@ -46,8 +46,9 @@ def canonical(value):
 
 
 class S3World:
-    def __init__(self, stores, *, versioned=False, accept_history_loss=False):
-        self.s = stores
+    def __init__(self, stores, *, versioned=False, accept_history_loss=False,
+                 adapter_id="s3-offline-copy"):
+        self.s, self.adapter_id = stores, adapter_id
         suffix = uuid4().hex[:10]
         self.buckets = {side: stores["bucket_name"](side, suffix)
                         for side in ("source", "target")}
@@ -83,7 +84,7 @@ class S3World:
 
     def _adapter(self, source, target):
         return S3OfflineCopyAdapter(
-            "s3-offline-copy", source=self.side(source), target=self.side(target),
+            self.adapter_id, source=self.side(source), target=self.side(target),
             app_principal="app", writer_principals=("app", "other"), route=self._route,
             accept_history_loss=self.accept_history_loss)
 
