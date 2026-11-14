@@ -102,6 +102,9 @@ def admitted_handoff(postgres_database, now, *, witness_for=None, adjust=None,
         """Publish the producer's trust over its current scopes plus ``more``."""
         trusted["revision"] += 1
         trusted["scopes"] |= set(more)
+        # Approved when published: a later publish (a failback, minutes on a slow
+        # machine) must not carry an approval window that already closed.
+        approved = datetime.now(UTC) - timedelta(seconds=1)
         registry.publish(VerifierTrustChange(
             tenant, app, trusted["revision"],
             VerifierTrust(signer.issuer_id, signer.key_id, signer.public_key_hex,
@@ -109,7 +112,7 @@ def admitted_handoff(postgres_database, now, *, witness_for=None, adjust=None,
                                        key=lambda s: (s.environment_id, s.resource_id))),
                           (VERIFIER,), now - timedelta(minutes=1), now + timedelta(hours=1)),
             "security-requester", "security-approver", "Register handoff evidence producer",
-            now, now + timedelta(minutes=1)))
+            approved, approved + timedelta(minutes=1)))
 
     trust_scopes(scopes)
     signed = SignedEvidenceAuthority(

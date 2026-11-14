@@ -26,6 +26,7 @@ from sova.domain.operations import OperationRequest
 from sova.ports.execution import RecoveryRequired
 
 OPERATION = "real-handoff"
+LEASE_SECONDS = 120  # bounded; renewed before every step
 class LosesResponse:
     """The effect happens, the executor never hears back (AT-20)."""
 
@@ -59,7 +60,7 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
         return journal, EffectExecutor(journal, authorize=journal.authorize,
                                        clock=lambda: datetime.now(UTC))
 
-    lease = ownership.acquire(h["app"], operation, "worker")
+    lease = ownership.acquire(h["app"], operation, "worker", lease_seconds=LEASE_SECONDS)
     journal, engine = executor_for(lease)
     h["coordinator"].open(revision, plan, actor_id="coordinator")
     contract = h["world"]["contract"].document["spec"]
@@ -99,6 +100,10 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
     for op in doc["operations"]:
         if op["kind"] == until:
             break
+        # A worker keeps its lease alive between steps, as a real executor's
+        # heartbeat does; without it a slow machine loses the lease mid-handoff.
+        lease = ownership.renew(lease, lease_seconds=LEASE_SECONDS)
+        journal, engine = executor_for(lease)
         if before:
             before(op["kind"])
         effect = None
@@ -129,11 +134,14 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
                 effect = executor_for(recovery)[1].reconcile(command, permit_for(command),
                                                              adapter)
                 ownership.release(recovery)
-                lease = ownership.acquire(h["app"], operation, "worker-after-recovery")
+                lease = ownership.acquire(h["app"], operation, "worker-after-recovery",
+                                          lease_seconds=LEASE_SECONDS)
                 journal, engine = executor_for(lease)
                 observed[op["kind"]] = effect.observation.observed_at
                 for oid in op["required_evidence"]:
                     passed, observation = measure(obligations[oid])
+                    if not passed:
+                        observed.setdefault("failed", []).append((oid, observation))
                     h["prove"](oid, VerificationResult.PASS if passed else
                                VerificationResult.FAIL,
                                artifact_digest=artifact_digest(observation),
@@ -148,16 +156,22 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
                 continue
             try:
                 effect = engine.execute(command, permit_for(command), adapter)
-            except UncertainEffect:
+            except UncertainEffect as uncertain:
                 # The readback did not confirm the postcondition: hold, do not guess.
+                held = journal.get(command)
+                observed["uncertain"] = {  # why, for a failure message
+                    "step": op["kind"], "cause": repr(uncertain.__cause__)[:400],
+                    "evidence": held.observation.evidence if held.observation else None}
                 record = h["coordinator"].advance_from_ledger(
-                    revision, plan, effect=journal.get(command), actor_id="coordinator")
+                    revision, plan, effect=held, actor_id="coordinator")
                 break
             observed[op["kind"]] = effect.observation.observed_at
             if after_effect:
                 after_effect(op)
         for oid in op["required_evidence"]:
             passed, observation = measure(obligations[oid])
+            if not passed:  # kept for a failure message
+                observed.setdefault("failed", []).append((oid, observation))
             h["prove"](oid, VerificationResult.PASS if passed else VerificationResult.FAIL,
                        artifact_digest=artifact_digest(observation),
                        obligation=next(o for o in plan.obligations if o.obligation_id == oid),
