@@ -13,6 +13,8 @@ import json
 import os
 import re
 import secrets
+import shutil
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -356,3 +358,37 @@ def assert_no_value_in(text, values):
         if value.startswith(b"{"):
             forms.add(json.loads(value)["password"].encode())
         assert not any(form in text.encode() for form in forms), "a secret value leaked"
+
+
+@pytest.fixture
+def hosted_zone(aws):
+    if not shutil.which("dig"):
+        pytest.skip("dig is required to ask the authoritative servers")
+    r53 = aws["session"].client("route53")
+    name = f"sova-test-{aws['run']}-{uuid4().hex[:6]}.com"
+    created = r53.create_hosted_zone(Name=name, CallerReference=uuid4().hex,
+                                     HostedZoneConfig={"Comment": "sova test, run-scoped"})
+    zone_id = created["HostedZone"]["Id"].rsplit("/", 1)[-1]
+    r53.change_tags_for_resource(ResourceType="hostedzone", ResourceId=zone_id,
+                                 AddTags=aws["tags"])
+    try:
+        yield {"r53": r53, "id": zone_id, "name": name,
+               "servers": created["DelegationSet"]["NameServers"]}
+    finally:
+        records = r53.list_resource_record_sets(HostedZoneId=zone_id)["ResourceRecordSets"]
+        changes = [{"Action": "DELETE", "ResourceRecordSet": r} for r in records
+                   if r["Type"] not in ("NS", "SOA")]
+        if changes:
+            r53.change_resource_record_sets(HostedZoneId=zone_id,
+                                            ChangeBatch={"Changes": changes})
+        r53.delete_hosted_zone(Id=zone_id)
+
+
+def authoritative(zone, record):
+    """What the zone's own name servers answer, asked over DNS."""
+    answers = set()
+    for server in zone["servers"]:
+        out = subprocess.run(["dig", "+short", "+time=3", "+tries=2", f"@{server}", record, "A"],
+                             capture_output=True, text=True, timeout=30).stdout.split()
+        answers.add(tuple(sorted(out)))
+    return answers

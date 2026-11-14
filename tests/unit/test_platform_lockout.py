@@ -22,7 +22,8 @@ class Controls:
     (None, False), (KubernetesRequestRefused(401), True), (KubernetesRequestRefused(403), True),
     (KubernetesRequestRefused(500), None), (ContractError("transport"), None)])
 def test_kubernetes_token(outcome, expected):
-    assert lockout.kubernetes_token(Controls(outcome), probe_service="x")[0] is expected
+    controls = Controls(outcome)
+    assert lockout.kubernetes_token(lambda: controls.service("x"))[0] is expected
 
 
 @pytest.mark.parametrize("message,expected", [

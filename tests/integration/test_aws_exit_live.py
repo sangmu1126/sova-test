@@ -8,26 +8,33 @@ data through the whole control-plane protocol, which also measures the
 identity obligations the contract adds. Then every AWS source is really
 blocked (connections refused, bucket policy, secret resource policy, Cognito
 app client deleted, ECS service stopped) and every exit drill is measured.
-Run-scoped resources only; values and passwords are never printed.
+The data handoff's route step switches the real DNS name from the ECS source
+to the on-premises address. Last, the platform leaves: the customer revokes
+every credential the platform held and operates alone, so platform exit is
+measured too. Run-scoped resources only; values and passwords never printed.
 """
 
 import base64
 from datetime import UTC, datetime, timedelta
 import json
+import os
 import secrets
 import time
 
 from adapter_conformance import SEQUENCES, apply
-from aws_fixtures import answers, cognito_login, reset_password
+from aws_fixtures import answers, authoritative, cognito_login, reset_password
 from botocore.exceptions import ClientError
 from handoff_drive import run_handoff, without_transport_control
 from keycloak_fixtures import CLIENT
+import platform_exit_support as platform
 import psycopg
 from psycopg import sql
 import pytest
 from s3_world import S3World
 
+from sova.adapters import platform_lockout as lockout
 from sova.adapters.aws_ecs_compute import EcsServiceCompute
+from sova.adapters.aws_route53_route import Route53Route
 from sova.adapters.keycloak_identity import KeycloakIdentityMigration
 from sova.adapters.oidc_probes import OidcProbes
 from sova.adapters.postgres_handoff_probes import artifact_digest
@@ -38,6 +45,7 @@ from sova.domain.handoff_authority import HandoffState
 
 pytestmark = [pytest.mark.aws_live, pytest.mark.postgres, pytest.mark.keycloak,
               pytest.mark.kubernetes, pytest.mark.s3]
+ONPREM_ADDRESS = "203.0.113.20"  # documentation range: the route's control, not reachability
 REMOVED = ["aws-cognito-user-pool", "source-db", "source-object-store",
            "source-secret-service"]
 IDENTITY = {
@@ -83,9 +91,22 @@ def run(adapter, action):
 
 def test_leaving_aws_completely_is_measured_dependency_by_dependency(
         postgres_database, cloud_business, cloud_to_onprem, cognito, keycloak_target,
-        keycloak_servers, kind_secrets, cloud_secrets, ecs_app):
+        keycloak_servers, kind_secrets, cloud_secrets, ecs_app, hosted_zone, s3_stores):
+    container = os.environ.get("SOVA_TEST_POSTGRES_CONTAINER")
+    if not container or s3_stores["platform"] is None:
+        pytest.skip("SOVA_TEST_POSTGRES_CONTAINER and SOVA_TEST_S3_PLATFORM are required")
     b, kc = cloud_business, keycloak_target
     target_probes = OidcProbes(client_id=CLIENT)
+    compute = EcsServiceCompute("ecs-source-compute", ecs=ecs_app["ecs"], ec2=ecs_app["ec2"],
+                                cluster=ecs_app["cluster"], service=ecs_app["service"])
+    old = compute.endpoints()
+    assert len(old) == 1 and answers(old[0], ecs_app["token"])
+    # The name clients use points at the source application on ECS.
+    record = "orders." + hosted_zone["name"]
+    route = Route53Route(hosted_zone["r53"], zone_id=hosted_zone["id"], name=record, ttl=60,
+                         sides={b["names"]["src"]: old[0], b["names"]["tgt"]: ONPREM_ADDRESS})
+    route.set(b["names"]["src"])
+    assert authoritative(hosted_zone, record) == {(old[0],)}
 
     # -- identity first: users must sign in at the target before activation ----
     kc["server"].call("PUT", f"/{kc['realm']}", {
@@ -180,16 +201,27 @@ def test_leaving_aws_completely_is_measured_dependency_by_dependency(
         "IAM-12.login_slo": login_slo,
     }
     x = run_handoff(postgres_database, datetime.now(UTC) - timedelta(seconds=1), b,
-                    adjust=adjust, measures=measures)
+                    adjust=adjust, measures=measures, route=route)
     assert x["record"].state == HandoffState.HANDOFF_COMPLETE, (
         x["record"].reason, x["record"].held_from, x["observed"].get("uncertain"),
         x["observed"].get("failed"))
+    # The route step moved the DNS name: every authoritative server agrees.
+    assert authoritative(hosted_zone, record) == {(ONPREM_ADDRESS,)}
+
+    # -- what the platform still holds on premises -----------------------------
+    tgt, local = b["names"]["tgt"], b["servers"][b["names"]["tgt"]]
+    s3_root = cloud_to_onprem["root"]("target")
+    granted = platform.grant(admin_dsn=local, target_db=tgt,
+                             keycloak=keycloak_servers["target"], s3_root=s3_root,
+                             bucket=objects.buckets["target"],
+                             platform_principal=s3_stores["platform_principal"])
+    held = platform.lockouts(
+        granted, kubernetes_request=lambda: kind_secrets["controls"]().secret("orders-db"),
+        admin_dsn=local, target_db=tgt, keycloak=keycloak_servers["target"],
+        platform_s3=s3_stores["platform"]("target"), bucket=objects.buckets["target"])
+    assert {name: probe()[0] for name, probe in held.items()} == dict.fromkeys(held, False)
 
     # -- block every AWS source for real ---------------------------------------
-    compute = EcsServiceCompute("ecs-source-compute", ecs=ecs_app["ecs"], ec2=ecs_app["ec2"],
-                                cluster=ecs_app["cluster"], service=ecs_app["service"])
-    old = compute.endpoints()
-    assert len(old) == 1 and answers(old[0], ecs_app["token"])
     assert run(compute, "stop_source_compute").status == EffectStatus.APPLIED
     with psycopg.connect(b["servers"][b["names"]["src"]], autocommit=True) as admin:
         admin.execute(sql.SQL("ALTER DATABASE {} ALLOW_CONNECTIONS false").format(
@@ -295,11 +327,30 @@ def test_leaving_aws_completely_is_measured_dependency_by_dependency(
                        VerificationResult.FAIL, obligation=o,
                        artifact_digest=artifact_digest(observation))
     assert all(results.values()), results
+
+    # -- last, the platform leaves: the customer revokes it and runs alone -----
+    platform.revoke(granted, context=kind_secrets["context"],
+                    namespace=kind_secrets["namespace"], admin_dsn=local,
+                    keycloak=keycloak_servers["target"], s3_root=s3_root,
+                    bucket=objects.buckets["target"],
+                    platform_principal=s3_stores["platform_principal"])
+    operations = platform.customer_operations(
+        context=kind_secrets["context"], namespace=kind_secrets["namespace"],
+        secret="orders-db", key="credentials", container=container, admin_dsn=local,
+        target_db=tgt, app_connect=lambda: b["connect_as"](tgt, b["app"]),
+        keycloak=keycloak_servers["target"], realm=kc["realm"], issuer=kc["issuer"],
+        user="alice", password="Alice-customer-" + secrets.token_urlsafe(6) + "!3")
+    passed, observation = lockout.platform_exit(held, operations)
+    assert passed, observation
+    drill = next(o for o in x["readiness"].obligations(x["revision"], x["plan"])
+                 if o.obligation_id == "exit.platform.customer_operates_after_revocation")
+    x["prove"](drill.obligation_id, VerificationResult.PASS, obligation=drill,
+               artifact_digest=artifact_digest(observation))
     report = x["readiness"].assess(x["revision"], x["plan"])
     levels = {k: v["status"] for k, v in report["levels"].items()}
     assert levels == {**levels, "COMPUTE_INDEPENDENT": "PASS",
                       "DATA_IDENTITY_INDEPENDENT": "PASS", "RESTART_VERIFIED": "PASS",
                       "OPERATIONS_VERIFIED": "PASS", "PROVIDER_EXIT_VERIFIED": "PASS",
-                      "PLATFORM_EXIT_VERIFIED": "UNKNOWN"}, levels
+                      "PLATFORM_EXIT_VERIFIED": "PASS"}, levels
     print("exit levels:", json.dumps(levels, sort_keys=True))
     print("identity:", json.dumps(report.get("identity"), sort_keys=True, default=str)[:600])

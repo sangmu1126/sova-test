@@ -8,10 +8,8 @@ documentation ranges: this tests the route's control, not reachability.
 """
 
 from datetime import UTC, datetime, timedelta
-import shutil
-import subprocess
-from uuid import uuid4
 
+from aws_fixtures import authoritative
 import pytest
 
 from sova.adapters.aws_route53_route import Route53Route
@@ -22,40 +20,6 @@ pytestmark = pytest.mark.aws_live
 SIDES = {"orders_src": "198.51.100.10", "orders_tgt": "203.0.113.20"}
 
 
-@pytest.fixture
-def zone(aws):
-    if not shutil.which("dig"):
-        pytest.skip("dig is required to ask the authoritative servers")
-    r53 = aws["session"].client("route53")
-    name = f"sova-test-{aws['run']}-{uuid4().hex[:6]}.com"
-    created = r53.create_hosted_zone(Name=name, CallerReference=uuid4().hex,
-                                     HostedZoneConfig={"Comment": "sova test, run-scoped"})
-    zone_id = created["HostedZone"]["Id"].rsplit("/", 1)[-1]
-    r53.change_tags_for_resource(ResourceType="hostedzone", ResourceId=zone_id,
-                                 AddTags=aws["tags"])
-    try:
-        yield {"r53": r53, "id": zone_id, "name": name,
-               "servers": created["DelegationSet"]["NameServers"]}
-    finally:
-        records = r53.list_resource_record_sets(HostedZoneId=zone_id)["ResourceRecordSets"]
-        changes = [{"Action": "DELETE", "ResourceRecordSet": r} for r in records
-                   if r["Type"] not in ("NS", "SOA")]
-        if changes:
-            r53.change_resource_record_sets(HostedZoneId=zone_id,
-                                            ChangeBatch={"Changes": changes})
-        r53.delete_hosted_zone(Id=zone_id)
-
-
-def authoritative(zone, record):
-    """What the zone's own name servers answer, asked over DNS."""
-    answers = set()
-    for server in zone["servers"]:
-        out = subprocess.run(["dig", "+short", "+time=3", "+tries=2", f"@{server}", record, "A"],
-                             capture_output=True, text=True, timeout=30).stdout.split()
-        answers.add(tuple(sorted(out)))
-    return answers
-
-
 def command(adapter):
     return EffectCommand(
         ResourceScope("tenant-orders", "orders", "edge", "unit-route"), "op-route", "route",
@@ -63,8 +27,9 @@ def command(adapter):
         datetime.now(UTC) + timedelta(minutes=10), "{}")
 
 
-def test_commit_route_switches_the_dns_name_at_the_authoritative_servers(zone):
-    record = "orders." + zone["name"]
+def test_commit_route_switches_the_dns_name_at_the_authoritative_servers(hosted_zone):
+    record = "orders." + hosted_zone["name"]
+    zone = hosted_zone
     route = Route53Route(zone["r53"], zone_id=zone["id"], name=record, sides=SIDES, ttl=60)
     route.set("orders_src")
     assert route.get() == "orders_src"
@@ -84,8 +49,9 @@ def test_commit_route_switches_the_dns_name_at_the_authoritative_servers(zone):
     assert adapter.readback(cmd, datetime.now(UTC)).status == EffectStatus.APPLIED
 
 
-def test_a_change_made_in_between_is_refused_and_an_outside_change_reads_unknown(zone):
-    record = "orders." + zone["name"]
+def test_a_change_made_in_between_is_refused_and_an_outside_change_reads_unknown(hosted_zone):
+    record = "orders." + hosted_zone["name"]
+    zone = hosted_zone
     route = Route53Route(zone["r53"], zone_id=zone["id"], name=record, sides=SIDES, ttl=60)
     route.set("orders_src")
     stale = route._record()

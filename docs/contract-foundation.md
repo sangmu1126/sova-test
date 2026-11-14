@@ -855,10 +855,20 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 - `PLATFORM_EXIT_VERIFIED`: 측정하지 않아 UNKNOWN
 - Identity: `SOURCE_IDENTITY_INDEPENDENT`. 예전 발급자 거부 통과, 이중 발급자 철회는 해당 없음
 
+같은 시험에 두 가지를 더해 다시 측정했다(실행 번호 `81fb39`, 첫 실행 통과, 4분 42초).
+- **DNS 전환:** 클라이언트가 쓰는 실제 Route 53 이름을 처음에 ECS 원본 주소로 두었다. 데이터 인계의 경로 확정이 이를 온프레미스 주소로 바꾸고, 권한 네임서버 넷이 모두 그 주소를 답한다.
+- **플랫폼 탈출:** 다른 탈출 의무를 모두 잰 뒤 마지막에 측정했다. 플랫폼이 측정을 마칠 때까지는 자격 증명이 필요하기 때문이다. 처음에는 플랫폼의 자격 증명 넷(비밀 namespace의 Kubernetes token, 목적지 DB 역할, Keycloak 관리자, 목적지 버킷 계정)이 모두 통했다. 고객이 회수한 뒤에는 모두 거부됐고, 고객 혼자 다음을 해냈다.
+  - DB 자격 Secret 회전과 새 배포
+  - 새 연결 저장
+  - `pg_dump` 백업·복원
+  - 비밀번호 재설정
+
+그 결과 여섯 수준이 모두 PASS다(`PLATFORM_EXIT_VERIFIED` 포함).
+
 이 결과의 범위는 다음과 같다.
 - 시험 규모의 한 단위다. 주문 50건, 객체 11개(9 MiB 하나 포함), 비밀 2개, Cognito 사용자 3명이다.
 - 데이터 인계는 offline-copy이며, 쓰기 정지 시간 등 성능은 주장하지 않는다.
-- 다음은 시험하지 않았다: 플랫폼 탈출, Identity Pool·IAM 연계, 페더레이션·MFA 사용자, 로드밸런서·DNS 수준의 트래픽 전환, EKS
+- 다음은 시험하지 않았다: Identity Pool·IAM 연계, 페더레이션·MFA 사용자, 로드밸런서 수준의 트래픽 전환, EKS
 - 다른 계약·규모·리전·계정으로 일반화하지 않는다.
 
 ## 실제 AWS 계정 실측 (2026-11-14)
@@ -896,7 +906,6 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 - RDS의 IAM DB 인증, 다른 엔진(Aurora 등)
 - 처리량·대용량 이전 측정, 반복 측정에 의한 쓰기 정지 시간 분포
 - EKS 등 다른 앱 실행 환경, 로드밸런서 수준의 트래픽 전환
-- AWS 실측과 한 번에 묶은 플랫폼 탈출
 - 다른 리전·다른 계정 사이의 경로
 - GCP·Azure·NAVER Cloud
 
@@ -934,7 +943,7 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 | AWS Secrets Manager → Kubernetes Secret 이전 | 실환경 시험 통과 | 실제 비밀 두 개에서 kind Secret으로. 원본 자격 증명 폐기는 별도 단계 |
 | ECS 원본 compute 중지·compute 독립성 실측 | 실환경 시험 통과 | 실제 ECS Fargate 서비스 중지와 재조회, 예전 주소 무응답 실측 |
 | 사업자 탈출(`PROVIDER_EXIT_VERIFIED`), RDS+ECS → 온프레미스 | 실환경 시험 통과 | 네 수준을 모두 실측해 판정. 이 단위·프로필에 한함 |
-| AWS 전체 탈출(RDS·S3·Secrets Manager·Cognito·ECS를 한 계약으로) | 실환경 시험 통과 | 계약의 Identity 의무 9개와 탈출 의무 9개를 실측. 시험 규모의 한 단위에 한함. 플랫폼 탈출 미측정 |
+| AWS 전체 탈출(RDS·S3·Secrets Manager·Cognito·ECS를 한 계약으로) | 실환경 시험 통과 | 계약의 Identity 의무 9개와 탈출 의무 10개(플랫폼 탈출 포함)를 실측, DNS 이름 전환 포함. 여섯 수준 모두 PASS. 시험 규모의 한 단위에 한함 |
 | 플랫폼 탈출(`PLATFORM_EXIT_VERIFIED`) | 모의 시험 통과 | 로컬 환경에서 플랫폼 자격 증명 넷의 실제 거부와 고객 단독 운영 실측 |
 | DNS 수준 트래픽 전환(Route 53) | 실환경 시험 통과 | 실제 호스팅 존에서 원자적 교체·권한 네임서버 응답 실측. 로드밸런서 전환 미시험 |
 | MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |

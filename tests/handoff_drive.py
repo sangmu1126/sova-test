@@ -212,13 +212,13 @@ def pieces(business, adapter_id, *, source, target, route, fenced=None):
 
 def run_handoff(postgres_database, now, business, *, adjust=None, until=None,
                 strategy="offline-copy", before=None, lose_response_at=(), events=None,
-                fenced=None, watch_catalog=None, measures=None):
+                fenced=None, watch_catalog=None, measures=None, route=None):
     h = admitted_handoff(postgres_database, now, adjust=adjust, strategy=strategy)
     after_effect = None
     if watch_catalog:
         before, after_effect = watch_catalog(h, before)
     names = business["names"]
-    route = Route(names["src"])
+    route = route or Route(names["src"])  # a real route store (Service, DNS) when given
     adapter, probes = pieces(business, h["world"]["manifest"].adapter_id,
                              source="src", target="tgt", route=route, fenced=fenced)
     record, observed = drive(h, h["revision"], h["plan"], adapter=adapter, probes=probes,

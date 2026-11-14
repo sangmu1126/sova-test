@@ -22,10 +22,11 @@ _PG_REFUSALS = ("password authentication failed", "is not permitted to log in",
                 "permission denied", "no pg_hba.conf entry")
 
 
-def kubernetes_token(controls, *, probe_service):
-    """The platform's service-account token against the registered API."""
+def kubernetes_token(request):
+    """The platform's service-account token: ``request()`` makes one request
+    the platform was allowed to make (through its registered controls)."""
     try:
-        controls.service(probe_service)
+        request()
         return False, {"surface": "kubernetes", "outcome": "accepted"}
     except KubernetesRequestRefused as refused:
         if refused.status in (401, 403):
