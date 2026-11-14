@@ -56,6 +56,16 @@ class PostgresWorld:
                              (f"customer-{i % 7}", f"key-{i}"))
             conn.execute("SELECT nextval('order_number_seq')")
 
+    def business_delete(self, count):
+        with self.b["connect_as"](self._db("source"), self.b["app"]) as conn:
+            for customer, key in conn.execute(
+                    "SELECT customer, idempotency_key FROM orders ORDER BY id LIMIT %s",
+                    (count,)).fetchall():
+                conn.execute("DELETE FROM idempotency_results WHERE customer=%s AND "
+                             "idempotency_key=%s", (customer, key))
+                conn.execute("DELETE FROM orders WHERE customer=%s AND idempotency_key=%s",
+                             (customer, key))
+
     def content(self, side):
         h = hashlib.sha256()
         with self.b["connect"](self._db(side)) as conn:

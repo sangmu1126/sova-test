@@ -14,6 +14,7 @@ checked here once, against any adapter, through a provider-specific *world*:
 * a postcondition someone undoes outside the plan reads back as UNKNOWN;
 * a write path left pending before the fence (a prepared transaction, an
   incomplete multipart upload) keeps the fence unconfirmed until resolved;
+* records removed on the source before the final copy are gone on the target;
 * only the application writer is activated on the target, every other
   registered writer stays denied, and the source never reopens;
 * evidence names the action and stays bounded.
@@ -26,8 +27,9 @@ A provider test module subclasses ``HandoffAdapterConformance`` and supplies a
 ``can_write(side, writer)``
     an independent attempt to write as ``"app"`` or ``"other"`` (a second
     registered writer) that never leaves data behind;
-``business_write(count)``
-    the application writes ``count`` new records on the source;
+``business_write(count)`` / ``business_delete(count)``
+    the application writes ``count`` new records on the source, or removes
+    ``count`` existing ones;
 ``content(side)``
     an independent digest of the business content, ``None`` if absent;
 ``state()``
@@ -126,9 +128,11 @@ class HandoffAdapterConformance:
             assert not world.can_write("target", "app")
             assert not world.can_write("target", "other")
         elif action == "start_sync":
-            # The source still serves the business while the first copy runs.
+            # The source still serves the business while the first copy runs:
+            # new records and removed ones must both reach the target.
             assert world.can_write("source", "app")
             world.business_write(3)
+            world.business_delete(1)
         elif action == "pause_admission":
             assert not world.can_write("source", "app")
         elif action == "fence_source_writes":
