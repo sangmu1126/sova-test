@@ -52,7 +52,9 @@ def test_kev_candidate_requires_new_exposure_attestation_before_host_assessment(
     )
 
     def clock():
-        return datetime.now(UTC)
+        # The container database can trail the host by milliseconds; a time
+        # taken here and stored at once must not be "in the future" there.
+        return datetime.now(UTC) - timedelta(seconds=1)
 
     input_authority, _ = signed_input_authority(
         lifecycle.connect,

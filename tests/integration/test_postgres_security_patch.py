@@ -55,7 +55,9 @@ def setup(postgres_bundle):
     inputs, assessment, request, receipt = patch_bundle(scope, origin)
 
     def clock():
-        return datetime.now(UTC)
+        # The container database can trail the host by milliseconds; a time
+        # taken here and stored at once must not be "in the future" there.
+        return datetime.now(UTC) - timedelta(seconds=1)
 
     artifacts = PostgresSecurityArtifacts(lifecycle.connect, tenant_id=scope.tenant_id)
     holds = PostgresSecurityHolds(lifecycle.connect, tenant_id=scope.tenant_id)
@@ -328,7 +330,8 @@ def test_authenticated_detection_hold_blocks_existing_patch_execution(setup):
 
     state, run, holds, _, plan, _, lifecycle = setup
     scope = plan.steps[0].scope
-    now = datetime.now(UTC) - timedelta(milliseconds=100)
+    # 100 ms before the fixture's clock, which itself runs a second behind the host.
+    now = datetime.now(UTC) - timedelta(seconds=1, milliseconds=100)
     registration = DetectionRegistration(
         scope,
         "falco",
@@ -354,7 +357,9 @@ def test_authenticated_detection_hold_blocks_existing_patch_execution(setup):
     )
 
     def clock():
-        return datetime.now(UTC)
+        # The container database can trail the host by milliseconds; a time
+        # taken here and stored at once must not be "in the future" there.
+        return datetime.now(UTC) - timedelta(seconds=1)
 
     authentication, _ = signed_input_authority(
         lifecycle.connect,
