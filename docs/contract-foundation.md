@@ -670,6 +670,39 @@ readback은 두 realm을 다시 읽고 다음이 모두 성립할 때만 확인�
 
 계획 템플릿에는 아직 Identity 이전 단계가 없다. 그래서 이 adapter는 효과 원장 계약(`validate`·`apply`·`readback`)을 따르지만, 컴파일러가 아직 일정에 넣지 않는다.
 
+## Kubernetes 경로 전환과 관리권 인수 실측
+
+데이터 adapter의 경로 확정은 경로 저장소(`get`/`set`)에 쓴다. `KubernetesServiceRoute`는 이 경로 저장소를 실제 Service로 구현한다. 그래서 PostgreSQL·S3 adapter의 경로 확정이 그대로 실제 트래픽 전환이 된다. EKS·GKE·AKS·온프레미스 등 표준 Kubernetes면 같다.
+- `set`은 Service selector를 그 쪽 Pod로 바꾸고, 엔드포인트가 다시 만들어질 때까지 상한 시간 안에서 기다린다.
+- `get`은 트래픽이 실제로 닿는 곳에서 경로를 읽는다. selector가 그 쪽 것이어야 하고, Service 뒤의 모든 엔드포인트가 그 쪽 Pod여야 한다.
+- 엔드포인트가 아직 수렴 중이거나, 다른 Pod나 손으로 만든 엔드포인트가 섞여 있거나, 준비된 Pod가 없으면 어느 쪽도 아니다(`None`). 그래서 경로 확정 readback은 `UNKNOWN`이다.
+
+`controller_paused`는 CronJob 형태의 기존 자동화(배치 writer)에 대한 `controller.<id>.paused` 의무를 측정한다. 멈춤 판정에는 두 조건이 모두 필요하다.
+- CronJob이 suspend 상태다.
+- 그 CronJob이 시작한 Job 중 아직 도는 것이 없다.
+
+suspend는 새 실행만 막는다. 그래서 이미 도는 Job이 있으면 그것이 끝나거나 운영자가 멈출 때까지 FAIL이다.
+
+모든 요청은 기존의 고정 HTTPS 전송을 쓴다. 등록된 CA·주소와 bearer token으로, 등록된 namespace 안의 정확한 경로만 보낸다. 변경은 먼저 `resourceVersion`을 시험하는 JSON Patch다. 그래서 그 사이 다른 사람이 바꾼 객체는 덮어쓰지 않고 거부된다.
+
+시험은 일회용 kind 클러스터(노드 `kindest/node:v1.34.0`)에서 한다.
+- 시험 대상 코드는 namespace 범위의 최소 권한 ServiceAccount token만 쓴다. 권한은 Service·EndpointSlice·Pod·CronJob·Job 읽기와 Service·CronJob patch뿐이다.
+- Pod는 노드에 이미 있는 pause 이미지로 띄워 외부에서 아무것도 받지 않는다.
+- fixture는 loopback API 서버의 kind context만 받는다(`SOVA_TEST_KUBE_CONTEXT`).
+
+7개 시험이 확인하는 것은 다음과 같다.
+- 실제 트래픽 전환과 멱등
+- 목적지 Pod가 없을 때 경로를 주장하지 않고, 생길 때까지 기다림
+- PostgreSQL adapter의 경로 확정이 Service를 실제로 바꾸고, 계획 밖에서 되돌리면 `UNKNOWN`
+- 손으로 만든 엔드포인트 감지
+- 그 사이 변경 거부
+- 실행 중 Job이 남은 배치는 멈춤이 아님
+- namespace·동사 밖 요청이 403
+
+결함 5종을 일부러 넣으면 모두 잡는다. 수렴 대기 제거는 kind의 빠른 갱신 때문에 처음에 놓쳤다. 목적지 Pod를 늦게 올리는 결정적 시험을 추가한 뒤 잡는다.
+
+Deployment 형태의 operator·GitOps 동기화 같은 다른 자동화의 멈춤, Ingress·Gateway·DNS 수준의 전환, 관리형 클러스터의 IAM 기반 인증(IRSA·Workload Identity)은 다루지 않았다.
+
 ## 완료 표현 (Part V.4)
 
 | 기능 | 상태 | 근거 |
@@ -690,7 +723,8 @@ readback은 두 realm을 다시 읽고 다음이 모두 성립할 때만 확인�
 | PostgreSQL 간 offline copy 참조 adapter·실측 probe | 모의 시험 통과 | 로컬 일회용 PostgreSQL에서 실제 권한·세션·데이터 변경과 실측 |
 | adapter 공통 적합성 시험 | 모의 시험 통과 | PostgreSQL·S3 adapter, 결함 주입 9종 검출 |
 | S3 호환 객체 저장소 간 offline copy 참조 adapter | 모의 시험 통과 | 로컬 versitygw 두 개(독립 계정·저장소·정책)에서 실제 정책 판정·복사·실측. AWS S3·다른 클라우드에서는 미검증 |
-| 관리형 DB·클라우드 IAM 기반 접근 제어·실제 앱 진입점용 adapter | 미검증 | 구현 없음 |
+| Kubernetes Service 경로 전환·CronJob 관리권 멈춤 실측 | 모의 시험 통과 | 로컬 kind, 최소 권한 token. 관리형 클러스터 미검증 |
+| 관리형 DB·클라우드 IAM 기반 접근 제어·Ingress/DNS 진입점용 adapter | 미검증 | 구현 없음 |
 | PostgreSQL 카탈로그 변경 수집기 | 모의 시험 통과 | 로컬 PostgreSQL, 시점 기반 귀속 |
 | 클라우드 변경 수집기·witness의 WORM 저장소 | 미검증 | 구현 없음 |
 | Keycloak 간 계정 이전·OIDC 실측 probe | 모의 시험 통과 | 로컬 Keycloak 두 대에서 실제 로그인·서명 검증. 계획 템플릿 미연결 |

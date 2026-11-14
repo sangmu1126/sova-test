@@ -84,7 +84,8 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 | adapter 공통 적합성 시험 | `9568101` | 두 번째 provider adapter를 붙이려면 PostgreSQL adapter가 지킨 보장(재조회가 상태를 바꾸지 않음, 메모리 없이 같은 판정, 멱등, 외부 되돌림 감지, 남은 쓰기 경로 차단, 앱만 활성화)을 처음부터 다시 증명해야 했음. provider와 무관한 시험 묶음으로 분리하고 PostgreSQL adapter를 첫 구현으로 통과시킴. 결함 4종을 일부러 넣어 모두 잡는지 확인 |
 | 등록 provider 확장·검증 | `8288d01` | 멀티클라우드 대상인 Azure·NAVER Cloud가 provider 목록에 없어 등록조차 못 했음. 추가하고, 자유 문자열이던 환경 profile의 provider도 같은 목록으로 검증해 표기 차이로 자격이 갈라지지 않게 함 |
 | S3 호환 객체 저장소 adapter | `e390912` | 데이터 이전이 직접 운영하는 PostgreSQL 하나뿐이었음. 객체 저장소는 AWS·다른 클라우드·온프레미스가 공유하는 S3 API로 옮길 수 있어, 데이터 이동은 provider와 무관하게 두고 접근 제어만 `BucketAccess`로 분리. 서로 독립된 저장소 두 개 사이에서 공통 시험과 전용 시험을 통과. MinIO 공개 이미지는 Docker Hub·quay 모두 받을 수 없어 versitygw로 시험 |
-| 실제 IdP 간 계정 이전·OIDC probe | 이 커밋 | Identity Gate가 계약 판정과 의무 결속까지만 있었음. 독립 Keycloak 두 대 사이에서 계정을 자격 증명 없이 옮기고(재설정·재등록 요구), 원본 subject를 관리자 전용 속성에 두며, 같은 이름의 기존 계정은 합치지 않음. 실제 로그인과 서명 검증으로 IAM-02·04·08과 refresh token 비이식성을 측정 |
+| 실제 IdP 간 계정 이전·OIDC probe | `fc2be7e` | Identity Gate가 계약 판정과 의무 결속까지만 있었음. 독립 Keycloak 두 대 사이에서 계정을 자격 증명 없이 옮기고(재설정·재등록 요구), 원본 subject를 관리자 전용 속성에 두며, 같은 이름의 기존 계정은 합치지 않음. 실제 로그인과 서명 검증으로 IAM-02·04·08과 refresh token 비이식성을 측정 |
+| Kubernetes 경로 전환·관리권 멈춤 | 이 커밋 | 경로 확정이 메모리 속 값만 바꿨고, 관리권 인수 의무를 잴 수단이 없었음. 경로 저장소를 실제 Service로 구현해, 모든 엔드포인트가 목적지 Pod일 때만 경로로 인정. CronJob은 suspend뿐 아니라 실행 중 Job이 없어야 멈춤. 모든 변경은 resourceVersion 시험 JSON Patch |
 
 인증기를 만들면서 신뢰 조회 콜백의 일반 예외(예: DB 연결 오류 문자열)가 정제되지 않고 올라오는 점을 시험으로 발견해 정제된 오류로 바꿨다. 예제 snapshot 생성기는 계약을 인자로 받도록 했다. 생성 뒤 tenant만 바꾸면 그래프 검증이 거부하기 때문이다.
 
@@ -130,6 +131,7 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 - S3 adapter: versitygw v1.10.0 컨테이너 두 개(독립 저장소)에서 16개 통과. 결함 주입 5종 모두 검출. 삭제 누락은 처음에 S3 전용 시험만 잡아, 삭제 반영을 공통 시험에 추가한 뒤 공통 시험으로도 검출. 두 adapter의 적합성 시험(공통 9개씩)과 S3 전용 시험을 합쳐 25개 통과.
 - S3 adapter 뒤 새 DB 전체(S3 포함): **1323 PASS / 37 FAIL / 74 SKIP**, 새 실패 0건.
 - 실제 IdP: Keycloak 26.8.1 두 대에서 11개, 토큰 검증 단위 10개 통과. 결함 주입 5종 모두 검출(처음 놓친 발급자 확인 제거는 단위 시험 추가 뒤 검출).
+- Kubernetes: kind v1.34.0, 최소 권한 ServiceAccount token으로 7개 통과. 결함 주입 5종 모두 검출(처음 놓친 수렴 대기 제거는 결정적 시험 추가 뒤 검출). `kind create cluster`가 kubeconfig 현재 context를 새 클러스터로 바꿨다. 이전 값은 기록이 없어 되돌리지 못했다.
 
 ## 이전 기록 정정
 
