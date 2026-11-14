@@ -745,7 +745,14 @@ suspend는 새 실행만 막는다. 그래서 이미 도는 Job이 있으면 그
 
 결함 5종을 일부러 넣으면 모두 잡는다. 수렴 대기 제거는 kind의 빠른 갱신 때문에 처음에 놓쳤다. 목적지 Pod를 늦게 올리는 결정적 시험을 추가한 뒤 잡는다.
 
-Deployment 형태의 operator·GitOps 동기화 같은 다른 자동화의 멈춤, Ingress·Gateway·DNS 수준의 전환, 관리형 클러스터의 IAM 기반 인증(IRSA·Workload Identity)은 다루지 않았다.
+`deployment_paused`는 Deployment로 도는 자동화(operator, 동기화 agent)의 멈춤을 잰다. 다음 셋이 모두 맞아야 멈춤이다.
+- 원하는 replica가 0이다.
+- 실제 replica가 0이다.
+- 그 selector에 걸리는 살아 있는 Pod가 없다.
+
+단순 라벨 일치가 아닌 selector는 추측하지 않고 거부한다. 멈춘 뒤 누군가(예: GitOps 동기화) 다시 늘리면 다음 측정이 실패한다. kind에서 확인했고, Pod 조건은 가짜 controls 단위 시험으로 결정적으로 확인했다. Pod 조건을 빼는 결함을 넣으면 잡는다.
+
+GitOps 도구 자체의 동기화 중지 API, Ingress·Gateway 수준의 전환, 관리형 클러스터의 IAM 기반 인증(IRSA·Workload Identity)은 다루지 않았다.
 
 ## Cognito에서 옮기기 (Part II §5~§7)
 

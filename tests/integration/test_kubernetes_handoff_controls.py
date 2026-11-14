@@ -20,7 +20,9 @@ from kind_support import delete_namespace, kind_namespace, kubectl
 from sova.adapters.kubernetes.handoff_controls import (
     KubernetesServiceRoute,
     controller_paused,
+    deployment_paused,
     pause_cronjob,
+    pause_deployment,
 )
 from sova.adapters.kubernetes.https import KubernetesRequestRefused
 from sova.adapters.postgres_offline_copy import PostgresOfflineCopyAdapter
@@ -49,9 +51,13 @@ def cluster():
         {"apiGroups": [""], "resources": ["pods"], "verbs": ["list"]},
         {"apiGroups": ["discovery.k8s.io"], "resources": ["endpointslices"], "verbs": ["list"]},
         {"apiGroups": ["batch"], "resources": ["cronjobs"], "verbs": ["get", "patch"]},
-        {"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["list"]}]
+        {"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["list"]},
+        {"apiGroups": ["apps"], "resources": ["deployments"],
+         "resourceNames": ["orders-operator"], "verbs": ["get", "patch"]}]
     objects = [
         deployment("orders-source", "source"), deployment("orders-target", "target"),
+        {**deployment("orders-operator", "operator"),
+         "spec": {**deployment("orders-operator", "operator")["spec"], "replicas": 1}},
         {"apiVersion": "v1", "kind": "Service", "metadata": {"name": "orders"},
          "spec": {"selector": SIDES["orders_src"], "ports": [{"port": 80}]}},
         {"apiVersion": "batch/v1", "kind": "CronJob", "metadata": {"name": "nightly-batch"},
@@ -61,7 +67,7 @@ def cluster():
                              "imagePullPolicy": "IfNotPresent"}]}}}}}},
     ]
     context, namespace, controls = kind_namespace(rules, objects)
-    for name in ("orders-source", "orders-target"):
+    for name in ("orders-source", "orders-target", "orders-operator"):
         kubectl(context, "-n", namespace, "rollout", "status", f"deployment/{name}",
                 "--timeout=120s")
     yield {"context": context, "namespace": namespace, "controls": controls}
@@ -187,3 +193,19 @@ def test_the_token_reaches_nothing_beyond_its_namespace_and_verbs(cluster):
         controls._patch(controls._ns("/apis/apps/v1", "deployments", "orders-target"), "1",
                         [{"op": "replace", "path": "/spec/replicas", "value": 0}])
     assert refused.value.status == 403
+
+
+def test_an_operator_deployment_is_paused_only_when_no_pod_of_it_is_left(cluster):
+    controls = cluster["controls"]()
+    passed, observation = deployment_paused(controls, "orders-operator")
+    assert not passed and observation["desired"] == 1
+    pause_deployment(controls, "orders-operator")
+    pause_deployment(controls, "orders-operator")  # idempotent
+    run(cluster, "wait", "--for=delete", "pod", "-l", "side=operator", "--timeout=60s")
+    deadline = time.monotonic() + 30
+    while not deployment_paused(controls, "orders-operator")[0] and time.monotonic() < deadline:
+        time.sleep(0.5)
+    assert deployment_paused(controls, "orders-operator")[0]
+    run(cluster, "scale", "deployment/orders-operator", "--replicas=1")  # e.g. a GitOps sync
+    passed, observation = deployment_paused(controls, "orders-operator")
+    assert not passed and observation["desired"] == 1

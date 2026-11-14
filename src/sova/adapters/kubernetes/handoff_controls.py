@@ -14,6 +14,10 @@ conformant Kubernetes (managed or on-prem):
   CronJob, the usual shape of a batch writer: it must be suspended and no Job
   it started may still run. Suspending stops new runs only, so a running Job
   keeps the obligation failing until it ends or the operator stops it.
+  ``deployment_paused`` does the same for a controller that runs as a
+  Deployment (an operator, a sync agent): no replica wanted, none running,
+  no pod of it alive. Something that scales it back (a GitOps sync) makes the
+  next measurement fail.
 
 Requests use only exact paths in the registered namespace, through the pinned
 transport. Every change is a JSON Patch that first tests the object's
@@ -119,6 +123,15 @@ class KubernetesHandoffControls(KubernetesHTTPS):
                       else [{"op": "add", "path": "/data", "value": {key: encoded}}])
         return self._patch(self._ns("/api/v1", "secrets", name), resource_version, operations)
 
+    def deployment(self, name):
+        return self._get(self._ns("/apis/apps/v1", "deployments", name))
+
+    def scale_deployment(self, name, resource_version, replicas):
+        if type(replicas) is not int or not 0 <= replicas <= 1000:
+            raise ContractError("Bounded replica count required")
+        return self._patch(self._ns("/apis/apps/v1", "deployments", name), resource_version,
+                           [{"op": "replace", "path": "/spec/replicas", "value": replicas}])
+
     def cronjob(self, name):
         return self._get(self._ns("/apis/batch/v1", "cronjobs", name))
 
@@ -193,6 +206,29 @@ def controller_paused(controls, cronjob):
     running = controls.running_jobs_of(job["metadata"]["uid"])
     return suspended and not running, {"probe": "controller_paused", "controller": cronjob,
                                        "suspended": suspended, "running_jobs": running[:20]}
+
+
+def deployment_paused(controls, deployment):
+    """``controller.<id>.paused`` for a controller that runs as a Deployment (an
+    operator, a sync agent): it wants no replica, has none, and no pod of it is
+    still alive. A selector beyond plain label equality is not guessed at."""
+    found = controls.deployment(deployment)
+    selector = (found.get("spec") or {}).get("selector") or {}
+    if set(selector) - {"matchLabels"} or not selector.get("matchLabels"):
+        raise ContractError("Only equality label selectors are decided")
+    wanted = (found.get("spec") or {}).get("replicas")
+    status = (found.get("status") or {}).get("replicas") or 0
+    alive = sorted(controls.pods(selector["matchLabels"]))
+    return wanted == 0 and status == 0 and not alive, {
+        "probe": "controller_paused", "controller": deployment, "desired": wanted,
+        "replicas": status, "pods_alive": alive[:20]}
+
+
+def pause_deployment(controls, deployment):
+    """The approved pause itself: scale the controller's Deployment to zero."""
+    found = controls.deployment(deployment)
+    if (found.get("spec") or {}).get("replicas") != 0:
+        controls.scale_deployment(deployment, found["metadata"]["resourceVersion"], 0)
 
 
 def pause_cronjob(controls, cronjob):
