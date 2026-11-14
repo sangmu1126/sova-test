@@ -276,7 +276,28 @@ sova plan-explain plan.json --expect-digest <digest>
 - 진행 중이던 단계는 `SAFE_HOLD`(`AUTHORITY_ROLLBACK_RECOVERY`)로 둔다. 새 관측으로 조정해야만 재개한다. 이것이 "현장 대조 뒤 재개"다.
 - 보안·계약 위반 보류의 사유는 낮추지 않는다. 종료 상태는 그대로 둔다.
 
-로컬 구현 `FileAuthorityWitness`는 각 줄에 이전 줄의 SHA-256을 넣는 해시 체인 파일이다. 앞부분 수정·재배열·다른 tenant 기록은 읽을 때 감지한다. 다만 파일은 끝부분이 잘려 나간 것을 스스로 증명할 수 없다. 그래서 운영에서는 권한 DB와 다른 권한 경계의 보존 잠금 저장소(예: WORM 보존 객체 저장소)에 둬야 하며, 그 adapter는 아직 없다. witness 쓰기는 DB 커밋 직전이라, 그 사이 DB 커밋이 실패하면 witness가 앞서 복원으로 오인될 수 있다. 이 경우도 진행을 멈추는 안전한 쪽이며 같은 복구 절차로 해소한다.
+로컬 구현 `FileAuthorityWitness`는 각 줄에 이전 줄의 SHA-256을 넣는 해시 체인 파일이다. 앞부분 수정·재배열·다른 tenant 기록은 읽을 때 감지한다. 다만 파일은 끝부분이 잘려 나간 것을 스스로 증명할 수 없다. 그래서 운영에서는 권한 DB와 다른 권한 경계의 보존 잠금 저장소에 둬야 한다. witness 쓰기는 DB 커밋 직전이라, 그 사이 DB 커밋이 실패하면 witness가 앞서 복원으로 오인될 수 있다. 이 경우도 진행을 멈추는 안전한 쪽이며 같은 복구 절차로 해소한다.
+
+`S3ObjectLockAuthorityWitness`는 그 보존 잠금 저장소 구현이다. 권한 기록마다 객체 하나를 쓴다. 쓰기는 `If-None-Match`로 한 번만 하고, Object Lock 보존 기간을 건다(기본 compliance 모드). 보존 기간 안의 버전은 버킷 소유자도 지우거나 기간을 줄일 수 없다.
+
+남는 위험은 숨기기다. 버전 없는 DELETE는 삭제 표식을 남겨 일반 목록에서 항목을 숨기고, 조건 없는 PUT은 같은 키에 버전을 하나 더 만든다. 그래서 witness는 일반 목록이 아닌 버전 목록으로 읽는다. 다음 중 하나라도 있으면 답하지 않는다(fail closed).
+- 삭제 표식
+- 버전이 둘 이상인 키
+- 순번의 빈자리
+- 깨진 해시 체인
+- 잠금 없는 항목
+- 잠금이 이미 끝난 최신 항목
+
+권한 저장소는 그때 멈춘다. 자신을 지키는 증거가 변조됐을 때 의도한 반응이다.
+
+쓰고 나면 저장된 버전이 요청한 잠금을 실제로 가졌는지 다시 읽는다. 잠금이 켜지지 않은 버킷은 witness로 받지 않는다.
+
+시험은 로컬 versitygw의 Object Lock 버킷에서 실제로 한다.
+- 버전 삭제·보존 단축 시도는 거부된다.
+- 삭제 표식·덮어쓰기·동시 추가·잠금 없는 항목·만료된 잠금은 모두 감지한다.
+- 권한 DB 복원 시나리오(AT-33)를 이 witness로 다시 통과한다.
+
+결함 5종을 일부러 넣으면 모두 잡는다. AWS S3 Object Lock에서는 아직 시험하지 않았다.
 
 **활성화 뒤 원본 차단 감시(AT-32, §15.4~15.6).** 활성화 가능성이 생긴 뒤에는 인계가 끝나도 원본 폐기 전까지 원본이 업무 쓰기를 다시 받으면 안 된다. 누군가 원본 DB를 과거 snapshot에서 복원해 이전 writer의 권한이 되살아나는 경우도 마찬가지다. 플랫폼은 그런 복원을 막을 수 없지만 알아채고 멈춰야 한다. `SourceFenceWatch.check`는 원본 쓰기 거부 의무의 최신 서명 관측을 기존 게이트 규칙으로 판정한다.
 
@@ -717,7 +738,7 @@ Deployment 형태의 operator·GitOps 동기화 같은 다른 자동화의 멈�
 | 변경 영향·재평가 | 모의 시험 통과 | 합성 변경 사건, PostgreSQL |
 | failback 계획 | 모의 시험 통과 | PostgreSQL E2E(기록용 adapter) |
 | 독립성 판정 | 모의 시험 통과 | 합성 서명 시험 증거 |
-| 권한 DB 복원 감지·복구 | 모의 시험 통과 | 관리자 행 되돌림으로 복원 모사, 파일 witness |
+| 권한 DB 복원 감지·복구 | 모의 시험 통과 | 관리자 행 되돌림으로 복원 모사, 파일 witness와 Object Lock witness |
 | 준비 상태 조회·계획 검토 명령 | 모의 시험 통과 | 단위, PostgreSQL |
 | 활성화 뒤 원본 차단 감시 | 모의 시험 통과 | 로컬 PostgreSQL에서 권한 복원 실측 |
 | PostgreSQL 간 offline copy 참조 adapter·실측 probe | 모의 시험 통과 | 로컬 일회용 PostgreSQL에서 실제 권한·세션·데이터 변경과 실측 |
@@ -726,7 +747,8 @@ Deployment 형태의 operator·GitOps 동기화 같은 다른 자동화의 멈�
 | Kubernetes Service 경로 전환·CronJob 관리권 멈춤 실측 | 모의 시험 통과 | 로컬 kind, 최소 권한 token. 관리형 클러스터 미검증 |
 | 관리형 DB·클라우드 IAM 기반 접근 제어·Ingress/DNS 진입점용 adapter | 미검증 | 구현 없음 |
 | PostgreSQL 카탈로그 변경 수집기 | 모의 시험 통과 | 로컬 PostgreSQL, 시점 기반 귀속 |
-| 클라우드 변경 수집기·witness의 WORM 저장소 | 미검증 | 구현 없음 |
+| 권한 witness의 Object Lock 저장소 | 모의 시험 통과 | 로컬 versitygw compliance 잠금에서 실제 삭제·단축·숨기기 시도. AWS S3 미검증 |
+| 클라우드 변경 수집기 | 미검증 | 구현 없음 |
 | Keycloak 간 계정 이전·OIDC 실측 probe | 모의 시험 통과 | 로컬 Keycloak 두 대에서 실제 로그인·서명 검증. 계획 템플릿 미연결 |
 | Cognito 등 운영 IdP 이전, MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |

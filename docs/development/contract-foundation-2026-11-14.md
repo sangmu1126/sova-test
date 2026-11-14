@@ -85,7 +85,8 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 | 등록 provider 확장·검증 | `8288d01` | 멀티클라우드 대상인 Azure·NAVER Cloud가 provider 목록에 없어 등록조차 못 했음. 추가하고, 자유 문자열이던 환경 profile의 provider도 같은 목록으로 검증해 표기 차이로 자격이 갈라지지 않게 함 |
 | S3 호환 객체 저장소 adapter | `e390912` | 데이터 이전이 직접 운영하는 PostgreSQL 하나뿐이었음. 객체 저장소는 AWS·다른 클라우드·온프레미스가 공유하는 S3 API로 옮길 수 있어, 데이터 이동은 provider와 무관하게 두고 접근 제어만 `BucketAccess`로 분리. 서로 독립된 저장소 두 개 사이에서 공통 시험과 전용 시험을 통과. MinIO 공개 이미지는 Docker Hub·quay 모두 받을 수 없어 versitygw로 시험 |
 | 실제 IdP 간 계정 이전·OIDC probe | `fc2be7e` | Identity Gate가 계약 판정과 의무 결속까지만 있었음. 독립 Keycloak 두 대 사이에서 계정을 자격 증명 없이 옮기고(재설정·재등록 요구), 원본 subject를 관리자 전용 속성에 두며, 같은 이름의 기존 계정은 합치지 않음. 실제 로그인과 서명 검증으로 IAM-02·04·08과 refresh token 비이식성을 측정 |
-| Kubernetes 경로 전환·관리권 멈춤 | 이 커밋 | 경로 확정이 메모리 속 값만 바꿨고, 관리권 인수 의무를 잴 수단이 없었음. 경로 저장소를 실제 Service로 구현해, 모든 엔드포인트가 목적지 Pod일 때만 경로로 인정. CronJob은 suspend뿐 아니라 실행 중 Job이 없어야 멈춤. 모든 변경은 resourceVersion 시험 JSON Patch |
+| Kubernetes 경로 전환·관리권 멈춤 | `ebce383` | 경로 확정이 메모리 속 값만 바꿨고, 관리권 인수 의무를 잴 수단이 없었음. 경로 저장소를 실제 Service로 구현해, 모든 엔드포인트가 목적지 Pod일 때만 경로로 인정. CronJob은 suspend뿐 아니라 실행 중 Job이 없어야 멈춤. 모든 변경은 resourceVersion 시험 JSON Patch |
+| 권한 witness의 Object Lock 저장소 | 이 커밋 | 파일 witness는 끝부분이 잘린 것을 증명할 수 없었음. 기록마다 보존 잠금 객체를 한 번만 쓰고, 버전 목록으로 읽어 삭제 표식·덮어쓰기·빈자리·잠금 없음·만료를 모두 거부. 잠긴 버전도 버전 없는 DELETE로 숨길 수 있다는 점을 실측으로 확인하고 막음 |
 
 인증기를 만들면서 신뢰 조회 콜백의 일반 예외(예: DB 연결 오류 문자열)가 정제되지 않고 올라오는 점을 시험으로 발견해 정제된 오류로 바꿨다. 예제 snapshot 생성기는 계약을 인자로 받도록 했다. 생성 뒤 tenant만 바꾸면 그래프 검증이 거부하기 때문이다.
 
@@ -132,6 +133,8 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 - S3 adapter 뒤 새 DB 전체(S3 포함): **1323 PASS / 37 FAIL / 74 SKIP**, 새 실패 0건.
 - 실제 IdP: Keycloak 26.8.1 두 대에서 11개, 토큰 검증 단위 10개 통과. 결함 주입 5종 모두 검출(처음 놓친 발급자 확인 제거는 단위 시험 추가 뒤 검출).
 - Kubernetes: kind v1.34.0, 최소 권한 ServiceAccount token으로 7개 통과. 결함 주입 5종 모두 검출(처음 놓친 수렴 대기 제거는 결정적 시험 추가 뒤 검출). `kind create cluster`가 kubeconfig 현재 context를 새 클러스터로 바꿨다. 이전 값은 기록이 없어 되돌리지 못했다.
+- 로컬 환경 전체를 켠 새 DB 전체 회귀(PostgreSQL·S3·Keycloak·kind): **1351 PASS / 37 FAIL / 74 SKIP**, 새 실패 0건.
+- Object Lock witness: 7개와 기존 복원 감지 2개 통과, 결함 주입 5종 모두 검출. 회귀를 막 끝낸 DB에서 PostgreSQL 시험 하나가 마이그레이션 재적용 충돌로 fixture 오류가 났고, 새 DB에서는 통과했다(시험은 항상 새 DB 기준).
 
 ## 이전 기록 정정
 
@@ -141,7 +144,7 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 
 - 등록 문서 인증(기존 서명 증거·검증자 신뢰에 결속)은 있지만, 계약·자격을 등록하는 API와 revision CAS 저장은 아직 없다. 등록 사건은 변경 수집기 규약으로만 받는다.
 - §28.4의 부하·네트워크·failure model 전체 qualification schema와 실제 서명 소비 연결은 후속이다. 현 C3를 범용 운영 지원 행렬로 사용하지 않는다.
-- 정합성 경계·컴파일·내리기·수용·권한 상태·효과 원장 연결은 구현했다. 사고 보류·증거 기한·사고 복구 확장의 의미 판정은 하지 않는다. 명세(Part IV S.9)가 필드 이름만 제안하고 스키마는 ADR·단계별 마이그레이션을 전제로 두므로, 스키마를 지어내지 않고 이 확장이 있으면 `NEEDS_EVIDENCE`로 막는다. 서명된 수집기 증명, 실제 역방향 동기화 adapter, 기존 효과 원장의 부분 효과(`PARTIAL_EFFECT`) 상태 연결, 권한 witness의 WORM 저장소 adapter는 후속이다.
+- 정합성 경계·컴파일·내리기·수용·권한 상태·효과 원장 연결은 구현했다. 사고 보류·증거 기한·사고 복구 확장의 의미 판정은 하지 않는다. 명세(Part IV S.9)가 필드 이름만 제안하고 스키마는 ADR·단계별 마이그레이션을 전제로 두므로, 스키마를 지어내지 않고 이 확장이 있으면 `NEEDS_EVIDENCE`로 막는다. 서명된 수집기 증명, 실제 역방향 동기화 adapter, 기존 효과 원장의 부분 효과(`PARTIAL_EFFECT`) 상태 연결은 후속이다. 권한 witness의 Object Lock 저장소는 로컬에서만 시험했다.
 - Identity: 로컬 Keycloak 두 대 사이 계정 이전과 IAM-02·04·08 실측까지 했다. Cognito 같은 운영 IdP, MFA·복구 흐름, 앱의 이중 발급자 정책, 유출 검사, SLO는 측정하지 않았고, 계획 템플릿에 Identity 이전 단계가 아직 없다.
 - 보안 사고 상태 머신·클라우드 변경 수집기·AI/Harbor·패치·고객별 정책·중앙 단절·HA/DR·범용 데이터 이전의 새 실환경 시험은 수행하지 않았다.
 - 원본 제공자의 보안·법규·제품 관련 인용을 이번 원문 보존으로 독립 검증한 것은 아니다.
