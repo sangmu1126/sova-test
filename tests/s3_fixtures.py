@@ -4,7 +4,8 @@
 one endpoint serves both sides), ``SOVA_TEST_S3_ROOT`` the administrative
 ``access:secret`` valid on both, and ``SOVA_TEST_S3_WRITERS`` two writer
 accounts ``access:secret`` present on both: the application first, then a
-second writer path. Only loopback endpoints are accepted, so these tests can
+second writer path. ``SOVA_TEST_S3_PLATFORM`` optionally names the
+platform's own account, for platform-exit tests. Only loopback endpoints are accepted, so these tests can
 never reach a real cloud account.
 """
 
@@ -38,6 +39,8 @@ def s3_stores():
     writers = [_pair(w) for w in os.environ["SOVA_TEST_S3_WRITERS"].split(",")]
     if len(writers) != 2:
         raise pytest.UsageError("Two writer accounts expected: application, other")
+    platform = (_pair(os.environ["SOVA_TEST_S3_PLATFORM"])
+                if os.environ.get("SOVA_TEST_S3_PLATFORM") else None)
     config = botocore.config.Config(retries={"max_attempts": 1}, connect_timeout=5,
                                     read_timeout=30)
 
@@ -57,4 +60,7 @@ def s3_stores():
         "bucket_name": lambda side, suffix: (
             f"orders-{'src' if side == 'source' else 'tgt'}-{suffix}"),
         "create_bucket": lambda c, bucket: c.create_bucket(Bucket=bucket),
+        # The platform's own account, when the store has one (platform-exit tests).
+        "platform": (lambda side: client(endpoints[side], platform)) if platform else None,
+        "platform_principal": platform[0] if platform else None,
     }

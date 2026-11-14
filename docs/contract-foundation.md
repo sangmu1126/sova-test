@@ -781,6 +781,31 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 
 이 PASS는 이 시험의 프로필에만 해당한다. 주문 50건 규모의 한 단위, RDS 한 대와 ECS 서비스 한 개, 객체 저장소·비밀·Identity를 계약에 넣지 않은 경우다. 객체·비밀·Cognito까지 한 계약으로 묶은 탈출은 아직 한 번에 시험하지 않았다(각각은 따로 시험했다). 데이터 원본을 로컬 DB로 둔 첫 시도에서도 사업자 탈출이 PASS로 나왔는데, 원본이 AWS가 아니었으므로 그 결과는 주장하지 않고 RDS 원본으로 다시 측정했다.
 
+## 플랫폼 탈출 (§20.2, AT-36)
+
+인계 뒤에도 플랫폼은 목적지 환경의 자격 증명을 쥐고 있다. 플랫폼 탈출은 그것들이 모두 실제로 거부되고, 고객이 자기 자격 증명만으로 운영할 수 있을 때 통과다. 이미 떠 있는 Pod가 응답하는 것은 근거로 쓰지 않는다.
+
+`platform_lockout`은 플랫폼이 쥔 자격 증명을 하나씩 실제로 써 보고, 환경 자신에게 아직 통하는지 묻는다.
+- 결과는 셋이다: 거부됨(`True`), 아직 통함(`False`), 판단 불가(`None`).
+- 닿지 않음·시간 초과·예상 밖 오류는 회수의 증거가 아니므로 거부로 세지 않는다.
+- 다루는 자격 증명은 넷이다: Kubernetes token(401·403), PostgreSQL 역할(로그인 불가·역할 없음·인증 실패), IdP 관리자(토큰 요청 거부), 객체 저장소 계정(접근 거부·키 무효).
+- `platform_exit`은 모든 자격 증명이 거부되고 고객 작업이 모두 성공할 때만 `exit.platform.customer_operates_after_revocation`을 통과시킨다. 판단 불가가 하나라도 있으면 통과가 아니다.
+
+로컬 시험은 실제 인계 뒤 다음 순서로 진행한다.
+1. 플랫폼 자격 증명 넷이 아직 통하는지 확인한다(모두 `False`).
+2. 고객이 자기 도구로 모두 회수한다.
+   - RoleBinding·ServiceAccount 삭제
+   - 역할 `NOLOGIN`
+   - Keycloak 관리자 삭제
+   - 버킷 정책에 고객 소유의 거부 문장 추가
+3. 그 뒤 고객 자격 증명만으로 다음을 한다.
+   - API 키 Secret을 회전하고 새 버전을 배포한다. 새 Pod가 새 키를 갖고 있는지 확인한다.
+   - 새 연결로 데이터를 저장한다.
+   - DB 컨테이너의 `pg_dump`·`pg_restore`로 백업·복원하고 내용이 같은지 본다.
+   - 사용자 비밀번호를 재설정하고 로그인한다.
+
+모두 통과해 `PLATFORM_EXIT_VERIFIED`가 PASS다. 고객이 Keycloak 관리자 회수를 빠뜨리면 그 자격 증명이 통해서 실패함을 확인했다. 에이전트 종료 중 업무 지속은 AT-34 시험이 따로 보인다.
+
 ## AWS 전체 탈출 실측 (Part V.3)
 
 계약 하나가 RDS(`source-db`), S3(`source-object-store`), Secrets Manager(`source-secret-service`), Cognito(`aws-cognito-user-pool`)의 제거를 선언하고, Identity 확장으로 Cognito에서 Keycloak으로 옮기며, compute는 ECS에서 돈다. 모든 원본은 실제 AWS 계정의 실행 범위 자원이고, 목적지는 온프레미스(PostgreSQL, S3 호환 저장소, kind의 Kubernetes Secret, Keycloak, 새 앱 세션)다.
@@ -855,7 +880,7 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 - RDS의 IAM DB 인증, 다른 엔진(Aurora 등)
 - 처리량·대용량 이전 측정, 반복 측정에 의한 쓰기 정지 시간 분포
 - EKS 등 다른 앱 실행 환경, 로드밸런서·DNS 수준의 트래픽 전환
-- 플랫폼 탈출(`PLATFORM_EXIT_VERIFIED`) 실측
+- AWS 실측과 한 번에 묶은 플랫폼 탈출
 - 다른 리전·다른 계정 사이의 경로
 - GCP·Azure·NAVER Cloud
 
@@ -894,6 +919,7 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 | ECS 원본 compute 중지·compute 독립성 실측 | 실환경 시험 통과 | 실제 ECS Fargate 서비스 중지와 재조회, 예전 주소 무응답 실측 |
 | 사업자 탈출(`PROVIDER_EXIT_VERIFIED`), RDS+ECS → 온프레미스 | 실환경 시험 통과 | 네 수준을 모두 실측해 판정. 이 단위·프로필에 한함 |
 | AWS 전체 탈출(RDS·S3·Secrets Manager·Cognito·ECS를 한 계약으로) | 실환경 시험 통과 | 계약의 Identity 의무 9개와 탈출 의무 9개를 실측. 시험 규모의 한 단위에 한함. 플랫폼 탈출 미측정 |
+| 플랫폼 탈출(`PLATFORM_EXIT_VERIFIED`) | 모의 시험 통과 | 로컬 환경에서 플랫폼 자격 증명 넷의 실제 거부와 고객 단독 운영 실측 |
 | MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |
 | 사고 보류·증거 기한·사고 복구 확장 | 지원하지 않음 | 명세가 스키마를 정하지 않음(S.9, ADR 전제). 있으면 `NEEDS_EVIDENCE` |
