@@ -17,7 +17,6 @@ measured too. Run-scoped resources only; values and passwords never printed.
 import base64
 from datetime import UTC, datetime, timedelta
 import json
-import os
 import secrets
 import time
 
@@ -92,9 +91,9 @@ def run(adapter, action):
 def test_leaving_aws_completely_is_measured_dependency_by_dependency(
         postgres_database, cloud_business, cloud_to_onprem, cognito, keycloak_target,
         keycloak_servers, kind_secrets, cloud_secrets, ecs_app, hosted_zone, s3_stores):
-    container = os.environ.get("SOVA_TEST_POSTGRES_CONTAINER")
-    if not container or s3_stores["platform"] is None:
-        pytest.skip("SOVA_TEST_POSTGRES_CONTAINER and SOVA_TEST_S3_PLATFORM are required")
+    db_exec = platform.postgres_exec()
+    if not db_exec or s3_stores["platform"] is None:
+        pytest.skip("SOVA_TEST_POSTGRES_EXEC (or _CONTAINER) and SOVA_TEST_S3_PLATFORM are required")
     b, kc = cloud_business, keycloak_target
     target_probes = OidcProbes(client_id=CLIENT)
     compute = EcsServiceCompute("ecs-source-compute", ecs=ecs_app["ecs"], ec2=ecs_app["ec2"],
@@ -336,7 +335,7 @@ def test_leaving_aws_completely_is_measured_dependency_by_dependency(
                     platform_principal=s3_stores["platform_principal"])
     operations = platform.customer_operations(
         context=kind_secrets["context"], namespace=kind_secrets["namespace"],
-        secret="orders-db", key="credentials", container=container, admin_dsn=local,
+        secret="orders-db", key="credentials", db_exec=db_exec, admin_dsn=local,
         target_db=tgt, app_connect=lambda: b["connect_as"](tgt, b["app"]),
         keycloak=keycloak_servers["target"], realm=kc["realm"], issuer=kc["issuer"],
         user="alice", password="Alice-customer-" + secrets.token_urlsafe(6) + "!3")

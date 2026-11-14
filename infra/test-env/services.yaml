@@ -1,0 +1,199 @@
+# Test-only services for the local integration suite. Every credential below
+# is a fixed, test-only value for loopback-bound disposable stores; none is
+# used anywhere else. All state is ephemeral: restarting a pod resets it.
+apiVersion: v1
+kind: Namespace
+metadata: {name: sova-test-env}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: postgres, namespace: sova-test-env}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: postgres}}
+  template:
+    metadata: {labels: {app: postgres}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17.11
+          args: ["-c", "cluster_name=sova-persistence-test", "-c", "max_prepared_transactions=8"]
+          env:
+            - {name: POSTGRES_HOST_AUTH_METHOD, value: trust}
+            - {name: POSTGRES_DB, value: sova_test}
+          ports: [{containerPort: 5432}]
+          readinessProbe:
+            exec: {command: ["pg_isready", "-U", "postgres", "-d", "sova_test"]}
+            periodSeconds: 2
+          resources: {limits: {memory: 1Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: postgres, namespace: sova-test-env}
+spec:
+  type: NodePort
+  selector: {app: postgres}
+  ports: [{port: 5432, targetPort: 5432, nodePort: 30432}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: s3-source, namespace: sova-test-env}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: s3-source}}
+  template:
+    metadata: {labels: {app: s3-source}}
+    spec:
+      containers:
+        - name: gateway
+          image: versity/versitygw:v1.10.0
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              mkdir -p /data /versions /iam
+              versitygw --iam-dir /iam posix --versioning-dir /versions /data &
+              gateway=$!
+              # Any HTTP answer (an unauthenticated request is refused) means it is up.
+              until wget -S -O /dev/null http://127.0.0.1:7070/ 2>&1 | grep -q "HTTP/"; do
+                sleep 0.5
+              done
+              for u in appuser batchuser platformuser; do
+                versitygw admin -a sovaroot -s sova-root-test-secret \
+                  --er http://127.0.0.1:7070 create-user --access "$u" --secret "$u-test-secret" --role user
+              done
+              touch /tmp/ready
+              wait "$gateway"
+          env:
+            - {name: ROOT_ACCESS_KEY_ID, value: sovaroot}
+            - {name: ROOT_SECRET_ACCESS_KEY, value: sova-root-test-secret}
+          ports: [{containerPort: 7070}]
+          readinessProbe:
+            exec: {command: ["test", "-f", "/tmp/ready"]}
+            periodSeconds: 2
+          resources: {limits: {memory: 256Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: s3-source, namespace: sova-test-env}
+spec:
+  type: NodePort
+  selector: {app: s3-source}
+  ports: [{port: 7070, targetPort: 7070, nodePort: 30070}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: s3-target, namespace: sova-test-env}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: s3-target}}
+  template:
+    metadata: {labels: {app: s3-target}}
+    spec:
+      containers:
+        - name: gateway
+          image: versity/versitygw:v1.10.0
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              mkdir -p /data /versions /iam
+              versitygw --iam-dir /iam posix --versioning-dir /versions /data &
+              gateway=$!
+              # Any HTTP answer (an unauthenticated request is refused) means it is up.
+              until wget -S -O /dev/null http://127.0.0.1:7070/ 2>&1 | grep -q "HTTP/"; do
+                sleep 0.5
+              done
+              for u in appuser batchuser platformuser; do
+                versitygw admin -a sovaroot -s sova-root-test-secret \
+                  --er http://127.0.0.1:7070 create-user --access "$u" --secret "$u-test-secret" --role user
+              done
+              touch /tmp/ready
+              wait "$gateway"
+          env:
+            - {name: ROOT_ACCESS_KEY_ID, value: sovaroot}
+            - {name: ROOT_SECRET_ACCESS_KEY, value: sova-root-test-secret}
+          ports: [{containerPort: 7070}]
+          readinessProbe:
+            exec: {command: ["test", "-f", "/tmp/ready"]}
+            periodSeconds: 2
+          resources: {limits: {memory: 256Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: s3-target, namespace: sova-test-env}
+spec:
+  type: NodePort
+  selector: {app: s3-target}
+  ports: [{port: 7070, targetPort: 7070, nodePort: 30071}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: keycloak-source, namespace: sova-test-env}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: keycloak-source}}
+  template:
+    metadata: {labels: {app: keycloak-source}}
+    spec:
+      containers:
+        - name: keycloak
+          image: keycloak/keycloak:26.8.1
+          args: ["start-dev", "--http-port=8080"]
+          env:
+            - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: sova-admin}
+            - {name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: sova-admin-test-secret}
+            # Tokens name the issuer the host sees, so tests compare it exactly.
+            - {name: KC_HOSTNAME, value: "http://127.0.0.1:58080"}
+            - {name: JAVA_OPTS_KC_HEAP, value: "-Xms128m -Xmx512m"}
+          ports: [{containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /realms/master/.well-known/openid-configuration, port: 8080}
+            periodSeconds: 3
+          resources: {limits: {memory: 900Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: keycloak-source, namespace: sova-test-env}
+spec:
+  type: NodePort
+  selector: {app: keycloak-source}
+  ports: [{port: 8080, targetPort: 8080, nodePort: 30080}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: keycloak-target, namespace: sova-test-env}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: keycloak-target}}
+  template:
+    metadata: {labels: {app: keycloak-target}}
+    spec:
+      containers:
+        - name: keycloak
+          image: keycloak/keycloak:26.8.1
+          args: ["start-dev", "--http-port=8080"]
+          env:
+            - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: sova-admin}
+            - {name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: sova-admin-test-secret}
+            # Tokens name the issuer the host sees, so tests compare it exactly.
+            - {name: KC_HOSTNAME, value: "http://127.0.0.1:58081"}
+            - {name: JAVA_OPTS_KC_HEAP, value: "-Xms128m -Xmx512m"}
+          ports: [{containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /realms/master/.well-known/openid-configuration, port: 8080}
+            periodSeconds: 3
+          resources: {limits: {memory: 900Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: keycloak-target, namespace: sova-test-env}
+spec:
+  type: NodePort
+  selector: {app: keycloak-target}
+  ports: [{port: 8080, targetPort: 8080, nodePort: 30081}]

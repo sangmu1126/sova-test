@@ -10,6 +10,8 @@ each of them, ``revoke`` is what the customer does with its own tools, and
 
 import base64
 import json
+import os
+import shlex
 import secrets
 import subprocess
 from uuid import uuid4
@@ -25,6 +27,17 @@ from sova.adapters.oidc_probes import OidcProbes
 from sova.adapters.s3_bucket_policy_access import S3BucketPolicyAccess
 
 IMAGE = "public.ecr.aws/docker/library/busybox:1.37.0"
+
+
+def postgres_exec():
+    """How the customer runs its own database tools: ``SOVA_TEST_POSTGRES_EXEC``
+    (a command prefix, e.g. ``kubectl ... exec -i deploy/postgres --``) or
+    ``docker exec -i`` into ``SOVA_TEST_POSTGRES_CONTAINER``; None if neither."""
+    if os.environ.get("SOVA_TEST_POSTGRES_EXEC"):
+        return shlex.split(os.environ["SOVA_TEST_POSTGRES_EXEC"])
+    if os.environ.get("SOVA_TEST_POSTGRES_CONTAINER"):
+        return ["docker", "exec", "-i", os.environ["SOVA_TEST_POSTGRES_CONTAINER"]]
+    return None
 
 
 def app_deployment(version, *, secret, key):
@@ -85,7 +98,7 @@ def revoke(granted, *, context, namespace, admin_dsn, keycloak, s3_root, bucket,
     S3BucketPolicyAccess(s3_root, bucket).deny("CustomerRevokedPlatform", (platform_principal,))
 
 
-def customer_operations(*, context, namespace, secret, key, container, admin_dsn, target_db,
+def customer_operations(*, context, namespace, secret, key, db_exec, admin_dsn, target_db,
                         app_connect, keycloak, realm, issuer, user, password):
     rotated = secrets.token_urlsafe(24)
 
@@ -114,13 +127,12 @@ def customer_operations(*, context, namespace, secret, key, container, admin_dsn
 
     def backup_and_restore():
         restored = "restored_" + uuid4().hex[:8]
-        dump = subprocess.run(["docker", "exec", container, "pg_dump", "-U", "postgres", "-Fc",
-                               target_db], capture_output=True, timeout=120)
+        dump = subprocess.run([*db_exec, "pg_dump", "-U", "postgres", "-Fc", target_db],
+                              capture_output=True, timeout=120)
         with psycopg.connect(admin_dsn, autocommit=True) as admin:
             admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(restored)))
-        load = subprocess.run(["docker", "exec", "-i", container, "pg_restore", "-U",
-                               "postgres", "--no-owner", "-d", restored], input=dump.stdout,
-                              capture_output=True, timeout=120)
+        load = subprocess.run([*db_exec, "pg_restore", "-U", "postgres", "--no-owner", "-d",
+                               restored], input=dump.stdout, capture_output=True, timeout=120)
 
         def rows(database):
             with psycopg.connect(admin_dsn, dbname=database) as conn:

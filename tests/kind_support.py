@@ -2,7 +2,8 @@
 
 The code under test gets only a namespace-scoped service-account token with
 the rules a test grants, through the pinned transport registered for the
-loopback API server. ``SOVA_TEST_KUBE_CONTEXT`` must name a kind context.
+loopback API server. ``SOVA_TEST_KUBE_CONTEXT`` must name a kind context, and
+``SOVA_TEST_KUBECONFIG`` may name the kubeconfig file it lives in.
 """
 
 import base64
@@ -22,7 +23,11 @@ from sova.domain.discovery import KubernetesReadRegistration
 
 
 def kubectl(context, *args, stdin=None):
-    result = subprocess.run(["kubectl", "--context", context, *args], input=stdin,
+    """kubectl against ``context``; ``SOVA_TEST_KUBECONFIG`` names a kubeconfig
+    file of its own (the test environment never edits ~/.kube/config)."""
+    config = os.environ.get("SOVA_TEST_KUBECONFIG")
+    prefix = ["kubectl", *(["--kubeconfig", config] if config else []), "--context", context]
+    result = subprocess.run([*prefix, *args], input=stdin,
                             capture_output=True, text=True, timeout=180)
     if result.returncode:
         raise AssertionError(f"kubectl {args[0]} failed: {result.stderr[-400:]}")

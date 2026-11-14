@@ -1,0 +1,15 @@
+# One disposable kind cluster for every local integration test.
+# Services are reached from the host on loopback only, at the addresses the
+# tests already use; nothing is exposed beyond 127.0.0.1.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: sova-test-env
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.34.0
+    extraPortMappings:
+      - {containerPort: 30432, hostPort: 55432, listenAddress: "127.0.0.1"}  # PostgreSQL
+      - {containerPort: 30070, hostPort: 57070, listenAddress: "127.0.0.1"}  # S3 source store
+      - {containerPort: 30071, hostPort: 57071, listenAddress: "127.0.0.1"}  # S3 target store
+      - {containerPort: 30080, hostPort: 58080, listenAddress: "127.0.0.1"}  # Keycloak source
+      - {containerPort: 30081, hostPort: 58081, listenAddress: "127.0.0.1"}  # Keycloak target

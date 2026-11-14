@@ -9,15 +9,13 @@ rotates a secret that the new version picks up, stores new data through a new
 connection, backs up and restores the database, and resets a user's password.
 A pod that keeps answering is not taken as evidence of anything.
 
-``SOVA_TEST_POSTGRES_CONTAINER`` names the database container whose own
-``pg_dump``/``pg_restore`` the customer uses for the backup.
+``SOVA_TEST_POSTGRES_EXEC`` (or ``SOVA_TEST_POSTGRES_CONTAINER``) says how the
+customer runs the database's own ``pg_dump``/``pg_restore`` for the backup.
 """
 
 import base64
 from datetime import UTC, datetime, timedelta
-import os
 import secrets
-import shutil
 from uuid import uuid4
 
 from handoff_drive import run_handoff, without_transport_control
@@ -37,9 +35,9 @@ pytestmark = [pytest.mark.postgres, pytest.mark.kubernetes, pytest.mark.keycloak
 @pytest.fixture
 def environment(postgres_database, business, keycloak_servers, realm_name, s3_stores):
     """The handed-over target environment and the platform's four credentials."""
-    container = os.environ.get("SOVA_TEST_POSTGRES_CONTAINER")
-    if not container or not shutil.which("docker") or s3_stores["platform"] is None:
-        pytest.skip("SOVA_TEST_POSTGRES_CONTAINER, docker and SOVA_TEST_S3_PLATFORM needed")
+    db_exec = platform.postgres_exec()
+    if not db_exec or s3_stores["platform"] is None:
+        pytest.skip("SOVA_TEST_POSTGRES_EXEC (or _CONTAINER) and SOVA_TEST_S3_PLATFORM needed")
     rules = [{"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get", "patch"]},
              {"apiGroups": [""], "resources": ["services"], "verbs": ["get"]}]
     objects = [{"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "orders-api"},
@@ -61,7 +59,7 @@ def environment(postgres_database, business, keycloak_servers, realm_name, s3_st
                              keycloak=kc, s3_root=root, bucket=bucket,
                              platform_principal=s3_stores["platform_principal"])
     yield {"context": context, "namespace": namespace, "controls": controls,
-           "container": container, "kc": kc, "realm": realm_name, "issuer": issuer,
+           "db_exec": db_exec, "kc": kc, "realm": realm_name, "issuer": issuer,
            "root": root, "bucket": bucket, "stores": s3_stores, "granted": granted}
     delete_namespace(context, namespace)
 
@@ -86,7 +84,7 @@ def test_the_platform_is_locked_out_and_the_customer_operates_alone(
                     platform_principal=env["stores"]["platform_principal"])
     operations = platform.customer_operations(
         context=env["context"], namespace=env["namespace"], secret="orders-api",
-        key="api-key", container=env["container"], admin_dsn=business["dsn"],
+        key="api-key", db_exec=env["db_exec"], admin_dsn=business["dsn"],
         target_db=names["tgt"],
         app_connect=lambda: business["connect_as"](names["tgt"], business["app"]),
         keycloak=env["kc"], realm=env["realm"], issuer=env["issuer"], user="alice",

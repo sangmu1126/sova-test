@@ -105,6 +105,7 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 | 객체 저장소 단위의 전체 인계 | `6cd9e6d` | S3 adapter는 직접 호출만 해 봤음. 같은 컴파일 계획과 권한 프로토콜에 adapter와 의무별 측정만 바꿔 끼워, 데이터 종류와 무관하게 동작함을 보임. 원본의 업무 불변식이 깨지면 활성화 전에 보류 |
 | 계정 매핑 독립 probe | `1e8b523` | IAM-01·06을 이전 adapter의 readback으로만 확인했음. 원본 계정마다 목적지에서 원본 subject 주장자를 속성 검색하는 다른 알고리즘으로 따로 판정 |
 | Deployment 형태 자동화의 멈춤 | `9dafac2` | 관리권 인수 측정이 CronJob만 다뤘음. operator·동기화 agent처럼 Deployment로 도는 자동화도 원하는·실제 replica 0과 살아 있는 Pod 없음으로 판정하고, 다시 늘어나면 실패 |
+| 로컬 시험 환경을 클러스터 하나로 | 이 커밋 | 시험 서비스가 개별 컨테이너 다섯 개와 kind 하나로 흩어져 있었고, kind가 사용자 kubectl context를 바꿨음. kind 클러스터 하나에 모아 명령 하나로 올리고 내리며, kubeconfig는 별도 파일에만 씀 |
 
 인증기를 만들면서 신뢰 조회 콜백의 일반 예외(예: DB 연결 오류 문자열)가 정제되지 않고 올라오는 점을 시험으로 발견해 정제된 오류로 바꿨다. 예제 snapshot 생성기는 계약을 인자로 받도록 했다. 생성 뒤 tenant만 바꾸면 그래프 검증이 거부하기 때문이다.
 
@@ -180,6 +181,7 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 - 객체 저장소 전체 인계: 2개 통과(첫 실행).
 - 로컬 항목: 계정 매핑 probe 1개, kind 8개(operator 멈춤 포함), Deployment 멈춤 단위 5개 통과. 매핑 probe의 중복 무시 결함, 멈춤 판정의 Pod 무시 결함을 각각 시험이 잡음.
 - 로컬 항목 뒤 전체 회귀(PostgreSQL·S3·Keycloak·kind, 새 DB): **1403 PASS / 37 FAIL / 112 SKIP**, 새 실패 0건.
+- 클러스터 하나 시험 환경: `up` 2분 36초. 전체 회귀 **1403 PASS / 37 FAIL / 112 SKIP**, 새 실패 0건(이전 환경과 동일). 기존 컨테이너 다섯 개와 `sova-handoff` kind는 지웠고, 그 kind가 바꿔 둔 현재 context는 비워진 상태로 남음.
 - AWS 자원은 두 실행 모두 `sova-test-` 접두어로 조회해 남은 것이 없음을 확인했다. compliance 잠금 버킷은 보존 1시간이 끝난 21:44에 지웠다.
 - AWS 2차(실행 번호 `53ffc2`): compliance 모드 1개, RDS control plane 인계 1개, snapshot 복원 감지 1개, RDS 보안 수집기 1개 통과.
   - snapshot 복원 시험의 첫 실행은 시험 결함으로 실패했다. snapshot에 5분이 걸린 뒤 시험 시작 시각으로 승인을 만들어 신뢰 승인이 만료돼 있었다. 시각을 새로 잡게 고친 뒤 통과했다.

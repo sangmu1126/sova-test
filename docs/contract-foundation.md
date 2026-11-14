@@ -939,6 +939,16 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 - 다른 리전·다른 계정 사이의 경로
 - GCP·Azure·NAVER Cloud
 
+## 로컬 통합 시험 환경
+
+통합 시험에 필요한 서비스를 kind 클러스터 하나에 모아 `infra/test-env/test-env.sh up`·`down`으로 올리고 내린다. 들어 있는 것은 다음과 같다.
+- PostgreSQL
+- S3 호환 저장소 두 대
+- Keycloak 두 대
+- Kubernetes 시험용 namespace
+
+호스트 주소는 기존 시험이 쓰는 loopback 주소 그대로라 시험 코드는 바꾸지 않았다. kubeconfig는 별도 파일에만 써서 사용자의 kubectl 현재 context를 건드리지 않는다. 고객 백업용 DB 도구 실행 방식은 `SOVA_TEST_POSTGRES_EXEC`로 바꿀 수 있게 했다. 이 환경에서 전체 회귀가 이전 개별 컨테이너 환경과 같은 결과(새 실패 0)를 낸다. 사용법은 [infra/test-env](../infra/test-env/README.md).
+
 ## 완료 표현 (Part V.4)
 
 | 기능 | 상태 | 근거 |
