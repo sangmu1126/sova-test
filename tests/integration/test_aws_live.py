@@ -105,6 +105,26 @@ def test_the_witness_holds_on_aws_object_lock(locked_bucket):
         w.latest("orders", "a" * 64)
 
 
+def test_compliance_mode_holds_even_against_the_bucket_owner(locked_bucket):
+    """The production mode. The owner cannot bypass, shorten or downgrade it; the
+    entries (and so the bucket) stay for the whole retention, here one hour."""
+    client, bucket = locked_bucket
+    w = S3ObjectLockAuthorityWitness(client, bucket, tenant_id="tenant-a", retention=HOUR,
+                                     mode="COMPLIANCE")
+    w.append("orders", "b" * 64, "opened", {"revision": 1})
+    entry = client.list_object_versions(Bucket=bucket)["Versions"][0]
+    version = {"Bucket": bucket, "Key": entry["Key"], "VersionId": entry["VersionId"]}
+    assert client.head_object(**version)["ObjectLockMode"] == "COMPLIANCE"
+    with pytest.raises(ClientError, match="AccessDenied"):
+        client.delete_object(**version, BypassGovernanceRetention=True)
+    for mode, until in (("COMPLIANCE", datetime.now(UTC) + timedelta(minutes=1)),
+                        ("GOVERNANCE", datetime.now(UTC) + 2 * HOUR)):
+        with pytest.raises(ClientError, match="AccessDenied"):
+            client.put_object_retention(**version, BypassGovernanceRetention=True,
+                                        Retention={"Mode": mode, "RetainUntilDate": until})
+    assert w.latest("orders", "b" * 64) == {"revision": 1}
+
+
 def test_the_witness_refuses_a_bucket_without_object_lock(aws):
     client = aws["session"].client("s3")
     bucket = f"sova-test-plain-{aws['run']}-{uuid4().hex[:8]}"

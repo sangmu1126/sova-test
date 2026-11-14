@@ -735,11 +735,17 @@ Deployment 형태의 operator·GitOps 동기화 같은 다른 자동화의 멈�
 | 전송 암호화 probe | RDS에서 통과 | TLS는 RDS CA로 `verify-full` 검증. 로컬 참조 서버는 계속 FAIL |
 | 권한 witness, S3 Object Lock | 2개 통과 | governance 모드 1시간 보존. 버전 삭제·보존 단축이 거부되고, 삭제 표식은 감지 |
 | CloudTrail 변경 수집기 | 1개 통과 | 실제 버킷 정책 변경이 91초 뒤 이벤트 이력에 보여 `policy` 사건으로 한 번 기록. watermark는 15분 지연 원칙 유지 |
+| control plane 전체 흐름, RDS → 온프레미스 | 통과 | 승인·수용·권한 기록·효과 원장 명령·서명 측정 증거로 인계 완료. 실측 쓰기 정지 시간 **4501ms**(접수 정지 관측 → 활성화 관측) |
+| 권한 witness, compliance 모드 | 통과 | 버킷 소유자도 보존 우회 삭제·기간 단축·governance로 강등 모두 거부. 버킷은 1시간 보존이 끝난 뒤 지움 |
+| 기존 RDS 보안 설정 수집기(읽기 전용) | 통과 | 그동안 가짜 응답으로만 시험한 수집기를 실제 인스턴스에 실행. 공개 접근·삭제 보호·Multi-AZ·암호화 없음은 FAIL, 백업 보존은 PASS로 실제와 일치 |
+| 실제 snapshot 복원으로 되살아난 원본(AT-32) | 통과 | 앱이 쓸 수 있던 때의 RDS snapshot을 인계 완료 뒤 새 인스턴스로 복원. 복원된 DB에 예전 쓰기 권한이 그대로 있어 probe가 FAIL, 원본 차단 감시가 `SOURCE_WRITER_REACTIVATED` 보안 사고 보류를 열고 서비스를 멈춤. 복원본은 `DbiResourceId`가 달라 다른 DB로 식별됨 |
 
 실측 중 드러난 것은 다음과 같다.
 - **provider마다 같은 writer를 다르게 부른다.** AWS는 IAM role ARN, 온프레미스 gateway는 계정 이름이다. 그래서 adapter는 논리 이름만 다루고, 각 쪽 `BucketAccess`가 자기 주체 이름으로 바꾼다. 매핑에 없는 writer는 조용히 넘기지 않고 오류다(처음에는 거부 문장이 없을 때 조용히 넘겼다).
 - **AWS는 같은 버킷 정책을 읽을 때마다 주체 목록의 순서를 다르게 돌려준다.** adapter는 원래 집합으로 판정해 영향이 없었다. 시험 world의 상태 비교가 텍스트였기에 집합 비교로 고쳤다. 증거나 상태를 정책 텍스트 그대로 비교하면 안 된다.
 - 한 클라이언트에서 버킷 정책을 쓴 직후 읽기에는 낡은 값이 보이지 않았다(각 20초, 38회).
+- **로그 내보내기 판정의 빈틈.** AWS는 로그 내보내기가 하나도 없으면 `EnabledCloudwatchLogsExports` 필드를 아예 빼고 보낸다. 기존 수집기는 필드가 없으면 `unknown`으로 둔다. 통과로 잘못 보고하지는 않지만, 내보내기가 없는 인스턴스를 실패로 드러내지도 못한다. 수집기는 고정된 security 패키지의 코드라 이 저장소에서 고치지 않고 발견 사항으로 남긴다.
+- **쓰기 정지 시간.** 4501ms는 접수 정지부터 활성화까지를 효과 원장 관측 시각으로 잰 값이다. 소형 RDS 한 대, 주문 50건 규모, 서울 리전과 이 기기 사이 인터넷 경로에서의 한 번 측정이다. 성능 주장이나 SLO 근거로 쓰지 않는다.
 
 **CloudTrail 변경 수집기.** `AwsCloudTrailCollector`는 등록한 자원마다 이벤트 이력에서 쓰기 호출을 찾아 변경 사건으로 기록한다.
 - 권한을 바꾸는 호출(버킷 정책·ACL·공개 차단·보안 그룹 규칙 등)은 `policy`다.
@@ -750,9 +756,9 @@ Deployment 형태의 operator·GitOps 동기화 같은 다른 자동화의 멈�
 - 이벤트 이력은 한 리전의 90일 관리 이벤트이며, 객체 쓰기 같은 데이터 이벤트는 없다. 운영에서는 조직 단위 trail이 원천이어야 한다.
 
 하지 않은 것은 다음과 같다.
-- S3 compliance 모드: 보존 기간 동안 지울 수 없어 실계정에서는 governance 모드만 시험했다.
-- RDS의 IAM DB 인증, snapshot 복원으로 원본 권한이 되살아나는 시나리오(AT-32)의 실계정 재현
-- 쓰기 정지 시간·처리량 측정
+- RDS의 IAM DB 인증, 다른 엔진(Aurora 등)
+- 처리량·대용량 이전 측정, 반복 측정에 의한 쓰기 정지 시간 분포
+- Cognito 계정 이전, Secrets Manager 비밀 이전, 앱 실행 환경(ECS·EKS) 전환
 - 다른 리전·다른 계정 사이의 경로
 - GCP·Azure·NAVER Cloud
 
@@ -772,16 +778,18 @@ Deployment 형태의 operator·GitOps 동기화 같은 다른 자동화의 멈�
 | 독립성 판정 | 모의 시험 통과 | 합성 서명 시험 증거 |
 | 권한 DB 복원 감지·복구 | 모의 시험 통과 | 관리자 행 되돌림으로 복원 모사, 파일 witness와 Object Lock witness |
 | 준비 상태 조회·계획 검토 명령 | 모의 시험 통과 | 단위, PostgreSQL |
-| 활성화 뒤 원본 차단 감시 | 모의 시험 통과 | 로컬 PostgreSQL에서 권한 복원 실측 |
+| 활성화 뒤 원본 차단 감시 | 모의 시험 통과 | 로컬 PostgreSQL에서 권한 복원 실측(실제 snapshot 복원은 아래 AWS 행) |
 | PostgreSQL 간 offline copy 참조 adapter·실측 probe | 모의 시험 통과 | 로컬 일회용 PostgreSQL에서 실제 권한·세션·데이터 변경과 실측 |
-| AWS RDS PostgreSQL → 로컬 PostgreSQL offline copy | 실환경 시험 통과 | 개인 AWS 계정, RDS 17.11 db.t4g.micro → 로컬 17.11. 이 방향·프로필에 한함 |
+| AWS RDS PostgreSQL → 로컬 PostgreSQL offline copy | 실환경 시험 통과 | 개인 AWS 계정, RDS 17.11 db.t4g.micro → 로컬 17.11. control plane 전체 흐름 포함, 쓰기 정지 4501ms 1회 측정. 이 방향·프로필에 한함 |
+| 활성화 뒤 원본 차단 감시, 실제 snapshot 복원(AT-32) | 실환경 시험 통과 | RDS snapshot 복원본에서 예전 writer 감지 |
+| 기존 RDS 보안 설정 수집기 | 실환경 시험 통과 | 읽기 전용. 로그 내보내기 미설정은 `unknown`으로만 보고(빈틈) |
 | adapter 공통 적합성 시험 | 모의 시험 통과 | PostgreSQL·S3 adapter, 결함 주입 9종 검출 |
 | S3 호환 객체 저장소 간 offline copy 참조 adapter | 모의 시험 통과 | 로컬 versitygw 두 개(독립 계정·저장소·정책)에서 실제 정책 판정·복사·실측 |
 | AWS S3 → 로컬 S3 호환 저장소 offline copy | 실환경 시험 통과 | 개인 AWS 계정, IAM role writer. 이 방향에 한함. 다른 클라우드 미검증 |
 | Kubernetes Service 경로 전환·CronJob 관리권 멈춤 실측 | 모의 시험 통과 | 로컬 kind, 최소 권한 token. 관리형 클러스터 미검증 |
 | 관리형 DB·클라우드 IAM 기반 접근 제어·Ingress/DNS 진입점용 adapter | 미검증 | 구현 없음 |
 | PostgreSQL 카탈로그 변경 수집기 | 모의 시험 통과 | 로컬 PostgreSQL, 시점 기반 귀속 |
-| 권한 witness의 Object Lock 저장소 | 실환경 시험 통과(governance) | AWS S3 governance 모드 실측, compliance 모드는 로컬 versitygw만 |
+| 권한 witness의 Object Lock 저장소 | 실환경 시험 통과 | AWS S3 governance·compliance 모드 모두 실측 |
 | AWS CloudTrail 변경 수집기 | 실환경 시험 통과 | 이벤트 이력 조회, 실제 정책 변경 91초 뒤 기록. 조직 trail·GCP Audit Logs 미검증 |
 | Keycloak 간 계정 이전·OIDC 실측 probe | 모의 시험 통과 | 로컬 Keycloak 두 대에서 실제 로그인·서명 검증. 계획 템플릿 미연결 |
 | Cognito 등 운영 IdP 이전, MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
