@@ -73,7 +73,8 @@ def test_a_full_handoff_from_rds_ends_with_one_writer_and_equal_data(cloud_busin
 def test_transport_encryption_is_observed_not_assumed(cloud_business):
     p = probes(cloud_business)
     encrypted, observation = p.transport_encrypted("source")
-    assert encrypted and observation["ssl"] == "on"  # RDS
+    assert encrypted and observation["encrypted"], observation
+    assert observation["client_verification"] == "verify-full"
     assert p.transport_encrypted("target")[0] is False  # the local reference server
 
 

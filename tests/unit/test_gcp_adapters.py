@@ -435,3 +435,38 @@ def test_entries_below_a_registered_resource_count_for_it_and_look_alikes_do_not
         resources={secret: ("gcp-source", "secret-orders-db")})
     recorded = collector.poll()
     assert [(c.subject, c.kind) for c in recorded] == [("secret-orders-db", ChangeKind.RESOURCE)]
+
+
+# -- the transport probe judges this session's channel -----------------------------------
+
+from sova.adapters.postgres_handoff_probes import PostgresHandoffProbes  # noqa: E402
+
+
+class _Conn:
+    def __init__(self, row, params):
+        self.row, self.info = row, type("Info", (), {"get_parameters": lambda _: params})()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, query):
+        assert "pg_stat_ssl" in query and "pg_backend_pid()" in query
+        return type("Cursor", (), {"fetchone": lambda _: self.row})()
+
+
+@pytest.mark.parametrize("row, params, passed", [
+    ((True, "TLSv1.3"), {"sslmode": "verify-full"}, True),
+    ((True, "TLSv1.3"), {"sslmode": "require"}, False),  # encrypted, nothing verified
+    ((True, "TLSv1.3"), {"sslmode": "verify-ca"}, False),  # no host-name check
+    ((False, None), {"sslmode": "verify-full"}, False),
+    ((False, None), {}, False),  # a TLS-enabled server, this session in plaintext
+])
+def test_transport_is_judged_per_session_not_per_server(row, params, passed):
+    probes = PostgresHandoffProbes(
+        connect_as=lambda db, role: None, admin_connect=lambda db: _Conn(row, params), source_db="s",
+        target_db="t", app_role="app", tables=(("orders", "id"),), probe_insert="")
+    verdict, observation = probes.transport_encrypted("target")
+    assert verdict is passed and observation["encrypted"] is row[0]

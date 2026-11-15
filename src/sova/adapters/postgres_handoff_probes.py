@@ -115,9 +115,20 @@ class PostgresHandoffProbes:
                                   "label": label, "allowed": sorted(allowed)}
 
     def transport_encrypted(self, which):
+        """This session's own channel, not the server's setting: the server
+        reports the backend's TLS (``pg_stat_ssl``), and this client must
+        have verified the certificate chain and host name (``verify-full``).
+        A server that merely has TLS enabled says nothing about a connection
+        that fell back to plaintext or skipped verification."""
         with self.admin_connect(self._db(which)) as conn:
-            ssl = conn.execute("SHOW ssl").fetchone()[0]
-        return ssl == "on", {"probe": "transport_encrypted", "ssl": ssl}
+            row = conn.execute("SELECT ssl, version FROM pg_stat_ssl "
+                               "WHERE pid = pg_backend_pid()").fetchone()
+            mode = conn.info.get_parameters().get("sslmode") or "default"
+        encrypted = bool(row and row[0])
+        verified = encrypted and mode == "verify-full"
+        return verified, {"probe": "transport_encrypted", "encrypted": encrypted,
+                          "tls_version": row[1] if encrypted else None,
+                          "client_verification": mode}
 
     def cross_tenant_denied(self, other_db):
         try:

@@ -70,7 +70,8 @@ def test_unencrypted_target_is_refused_before_activation(postgres_database, now,
     assert held.state == HandoffState.SAFE_HOLD and held.reason == "CONTRACT_BREACH"
     assert held.activation_possible is False and x["route"].get() == names["src"]
     assert x["probes"].transport_encrypted("target") == (False, {
-        "probe": "transport_encrypted", "ssl": "off"})
+        "probe": "transport_encrypted", "encrypted": False, "tls_version": None,
+        "client_verification": "default"})
     # Abort: the target never took writes; restore the source and prove it.
     assert not x["probes"].single_writer()[0]
     x["coordinator"].abort(x["revision"], x["plan"], target_inactive_verified=True,
