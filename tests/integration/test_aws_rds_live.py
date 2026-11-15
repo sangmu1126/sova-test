@@ -202,3 +202,29 @@ def test_the_rds_security_reader_reports_the_real_configuration(aws):
         "private-endpoint": "fail",
         "deletion-protection": "fail", "postgres-log-export": "unknown",
         "multi-az-configuration": "fail"}, snapshot.checks
+
+
+def test_changes_stream_from_rds_and_only_the_tail_moves_inside_the_fence(postgres_database,
+                                                                         rds_cdc):
+    """snapshot-cdc from RDS: the local server subscribes to RDS over verified
+    TLS (the run's parameter group turns logical decoding on); nothing of the
+    replication is left on RDS afterwards."""
+    from sova.adapters.postgres_logical_replication import replication_name
+
+    b = rds_cdc
+    x = run_handoff(postgres_database, datetime.now(UTC) - timedelta(seconds=1), b,
+                    adjust=without_transport_control, strategy="snapshot-cdc", cdc=True)
+    assert x["record"].state == HandoffState.HANDOFF_COMPLETE, (x["record"].reason,
+                                                               x["record"].held_from)
+    for table, _ in TABLES:
+        assert x["probes"].content_equal(table)[0], table
+    assert x["probes"].order_effects_once()[0]
+    name = replication_name(b["names"]["src"], b["names"]["tgt"])
+    with b["connect"](b["names"]["src"]) as conn:
+        assert not conn.execute("SELECT 1 FROM pg_replication_slots WHERE slot_name = %s",
+                                (name,)).fetchall()
+        assert not conn.execute("SELECT 1 FROM pg_publication WHERE pubname = %s",
+                                (name,)).fetchall()
+    observed = x["observed"]
+    pause = (observed["activate_target"] - observed["pause_admission"]).total_seconds()
+    print(f"measured write-admission pause RDS->on-prem (snapshot-cdc): {pause * 1000:.0f} ms")

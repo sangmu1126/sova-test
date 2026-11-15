@@ -203,6 +203,7 @@ class Aws:
                      "--protocol", "tcp", "--port", "5432", "--cidr", f"{lease['ip']}/32")
         instance = self.rds_id(run)
         master = "sova_admin"
+        group = self.parameter_group(run, tags)
         if not self._instance(instance):
             password = self.paths.read_secret(self.paths.new_secret("rds-master").name)
             request = self.paths.secret("rds-create.json")
@@ -212,7 +213,7 @@ class Aws:
                 "AllocatedStorage": 20, "StorageType": "gp3", "MasterUsername": master,
                 "MasterUserPassword": password, "VpcSecurityGroupIds": [sg],
                 "PubliclyAccessible": True, "BackupRetentionPeriod": 0,
-                "DeletionProtection": False, "MultiAZ": False,
+                "DeletionProtection": False, "MultiAZ": False, "DBParameterGroupName": group,
                 "AutoMinorVersionUpgrade": False, "Tags": tags}))
             try:
                 self.cli("rds", "create-db-instance", "--cli-input-json", f"file://{request}")
@@ -230,6 +231,23 @@ class Aws:
                  "ca": str(bundle)}
         state["backstop"] = self.backstop(run, instance, parse(lease["expires_at"]))
         return state
+
+    def parameter_group(self, run, tags):
+        """The run's parameter group: logical decoding on (``rds.logical_replication``
+        is static, so it is set before the instance exists and needs no reboot)."""
+        group = f"sova-test-pg17-{run}"
+        family = f"postgres{self.engine.split('.')[0]}"
+        if self.cli("rds", "describe-db-parameter-groups", "--db-parameter-group-name", group,
+                    check=False) is None:
+            self.cli("rds", "create-db-parameter-group", "--db-parameter-group-name", group,
+                     "--db-parameter-group-family", family,
+                     "--description", f"sova test {run}: logical decoding",
+                     "--tags", json.dumps(tags))
+        self.cli("rds", "modify-db-parameter-group", "--db-parameter-group-name", group,
+                 "--parameters", json.dumps([{"ParameterName": "rds.logical_replication",
+                                              "ParameterValue": "1",
+                                              "ApplyMethod": "pending-reboot"}]))
+        return group
 
     def _instance(self, instance):
         found = self.cli("rds", "describe-db-instances", "--db-instance-identifier", instance,
@@ -297,6 +315,9 @@ class Aws:
                 "DBSnapshots", []):
             if scoped(snap["DBSnapshotIdentifier"], run):
                 found.append(("rds-snapshot", snap["DBSnapshotIdentifier"]))
+        for group in self.cli("rds", "describe-db-parameter-groups").get("DBParameterGroups", []):
+            if scoped(group["DBParameterGroupName"], run):
+                found.append(("rds-parameter-group", group["DBParameterGroupName"]))
         for group in self.cli("ec2", "describe-security-groups", "--filters",
                               f"Name=tag:sova-test,Values={run}").get("SecurityGroups", []):
             found.append(("security-group", group["GroupId"]))
@@ -375,6 +396,13 @@ class Aws:
             self.run(["aws", "rds", "wait", "db-instance-deleted", "--db-instance-identifier",
                       instance, "--profile", self.profile, "--region", self.region], check=False)
             log(f"aws database deleted: {instance}")
+        for group in kinds.get("rds-parameter-group", []):  # free once no instance uses it
+            for _ in range(12):
+                if self.cli("rds", "delete-db-parameter-group", "--db-parameter-group-name",
+                            group, check=False) is not None:
+                    log(f"aws parameter group deleted: {group}")
+                    break
+                time.sleep(10)
         for group in kinds.get("security-group", []):
             for _ in range(18):  # network interfaces are released a little later
                 if self.cli("ec2", "delete-security-group", "--group-id", group,
@@ -845,6 +873,7 @@ def render_env(lease, paths, config):
                f"dbname=postgres sslmode=verify-full sslrootcert={aws['ca']} "
                f"passfile={paths.pgpass}")
         from_file("SOVA_TEST_RDS_ROLE_PASSWORD", "rds-role")
+        from_file("SOVA_TEST_RDS_MASTER_PASSWORD", "rds-master")
     if gcp.get("ip"):
         host = (f"host={gcp['dns_name']} hostaddr={gcp['ip']}" if gcp.get("dns_name")
                 else f"host={gcp['ip']}")

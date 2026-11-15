@@ -85,37 +85,53 @@ def conninfo_value(dsn, key):
     return found.group(1) if found else None
 
 
-@pytest.fixture
-def cloudsql_cdc(cloudsql, cloudsql_business):
-    """The business world with a subscription channel from the local server to
-    Cloud SQL: the server itself connects out over verified TLS, so the
-    instance's CA goes into the server's pod and the channel names it."""
+def subscription_channel(business, dsn, *, user, password, pod_ca):
+    """The business world with a subscription channel from the local server to a
+    managed source: the server itself connects out over verified TLS, so the
+    source's CA goes into the server's pod and the channel names it there."""
     if not os.environ.get("SOVA_TEST_POSTGRES_EXEC"):
         pytest.skip("SOVA_TEST_POSTGRES_EXEC is required to give the local server the CA")
-    b = cloudsql_business
-    with b["connect"](b["names"]["src"]) as conn:
-        level = conn.execute("SHOW wal_level").fetchone()[0]
-        if level != "logical":
-            pytest.skip("the Cloud SQL instance runs without cloudsql.logical_decoding")
-        conn.execute("ALTER ROLE postgres WITH REPLICATION")
-        conn.commit()
-    ca = conninfo_value(cloudsql["dsn"], "sslrootcert")
+    ca = conninfo_value(dsn, "sslrootcert")
     exec_ = shlex.split(os.environ["SOVA_TEST_POSTGRES_EXEC"])
     with open(ca, "rb") as handle:
-        subprocess.run([*exec_, "sh", "-c", f"mkdir -p {os.path.dirname(POD_CA)} && "
-                        f"cat > {POD_CA}"], input=handle.read(), check=True, timeout=60)
-    host = conninfo_value(cloudsql["dsn"], "host")
-    hostaddr = conninfo_value(cloudsql["dsn"], "hostaddr")
+        subprocess.run([*exec_, "sh", "-c", f"mkdir -p {os.path.dirname(pod_ca)} && "
+                        f"cat > {pod_ca}"], input=handle.read(), check=True, timeout=60)
+    host, hostaddr = conninfo_value(dsn, "host"), conninfo_value(dsn, "hostaddr")
 
     def channel(database):
-        parts = {"host": host, "port": "5432", "user": "postgres",
-                 "password": cloudsql["root_password"], "dbname": database,
-                 "sslmode": "verify-full", "sslrootcert": POD_CA}
+        parts = {"host": host, "port": "5432", "user": user, "password": password,
+                 "dbname": database, "sslmode": "verify-full", "sslrootcert": pod_ca}
         if hostaddr:
             parts["hostaddr"] = hostaddr
         return " ".join(f"{k}={v}" for k, v in parts.items())
 
-    return {**b, "replication_conninfo": channel}
+    return {**business, "replication_conninfo": channel}
+
+
+def logical_source(business, grant):
+    with business["connect"](business["names"]["src"]) as conn:
+        if conn.execute("SHOW wal_level").fetchone()[0] != "logical":
+            pytest.skip("the managed source runs without logical decoding")
+        conn.execute(grant)
+        conn.commit()
+
+
+@pytest.fixture
+def cloudsql_cdc(cloudsql, cloudsql_business):
+    logical_source(cloudsql_business, "ALTER ROLE postgres WITH REPLICATION")
+    return subscription_channel(cloudsql_business, cloudsql["dsn"], user="postgres",
+                                password=cloudsql["root_password"], pod_ca=POD_CA)
+
+
+@pytest.fixture
+def rds_cdc(aws, cloud_business):
+    """RDS as a logical source: ``rds.logical_replication`` in the run's
+    parameter group; the master user replicates through ``rds_replication``."""
+    dsn = cloud_business["servers"][cloud_business["names"]["src"]]
+    logical_source(cloud_business, "GRANT rds_replication TO CURRENT_USER")
+    return subscription_channel(cloud_business, dsn, user=conninfo_value(dsn, "user"),
+                                password=os.environ["SOVA_TEST_RDS_MASTER_PASSWORD"],
+                                pod_ca="/tmp/sova-cloud/rds-ca.pem")
 
 
 # -- REST access and the run-scoped resources of the other services -----------------------
