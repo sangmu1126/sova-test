@@ -578,6 +578,10 @@ class Gcp:
             for item in listing.get("tenants", []):
                 if scoped(item.get("displayName", ""), run):
                     found.append(("idp-tenant", item["name"].rsplit("/", 1)[-1]))
+        if "apikeys.googleapis.com" in apis:
+            for item in self.g("services", "api-keys", "list") or []:
+                if scoped(item.get("displayName", ""), run):
+                    found.append(("api-key", item["name"]))
         accounts = []
         if "iam.googleapis.com" in apis:
             for item in self.g("iam", "service-accounts", "list") or []:
@@ -638,6 +642,9 @@ class Gcp:
         for tenant in kinds.get("idp-tenant", []):
             self.rest("DELETE", f"{self.TENANTS}/projects/{self.project}/tenants/{tenant}")
             log(f"gcp identity tenant deleted: {tenant}")
+        for key in kinds.get("api-key", []):
+            self.g("services", "api-keys", "delete", key, check=False)
+            log(f"gcp api key deleted: {key.rsplit('/', 1)[-1]}")
         for role, member in self._bindings(run):
             self.g("projects", "remove-iam-policy-binding", self.project, f"--member={member}",
                    f"--role={role}", "--all", check=False)
