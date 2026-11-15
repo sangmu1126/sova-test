@@ -1276,10 +1276,10 @@ ALB는 조건부 쓰기가 없다. 읽은 뒤 쓰기 전에 다른 사람이 바
 | adapter 공통 적합성 시험 | 모의 시험 통과 | PostgreSQL·S3 adapter, 결함 주입 9종 검출 |
 | S3 호환 객체 저장소 간 offline copy 참조 adapter | 모의 시험 통과 | 로컬 versitygw 두 개(독립 계정·저장소·정책)에서 실제 정책 판정·복사·실측 |
 | 객체 저장소 단위의 control plane 전체 인계 | 모의 시험 통과 | 같은 계획·승인·권한 기록·서명 증거, 객체용 측정. 업무 불변식 위반 시 활성화 전 보류 |
-| AWS S3 → 로컬 S3 호환 저장소 offline copy | 실환경 시험 통과 | 개인 AWS 계정, IAM role writer. 이 방향에 한함. 다른 클라우드 미검증 |
-| Kubernetes Service 경로 전환·CronJob 관리권 멈춤 실측 | 모의 시험 통과 | 로컬 kind, 최소 권한 token. 관리형 클러스터 미검증 |
+| AWS S3 → 로컬 S3 호환 저장소 offline copy | 실환경 시험 통과 | 개인 AWS 계정, IAM role writer. GCS·S3↔GCS는 아래 GCP·클라우드 간 절 |
+| Kubernetes Service 경로 전환·CronJob 관리권 멈춤 실측 | 실환경 시험 통과 | 로컬 kind와 관리형 EKS·GKE Autopilot, 최소 권한 token |
 | 클라우드 IAM 기반 쓰기 차단(GCS) | 실환경 시험 통과 | 버킷 권한 회수 + Policy Troubleshooter 판정 + 전파 대기. 프로젝트 수준 권한이 남은 writer는 미확인으로 둠 |
-| Ingress·부하 분산기 수준 진입점 adapter | 미검증 | 구현 없음(DNS 수준까지만) |
+| 부하 분산기 수준 진입점 adapter | 실환경 시험 통과 | AWS ALB 리스너, GCP URL map. Kubernetes Ingress·Gateway API는 미구현 |
 | PostgreSQL 카탈로그 변경 수집기 | 모의 시험 통과 | 로컬 PostgreSQL, 시점 기반 귀속 |
 | 권한 witness의 Object Lock 저장소 | 실환경 시험 통과 | AWS S3 governance·compliance 모드 모두 실측 |
 | AWS CloudTrail 변경 수집기 | 실환경 시험 통과 | 이벤트 이력 조회, 실제 정책 변경 91초 뒤 기록. 조직 trail 미검증 |
