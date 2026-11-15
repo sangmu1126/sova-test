@@ -225,6 +225,7 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
   - Cloud SQL: **14 PASS / 1 SKIP**(prepared transaction 꺼짐), 15분. 첫 실행은 14건 모두 연결 단계에서 실패했다. 서버 인증서 SAN이 인스턴스 DNS 이름을 끝점까지 담고 있어(`…sql.goog.`), 끝점을 뗀 호스트 이름이 `verify-full`에서 불일치했다. 스위치와 시험이 이름을 그대로 쓰게 고친 뒤 통과했다. 논리 복제는 로컬 서버가 인터넷 너머 Cloud SQL을 검증된 TLS로 구독했고, 끝난 뒤 Cloud SQL에 slot·publication이 남지 않았다. 복원 시험의 복원 인스턴스와 백업은 시험이 지웠다.
   - Cloud Storage: **11 PASS**(공통 적합성 9, 측정 2). 첫 실측에서 차단이 확인되지 않았다. 원인은 정책 etag였다. GCS에서는 etag가 버킷 메타데이터를 따라가 인계 자신의 라벨 쓰기가 바꿨다. 바인딩 digest와 metageneration으로 바꿨다. 전체 실행에서 2건이 권한 부여 전파로 실패했다(다시 준 권한이 바로 적용되지 않음, 막 준 권한이 일부 서버에서 아직 거부). adapter 판정은 맞았고, 시험 world가 자기 변경의 적용을 기다리게 고친 뒤 두 건이 통과했다. 시험 하나가 4~7분 걸린다(차단마다 전파 대기 60초).
   - GCP 전체 탈출: 첫 실행에 통과(2분 55초). 계약 Identity 의무와 탈출 의무를 모두 실측해 여섯 수준 모두 PASS. AWS 전체 탈출과 같은 구조이며, 원본을 막는 방법만 GCP 방식이다.
+- GCP 작업 뒤 로컬 전체 회귀(새 DB): 평문 **1532 PASS / 0 FAIL / 203 SKIP**, TLS **55 PASS / 2 SKIP**. 늘어난 PASS는 새 단위 시험(스위치 29, GCP adapter 25, GCS 접근층 8)이고, SKIP 대부분은 환경 변수 없이 건너뛰는 클라우드 실측 시험이다. 단위 시험만은 **768 PASS**.
 - AWS 자원은 두 실행 모두 `sova-test-` 접두어로 조회해 남은 것이 없음을 확인했다. compliance 잠금 버킷은 보존 1시간이 끝난 21:44에 지웠다.
 - AWS 2차(실행 번호 `53ffc2`): compliance 모드 1개, RDS control plane 인계 1개, snapshot 복원 감지 1개, RDS 보안 수집기 1개 통과.
   - snapshot 복원 시험의 첫 실행은 시험 결함으로 실패했다. snapshot에 5분이 걸린 뒤 시험 시작 시각으로 승인을 만들어 신뢰 승인이 만료돼 있었다. 시각을 새로 잡게 고친 뒤 통과했다.
