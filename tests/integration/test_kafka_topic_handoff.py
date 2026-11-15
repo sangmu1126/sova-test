@@ -56,3 +56,20 @@ def test_copying_again_leaves_the_same_stream_not_a_longer_one(world):
     apply(world.adapter(), "copy_content")
     apply(world.adapter(), "apply_final_changes")
     assert world.content("target") == first == world.content("source")
+
+
+def test_a_compact_only_topic_is_refused_before_anything_changes(world):
+    from confluent_kafka.admin import AlterConfigOpType, ConfigEntry, ConfigResource
+    from confluent_kafka.admin import ResourceType
+
+    from sova.domain.contracts import ContractError
+
+    resource = ConfigResource(ResourceType.TOPIC, world.names["src"], incremental_configs=[
+        ConfigEntry("cleanup.policy", "compact",
+                    incremental_operation=AlterConfigOpType.SET)])
+    for future in world.b["admin"].incremental_alter_configs([resource]).values():
+        future.result()
+    before = world.state()
+    with pytest.raises(ContractError):
+        apply(world.adapter(), "stage_target")
+    assert world.state() == before

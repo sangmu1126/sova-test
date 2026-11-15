@@ -28,6 +28,9 @@ from the clusters:
 Kafka authorizes every request against the current ACLs, so revoking is
 enough for open connections; nothing caches a right as MySQL sessions do.
 
+Topics whose cleanup policy is compact only are refused at staging: emptying
+the target for a repeated copy needs ``DeleteRecords``, which they reject.
+
 The copy is idempotent: it first deletes the target's records
 (``DeleteRecords``) and rewrites every committed source record in one
 transaction per partition, so a copy cut short leaves nothing visible to a
@@ -336,6 +339,11 @@ class KafkaTopicHandoffAdapter:
         partitions = self._describe("source")
         if partitions is None:
             raise ContractError("The source topic does not exist")
+        policy = self._configs("source").get("cleanup.policy", "delete")
+        if "delete" not in policy.split(","):
+            # A repeated copy empties the target with DeleteRecords, which a
+            # compact-only topic refuses; its copy needs a key-state comparison.
+            raise ContractError("Compact-only topics are not supported by this adapter")
         if self._describe("target") is None:
             topic = admin.NewTopic(self.target_topic, partitions, -1,
                                    config=self._configs("source"))

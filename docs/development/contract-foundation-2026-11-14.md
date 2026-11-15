@@ -275,6 +275,22 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
     - 롤링 측정에서 NetworkPolicy가 있으면 kind 정책 엔진이 연결을 가끔 버렸다(재시작 약 절반에서 1건, 정책 없이 5회 0건). readiness 지연으로는 해결되지 않아 되돌렸고, 측정은 정책 없이 한다. 이 내용은 한계로 문서에 남겼다.
   - 시험 결과: 단위 806 PASS, 서비스 통합 20 PASS(등록·control plane·API·워커).
 
+- 어댑터 확대(2026-11-16, 같은 지시의 2번 묶음: MySQL, 큐·스트림. Azure·NCP 제외). 내용은 [구현 안내](../contract-foundation.md#데이터-저장소-확대-mysqlkafka-apirabbitmq-2026-11-16)에 있다.
+  - 시험 환경: kind 클러스터에 MySQL·RabbitMQ·Redpanda를 더했다. 포트 매핑을 바꾸려면 클러스터를 다시 만들어야 해서, 다른 사용자가 없는 것을 확인하고 다시 올렸다. Python 클라이언트(PyMySQL, pika, confluent-kafka)는 extra로 넣었다.
+  - MySQL: 14 PASS.
+    - 첫 실행에서 3건이 실패했다. 하나는 승인 중지와 차단이 구별되지 않는 문제였다. MySQL에는 DB 단위 접속 권한이 없어서다. 계정 잠금으로 바꿨다. 나머지 둘은 `DEFAULT_GENERATED` 열을 복사하지 않은 결함이었다. 발급 시각이 바뀌었다.
+    - control plane 전체 흐름 1 PASS. 모든 의무를 MySQL probe로 측정·서명했다.
+  - Kafka API: 11 PASS(3분 51초). 뒤에 압축 전용 토픽을 준비 단계에서 거부하는 시험 1개를 더해 12 PASS. 고친 것은 넷이다.
+    - 임시 AdminClient가 응답 전에 수거되어 요청이 끊겼다. 측별 클라이언트를 유지하게 했다.
+    - KafkaError와 None을 비교하는 C 구현이 TypeError를 냈다(시험 쪽).
+    - 증거 JSON에 정수 키가 들어갔다.
+    - 클러스터 단위 자원(group, 트랜잭션 ID)을 목적지 준비 때 회수해, 같은 클러스터의 원본 앱 트랜잭션을 막았다.
+  - RabbitMQ: 11 PASS. 시험이 관리 API 연결 목록의 지연(3.8초)을 잡았다. 그 사이 차단이 확정되고, 캐시된 권한으로 차단 뒤에도 발행됐다. 연결 추적으로 조회·종료하게 고쳤고, 응답하지 않는 클라이언트는 브로커 종료 제한시간까지 기다린다(30.3초).
+  - 서비스 이미지에 MySQL 드라이버를 넣고 새 클러스터에 다시 적재했다. kind 배포 시험 2 PASS.
+  - 1번·2번 묶음 뒤 로컬 전체 회귀(새 DB): 평문 **1634 PASS / 0 FAIL / 301 SKIP**, TLS **55 PASS / 2 SKIP**.
+    - 늘어난 PASS는 서비스, MySQL, Kafka, RabbitMQ 시험이다.
+    - SKIP 대부분은 환경 변수 없이 건너뛰는 클라우드 실측 시험이다. kind 배포 시험은 이미지 변수가 필요해 회귀에서는 건너뛰고 따로 돌렸다.
+
 ## 이전 기록 정정
 
 2026-11-13 기동 점검에서 사용한 `python -m sova.interfaces.cli`는 실제 entrypoint가 아니다. 종료 코드 0만으로 CLI 기능을 실행했다고 본 부분을 문서에서 정정했다. 올바른 `python -m sova` 경로와 JSON 출력 assertion을 이번에 검증하고 subprocess 회귀 시험을 추가했다. 이전 단위 시험의 `main()` 직접 호출과는 별도다.

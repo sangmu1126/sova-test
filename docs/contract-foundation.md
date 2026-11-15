@@ -1238,6 +1238,51 @@ DNS 수준 전환(Route 53·Cloud DNS)에 더해, 데이터 adapter의 경로 �
 
 ALB는 조건부 쓰기가 없다. 읽은 뒤 쓰기 전에 다른 사람이 바꾼 내용은 덮어쓸 수 있다. 그래서 확인은 설정과 실제 응답이 둘 다 맞을 때만이다. GCP URL map은 fingerprint로 그 경합을 막는다. 이미 열린 연결은 닫힐 때까지 예전 대상에 남을 수 있으므로, 원본은 그동안 차단된 채로 둔다.
 
+## 데이터 저장소 확대: MySQL·Kafka API·RabbitMQ (2026-11-16)
+
+PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 adapter 모두 [공통 적합성 시험](#adapter-공통-적합성-시험)을 그대로 통과한다. 시험 환경은 로컬 kind에 MySQL 8.4.13, Redpanda 26.2.5(Kafka API, SASL/SCRAM과 ACL 강제), RabbitMQ 4.1.8(shovel·federation 포함)을 더한 것이다. 저장소마다 PostgreSQL과 다른 점이 있고, 다를 때는 차단을 더 엄격하게 하는 쪽을 택했다.
+
+| 저장소 | 결과 | PostgreSQL과 다른 점, 그에 따른 처리 |
+|---|---|---|
+| MySQL (`MySqlOfflineCopyAdapter`) | 적합성 9 + 고유 5 = **14 PASS** | 아래 MySQL 항목 |
+| Kafka API (`KafkaTopicHandoffAdapter`) | 적합성 9 + 고유 3 = **12 PASS** | 아래 Kafka API 항목 |
+| RabbitMQ (`RabbitMqQueueHandoffAdapter`) | 적합성 9 + 고유 2 = **11 PASS** | 아래 RabbitMQ 항목 |
+
+**MySQL.**
+
+- **DB 단위 접속 권한이 없다.** 그래서 권한 회수가 곧 차단이 되어 버린다. 승인 중지(pause)는 계정 잠금(`ACCOUNT LOCK`)으로 한다. 활성화 때 목적지 서버의 앱 계정만 잠금을 푼다. 원본과 목적지가 같은 서버라도, 원본에는 권한이 없으니 차단은 유지된다.
+- **세션이 권한을 캐시하고, 한 DB에 묶이지 않는다.** 원본에 쓴 뒤 다른 DB로 옮긴 세션도 차단 뒤에 commit할 수 있다. 그래서 차단은 writer 계정의 세션을 모두 끊는다. 이 경우를 시험으로 재현했다.
+- **XA PREPARE는 어느 DB를 건드렸는지 알려 주지 않는다.** 그래서 원본 서버에 XA PREPARE 트랜잭션이 하나라도 있으면 차단을 확정하지 않는다.
+- **역할과 전역 권한으로 남는 쓰기 권한은 보고만 한다.** 자동으로 회수하지 않고, 차단을 미확인으로 둔다. 공유 역할을 지울지는 운영자가 정한다.
+- **`AUTO_INCREMENT`가 sequence 역할을 한다.** 카운터를 복사하고 비교한다. 원본에서 발급했다가 철회한 번호(9, 10)를 목적지가 다시 내지 않는 것을 시험했다.
+- **구조는 `SHOW CREATE TABLE`과 트리거로 비교한다.** 트리거 본문의 `END IF`, `CASE ... END CASE`, 레이블 LOOP를 mysql 클라이언트처럼 나누는 DDL 분리기를 넣었다.
+- **적합성 시험이 실제 결함을 잡았다.** `DEFAULT CURRENT_TIMESTAMP` 열은 EXTRA가 `DEFAULT_GENERATED`라서, 생성 열로 잘못 걸러져 복사되지 않았다. 목적지에 발급 시각 대신 복사 시각이 들어간 것이다. 생성 열 판정을 `GENERATION_EXPRESSION` 기준으로 고쳤다.
+- **control plane 전체 흐름도 통과했다.** MySQL probe(쓰기 거부, 단일 writer, 내용 비교, 업무 불변식, 테넌트 격리, 복원 훈련)를 만들었고, 워커 카탈로그가 `engine: mysql` 애플리케이션을 구성한다. MySQL 단위가 등록 → 컴파일 → 승인 → 수용 → 워커 실행까지 HANDOFF_COMPLETE로 끝났다. 계획의 모든 의무는 MySQL probe로 측정·서명되어 pass였다.
+
+**Kafka API.**
+
+- **단위 구성.** 토픽 하나와 그 producer, consumer, consumer group 위치가 단위다. 권한은 ACL로 판정한다(literal·prefixed·wildcard, `User:*`, ALL, DENY 우선).
+- **차단 조건.** 차단은 producer 권한, 단위의 트랜잭션 ID 권한, consumer 권한을 모두 회수한다. 그리고 열린 트랜잭션이 없어야 한다(last stable offset = high watermark). 열린 트랜잭션은 차단 뒤에도 commit될 수 있기 때문이다. 시험에서 앱이 열어 둔 트랜잭션이 차단을 미확인으로 두었고, 운영자가 그 트랜잭션 ID로 fencing하자 확정됐다.
+- **복사.** 목적지 레코드를 지운 뒤(DeleteRecords), 커밋된 레코드를 파티션마다 한 트랜잭션으로 다시 쓴다. 그래서 반복해도 같고, 중간에 끊겨도 반만 보이지 않는다.
+- **consumer group 위치.** "앞선 레코드 수"로 옮긴다. consumer는 목적지에서, 원본에서 다음에 읽었을 바로 그 레코드부터 읽는다(30개 중 처리한 12개를 뺀 18개, 한 번씩).
+- **클러스터 단위 자원.** group과 트랜잭션 ID는 토픽이 아니라 클러스터 단위 자원이다. 둘 다 토픽 권한 없이는 그 토픽에 쓰거나 커밋할 수 없다. 그래서 원본 차단과 목적지 활성화에서만 판정한다. 첫 구현은 목적지를 준비하면서 이를 회수해, 같은 클러스터에 있던 원본 앱의 트랜잭션까지 막았다.
+
+**RabbitMQ.**
+
+- **연결 종료와 그 근거.** 채널은 권한 검사를 캐시하므로, 차단은 단위 사용자의 연결을 모두 닫는다. 관리 API의 일반 연결 목록은 통계 주기만큼 늦다(실측: 새 연결이 3.8초 뒤에 나타났고, 그 전에는 이름으로 닫기가 404였다). 그 사이 차단이 확정되고, 캐시된 권한으로 차단 뒤에도 발행된 것을 시험이 잡았다. 그래서 연결은 연결 추적(`/connections/username/<user>`)으로 조회하고 닫는다.
+- **응답하지 않는 클라이언트.** 브로커는 종료 제한시간(30초)이 지나야 연결을 놓는다. 차단은 그때까지 기다린다(실측 30.3초).
+- **클라이언트 없이 쓰는 경로.** shovel이나 federation이 원본에 쓰고 있으면 차단을 확정하지 않는다.
+- **복사와 확인 방식.** 메시지는 읽으면 바뀐다(재전달 표시, quorum 큐의 전달 횟수). 그래서 복사는 원본 메시지를 확인 없이 받아 목적지에 confirm으로 쓴 뒤, 원본에 순서대로 되돌린다. 읽기 확인은 정의와 개수만 비교한다. 목적지는 원본에 남은 22개를 순서대로, 첫 전달로, 속성까지 같게 내놓았다.
+
+**한계.**
+
+- MySQL TLS probe는 구현했지만, 로컬 서버에 TLS가 없어 실측하지 않았다.
+- MySQL 위치(zone)는 DB에 붙일 표식이 없어, 제공자나 운영 인벤토리에서 읽는다.
+- MySQL 변경 데이터 캡처(binlog) adapter는 없다. offline copy만 있다.
+- Kafka 복사는 삭제 정책 토픽만 받는다. 압축 전용 토픽은 DeleteRecords를 쓸 수 없어서, 준비 단계에서 아무것도 바꾸기 전에 거부한다(시험함).
+- Kafka와 RabbitMQ는 한 클러스터·한 브로커 안의 두 토픽·두 vhost로만 시험했다.
+- Kafka와 RabbitMQ는 아직 워커 카탈로그와 control plane 전체 흐름에 연결하지 않았다. 메시지 단위용 계약 템플릿과 의무 probe가 필요하다.
+
 ## 운영 서비스 (API·워커·배포, 2026-11-16)
 
 지금까지 시험 코드가 직접 부르던 등록·컴파일·승인·수용·실행을 운영 서비스로 묶었다. 구조와 이유는 [ADR-0005](adr/0005-operational-service.md), 배포 방법은 [배포 안내](../deploy/kubernetes/README.md)에 있다.
@@ -1340,6 +1385,9 @@ ALB는 조건부 쓰기가 없다. 읽은 뒤 쓰기 전에 다른 사람이 바
 | GCP 전체 탈출 | 실환경 시험 통과 | 데이터·객체·비밀·계정·compute를 한 계약으로 |
 | 운영 서비스: 등록 API·승인·수용·워커 | 모의 시험 통과 | 실 PostgreSQL·Keycloak·Object Lock witness. 역할 여섯, 계획자 자기 승인 금지, revision 비교 후 쓰기 |
 | control plane 이중화(API ×2, 워커 ×2)·워커 장애 복구 | 모의 시험 통과 | 로컬 kind에 실제 배포. 경로 전환 중 워커 Pod 삭제 뒤 증명·readback으로 완료. 관리형 클러스터 배포는 미시험 |
+| MySQL 간 offline copy adapter·probe | 모의 시험 통과 | 로컬 MySQL 8.4.13. 적합성 키트와 control plane 전체 흐름. TLS probe는 미실측, CDC 없음 |
+| Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL), 한 클러스터의 두 토픽. control plane 미연결 |
+| RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8, 한 브로커의 두 vhost. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 미연결 |
 | MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |
 | 사고 보류·증거 기한·사고 복구 확장 | 지원하지 않음 | 명세가 스키마를 정하지 않음(S.9, ADR 전제). 있으면 `NEEDS_EVIDENCE` |
