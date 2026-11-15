@@ -308,3 +308,45 @@ def test_the_gcp_sweep_deletes_only_this_runs_resources():
         assert other not in text
     assert all("--project" in c and "q" in c for c in calls if c[0] == "gcloud"
                and c[1:3] != ["auth", "print-access-token"])
+
+
+def test_clusters_of_this_run_go_node_group_first_and_others_stay():
+    run, calls = _runner([
+        (["aws", "eks", "list-clusters"], {"clusters": [f"sova-test-k8s-{RUN}", "team-prod"]}),
+        (["aws", "eks", "list-nodegroups"], {"nodegroups": [f"sova-test-ng-{RUN}"]}),
+    ])
+    cloud_env.Aws({"profile": "p", "region": "r"}, run=run).sweep(RUN, lambda line: None)
+    deletes = [c[2] + " " + " ".join(c[3:7]) for c in calls
+               if c[:2] == ["aws", "eks"] and c[2].startswith("delete")]
+    assert deletes[0].startswith("delete-nodegroup") and f"sova-test-ng-{RUN}" in deletes[0]
+    assert deletes[1].startswith("delete-cluster") and f"sova-test-k8s-{RUN}" in deletes[1]
+    assert not any("team-prod" in " ".join(c) for c in calls if "delete" in " ".join(c[:3]))
+    waits = [c[2:4] for c in calls if c[:3] == ["aws", "eks", "wait"]]
+    assert waits == [["wait", "nodegroup-deleted"], ["wait", "cluster-deleted"]]
+
+
+def test_gke_clusters_of_this_run_are_found_and_deleted():
+    run, calls = _runner([
+        (["gcloud", "services", "list"], [{"config": {"name": "container.googleapis.com"}}]),
+        (["gcloud", "container", "clusters", "list"], [
+            {"name": f"sova-test-k8s-{RUN}", "location": "r"},
+            {"name": "analytics", "location": "r"}]),
+    ])
+    gcp = cloud_env.Gcp({"project": "q", "region": "r"}, run=run,
+                        http=lambda *a, **k: pytest.fail("no REST call expected"))
+    assert ("gke-cluster", f"sova-test-k8s-{RUN}@r") in gcp.inventory(RUN)
+    gcp.sweep(RUN, lambda line: None)
+    deleted = [c for c in calls if c[1:4] == ["container", "clusters", "delete"]]
+    assert [c[4] for c in deleted] == [f"sova-test-k8s-{RUN}"]
+
+
+def test_the_printed_environment_names_the_managed_clusters_without_credentials(tmp_path):
+    paths = cloud_env.Paths(tmp_path / "cloud")
+    paths.ensure()
+    lease = {"run": RUN, "state": "up", "clouds": {
+        "aws": {"eks": {"context": f"sova-test-k8s-{RUN}-eks"}},
+        "gcp": {"gke": {"context": f"sova-test-k8s-{RUN}-gke"}}}}
+    text = cloud_env.render_env(lease, paths, {})
+    assert f"SOVA_TEST_KUBE_EKS_CONTEXT=sova-test-k8s-{RUN}-eks" in text
+    assert f"SOVA_TEST_KUBE_GKE_CONTEXT=sova-test-k8s-{RUN}-gke" in text
+    assert f"SOVA_TEST_KUBE_MANAGED_KUBECONFIG={paths.kubeconfig}" in text

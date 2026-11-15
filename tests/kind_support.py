@@ -1,9 +1,15 @@
-"""A namespace on a disposable kind cluster, prepared as its owner would.
+"""A namespace on a disposable cluster, prepared as its owner would.
 
 The code under test gets only a namespace-scoped service-account token with
-the rules a test grants, through the pinned transport registered for the
-loopback API server. ``SOVA_TEST_KUBE_CONTEXT`` must name a kind context, and
-``SOVA_TEST_KUBECONFIG`` may name the kubeconfig file it lives in.
+the rules a test grants, through the pinned transport registered for the API
+server. ``SOVA_TEST_KUBE_CONTEXT`` names the cluster's context and
+``SOVA_TEST_KUBECONFIG`` the kubeconfig file it lives in.
+
+Two kinds of cluster are accepted, nothing else: a kind cluster whose API
+server is on loopback, or this cloud run's own managed cluster (EKS or GKE,
+created by ``cloud-env.sh kubernetes``): ``SOVA_TEST_KUBE_MANAGED_RUN`` names
+the run and the context must be ``sova-test-k8s-<run>-eks`` or ``-gke``. The
+registration then pins the API server's resolved public addresses.
 """
 
 import base64
@@ -12,6 +18,7 @@ import hashlib
 import json
 import os
 import shutil
+import socket
 import subprocess
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -34,6 +41,22 @@ def kubectl(context, *args, stdin=None):
     return result.stdout
 
 
+def cluster_identity(context, server):
+    """(environment, location, pinned addresses) of an accepted cluster."""
+    host = urlsplit(server).hostname
+    run = os.environ.get("SOVA_TEST_KUBE_MANAGED_RUN")
+    if context.startswith("kind-"):
+        if host != "127.0.0.1":
+            raise pytest.UsageError("kind clusters are accepted only on loopback")
+        return "kind-local", "local", ("127.0.0.1",)
+    if not run or context not in (f"sova-test-k8s-{run}-eks", f"sova-test-k8s-{run}-gke"):
+        raise pytest.UsageError("Only kind or this run's own managed clusters are accepted")
+    addresses = tuple(sorted({info[4][0] for info in socket.getaddrinfo(
+        host, 443, socket.AF_INET, socket.SOCK_STREAM)}))[:8]
+    provider = context.rsplit("-", 1)[1]
+    return f"managed-{provider}", os.environ.get(f"SOVA_TEST_{'AWS' if provider == 'eks' else 'GCP'}_REGION", "cloud"), addresses
+
+
 def kind_namespace(rules, objects, *, prefix="handoff"):
     """Create a namespace with ``objects`` and a token limited to ``rules``.
     Returns (context, namespace, controls factory); the caller deletes the
@@ -41,12 +64,9 @@ def kind_namespace(rules, objects, *, prefix="handoff"):
     context = os.environ.get("SOVA_TEST_KUBE_CONTEXT")
     if not context or not shutil.which("kubectl"):
         pytest.skip("SOVA_TEST_KUBE_CONTEXT and kubectl are required for kind tests")
-    if not context.startswith("kind-"):
-        raise pytest.UsageError("Kubernetes handoff tests run only against kind clusters")
     server = kubectl(context, "config", "view", "--minify", "-o",
                      "jsonpath={.clusters[0].cluster.server}").strip()
-    if urlsplit(server).hostname != "127.0.0.1":
-        raise pytest.UsageError("Kubernetes handoff tests run only against loopback clusters")
+    environment, location, addresses = cluster_identity(context, server)
     namespace = f"{prefix}-{uuid4().hex[:8]}"
     kubectl(context, "create", "namespace", namespace)
     access = [
@@ -71,7 +91,7 @@ def kind_namespace(rules, objects, *, prefix="handoff"):
 
     def controls(namespace_name=namespace, namespace_uid=uid):
         registration = KubernetesReadRegistration(
-            "tenant-orders", "orders", "kind-local", "local", server, ("127.0.0.1",),
+            "tenant-orders", "orders", environment, location, server, addresses,
             hashlib.sha256(ca).hexdigest(), namespace_name, namespace_uid, 1,
             now - timedelta(minutes=1), now + timedelta(hours=1))
         return KubernetesHandoffControls(registration, ca_pem=ca, token_provider=lambda: token)

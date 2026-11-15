@@ -9,6 +9,7 @@ infra/cloud-env/cloud-env.sh up                    # 둘 다 8시간(--hours, �
 infra/cloud-env/cloud-env.sh up --clouds gcp       # 한쪽만
 infra/cloud-env/cloud-env.sh status                # 남은 시간, 지금 클라우드에 있는 이 실행의 자원
 eval "$(infra/cloud-env/cloud-env.sh env)"         # 실측 시험이 읽는 환경 변수
+infra/cloud-env/cloud-env.sh kubernetes           # 임대에 EKS·GKE 클러스터를 더함(아래)
 infra/cloud-env/cloud-env.sh extend --hours 2      # 끝나는 시각을 미룸(클라우드 쪽 예약도 함께)
 infra/cloud-env/cloud-env.sh down                  # 이 실행의 자원을 모두 지우고 남은 것이 없는지 확인
 ```
@@ -20,6 +21,16 @@ infra/cloud-env/cloud-env.sh down                  # 이 실행의 자원을 모
 | AWS | RDS PostgreSQL 17 `sova-test-pg-<run>` | db.t4g.micro, 이 기기 IP /32만 허용하는 보안 그룹, 백업 보존 0일, 삭제 보호 없음 |
 | GCP | Cloud SQL PostgreSQL 17 `sova-test-pg-<run>` | db-f1-micro, 이 기기 IP /32만 허용, 암호화 연결만(`ENCRYPTED_ONLY`), 공유 CA(인스턴스 DNS 이름으로 인증서 검증), `cloudsql.logical_decoding=on`, 최종 백업 없음 |
 | 둘 다 | 클라우드 쪽 만료 삭제 | 임대 종료 30분 뒤 DB 인스턴스를 지우는 예약. AWS는 EventBridge Scheduler(그 인스턴스 하나만 지울 수 있는 role), GCP는 Cloud Scheduler(그 인스턴스 하나로 조건을 건 서비스 계정) |
+
+`cloud-env.sh kubernetes`는 켜져 있는 임대에 관리형 Kubernetes 클러스터를 더한다(같은 끝나는 시각, 같은 `down`).
+
+| 클라우드 | 자원 | 설정 |
+|---|---|---|
+| AWS | EKS `sova-test-k8s-<run>`, 관리형 노드 그룹 1대(t3.medium) | API 서버는 이 기기 IP /32에서만, 인증은 EKS access entry(만든 계정만 관리자) |
+| GCP | GKE Autopilot `sova-test-k8s-<run>` | API 서버는 이 기기 IP /32에서만(master authorized networks) |
+| 둘 다 | 클라우드 쪽 만료 삭제 | EKS: 노드 그룹 +30분, 클러스터 +45분. GKE: 클러스터 +45분. GKE 삭제 권한은 자원 조건을 받지 않아 만료용 서비스 계정이 이 (시험 전용) 프로젝트의 클러스터를 지울 수 있다 |
+
+kubeconfig는 상태 디렉터리의 0600 파일에만 쓴다. `~/.kube/config`와 현재 context는 건드리지 않는다. 시험은 `SOVA_TEST_KUBECONFIG`에 그 파일을, `SOVA_TEST_KUBE_CONTEXT`에 `sova-test-k8s-<run>-eks`나 `-gke`를 주면 같은 Kubernetes 시험이 그 클러스터에서 돈다. 시험 도우미는 kind(루프백)와 이 실행의 관리형 클러스터만 받는다.
 
 나머지 자원(버킷, 비밀, user pool, compute, DNS 존 등)은 각 시험이 만들고 지운다. 시험이 중간에 멈춰 남긴 것도 `down`이 찾아 지운다.
 

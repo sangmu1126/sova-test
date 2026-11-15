@@ -5,6 +5,7 @@
     cloud-env.sh up [--hours 8] [--clouds aws,gcp]   create this run's base resources
     cloud-env.sh status                              lease, time left, what exists now
     cloud-env.sh env                                 eval "$(cloud-env.sh env)" for the tests
+    cloud-env.sh kubernetes                          add an EKS and a GKE cluster to the lease
     cloud-env.sh extend --hours 2                    push the end of the lease back
     cloud-env.sh down                                delete everything of this run, verify
     cloud-env.sh expire                              what the expiry agent runs
@@ -104,6 +105,7 @@ class Paths:
         self.history = self.root / "history"
         self.log = self.root / "expiry.log"
         self.pgpass = self.secrets / "pgpass"
+        self.kubeconfig = self.secrets / "kubeconfig"
 
     def ensure(self):
         for directory in (self.root, self.secrets, self.ca, self.history):
@@ -300,6 +302,125 @@ class Aws:
         state = lease["clouds"].get("aws") or {}
         if state.get("rds_id"):
             state["backstop"] = self.backstop(lease["run"], state["rds_id"], expires, update=True)
+        if state.get("eks"):
+            state["eks"]["backstop"] = self._eks_backstop(lease["run"], state["eks"], expires,
+                                                          update=True)
+
+    # -- managed Kubernetes
+
+    def _service_role(self, name, service, policies, run):
+        trust = {"Version": "2012-10-17", "Statement": [{
+            "Effect": "Allow", "Principal": {"Service": service}, "Action": "sts:AssumeRole"}]}
+        if self.cli("iam", "get-role", "--role-name", name, check=False) is None:
+            self.cli("iam", "create-role", "--role-name", name, "--assume-role-policy-document",
+                     json.dumps(trust), "--tags", json.dumps([{"Key": "sova-test", "Value": run}]))
+        for policy in policies:
+            self.cli("iam", "attach-role-policy", "--role-name", name,
+                     "--policy-arn", f"arn:aws:iam::aws:policy/{policy}")
+        return self.cli("iam", "get-role", "--role-name", name)["Role"]["Arn"]
+
+    def kubernetes(self, lease, kubeconfig):
+        """An EKS cluster with one small managed node, its API reachable from
+        this machine's address only; admin access for the creator only."""
+        run = lease["run"]
+        name = f"sova-test-k8s-{run}"
+        tags = {"sova-test": run}
+        cluster_role = self._service_role(f"sova-test-eks-cluster-{run}", "eks.amazonaws.com",
+                                          ["AmazonEKSClusterPolicy"], run)
+        node_role = self._service_role(
+            f"sova-test-eks-node-{run}", "ec2.amazonaws.com",
+            ["AmazonEKSWorkerNodePolicy", "AmazonEC2ContainerRegistryReadOnly",
+             "AmazonEKS_CNI_Policy"], run)
+        vpc = self.cli("ec2", "describe-vpcs", "--filters",
+                       "Name=isDefault,Values=true")["Vpcs"][0]["VpcId"]
+        subnets = sorted(s["SubnetId"] for s in self.cli("ec2", "describe-subnets", "--filters",
+                         f"Name=vpc-id,Values={vpc}", "Name=default-for-az,Values=true")["Subnets"])
+        if self.cli("eks", "describe-cluster", "--name", name, check=False) is None:
+            # Nodes reach the API privately; the public endpoint admits this machine only
+            # (with private access off, the nodes could not join: measured).
+            vpc_config = (f"subnetIds={','.join(subnets)},endpointPublicAccess=true,"
+                          f"endpointPrivateAccess=true,publicAccessCidrs={lease['ip']}/32")
+            for _ in range(12):  # a new role is assumable by EKS a little later
+                result = self.run(["aws", "eks", "create-cluster", "--name", name,
+                                   "--role-arn", cluster_role, "--resources-vpc-config", vpc_config,
+                                   "--access-config", "authenticationMode=API,"
+                                   "bootstrapClusterCreatorAdminPermissions=true",
+                                   "--tags", json.dumps(tags), "--profile", self.profile,
+                                   "--region", self.region, "--output", "json"], check=False)
+                if not result.returncode:
+                    break
+                if "UnsupportedAvailabilityZone" in result.stderr:
+                    raise CloudEnvError("EKS refused an availability zone: " +
+                                        result.stderr.strip().splitlines()[-1])
+                time.sleep(10)
+            else:
+                raise CloudEnvError("EKS cluster not created: " +
+                                    result.stderr.strip().splitlines()[-1])
+        self.run(["aws", "eks", "wait", "cluster-active", "--name", name,
+                  "--profile", self.profile, "--region", self.region])
+        group = f"sova-test-ng-{run}"
+        found = self.cli("eks", "describe-nodegroup", "--cluster-name", name, "--nodegroup-name",
+                         group, check=False)
+        if found and found["nodegroup"]["status"] == "CREATE_FAILED":  # start that one again
+            self.cli("eks", "delete-nodegroup", "--cluster-name", name, "--nodegroup-name", group)
+            self.run(["aws", "eks", "wait", "nodegroup-deleted", "--cluster-name", name,
+                      "--nodegroup-name", group, "--profile", self.profile,
+                      "--region", self.region])
+            found = None
+        if found is None:
+            self.cli("eks", "create-nodegroup", "--cluster-name", name, "--nodegroup-name", group,
+                     "--node-role", node_role, "--subnets", *subnets,
+                     "--scaling-config", "minSize=1,maxSize=1,desiredSize=1",
+                     "--instance-types", "t3.medium", "--ami-type", "AL2023_x86_64_STANDARD",
+                     "--capacity-type", "ON_DEMAND", "--tags", json.dumps(tags))
+        self.run(["aws", "eks", "wait", "nodegroup-active", "--cluster-name", name,
+                  "--nodegroup-name", group, "--profile", self.profile, "--region", self.region])
+        context = name + "-eks"
+        self.run(["aws", "eks", "update-kubeconfig", "--name", name, "--kubeconfig",
+                  str(kubeconfig), "--alias", context, "--profile", self.profile,
+                  "--region", self.region])
+        state = {"cluster": name, "nodegroup": group, "context": context}
+        state["backstop"] = self._eks_backstop(run, state, parse(lease["expires_at"]))
+        return state
+
+    def _eks_backstop(self, run, state, expires, *, update=False):
+        """Scheduled deletions of the node group (+30 min) and then the cluster
+        (+45 min, retried while the node group is still going)."""
+        account, role = self.account(), f"sova-test-expiry-{run}"
+        arn = f"arn:aws:eks:{self.region}:{account}"
+        if not update:
+            self.cli("iam", "put-role-policy", "--role-name", role, "--policy-name", "delete-eks",
+                     "--policy-document", json.dumps({"Version": "2012-10-17", "Statement": [{
+                         "Effect": "Allow", "Action": ["eks:DeleteNodegroup", "eks:DeleteCluster"],
+                         "Resource": [f"{arn}:cluster/{state['cluster']}",
+                                      f"{arn}:nodegroup/{state['cluster']}/{state['nodegroup']}/*"]
+                     }]}))
+        done = {}
+        for suffix, minutes, target, payload in (
+                ("ng", 30, "deleteNodegroup", {"ClusterName": state["cluster"],
+                                               "NodegroupName": state["nodegroup"]}),
+                ("eks", 45, "deleteCluster", {"Name": state["cluster"]})):
+            at = (expires + timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%S")
+            args = ["--name", f"sova-test-expiry-{run}-{suffix}",
+                    "--schedule-expression", f"at({at})", "--schedule-expression-timezone", "UTC",
+                    "--flexible-time-window", json.dumps({"Mode": "OFF"}),
+                    "--action-after-completion", "DELETE", "--target", json.dumps({
+                        "Arn": f"arn:aws:scheduler:::aws-sdk:eks:{target}",
+                        "RoleArn": f"arn:aws:iam::{account}:role/{role}",
+                        "Input": json.dumps(payload),
+                        "RetryPolicy": {"MaximumRetryAttempts": 30,
+                                        "MaximumEventAgeInSeconds": 86400}})]
+            for _ in range(12):
+                result = self.run(["aws", "scheduler", "update-schedule" if update
+                                   else "create-schedule", *args, "--profile", self.profile,
+                                   "--region", self.region, "--output", "json"], check=False)
+                if not result.returncode or "ConflictException" in result.stderr:
+                    break
+                time.sleep(5)
+            else:
+                raise CloudEnvError("EKS expiry schedule not created")
+            done[suffix] = at + "Z"
+        return done
 
     # -- inventory and sweep
 
@@ -345,6 +466,12 @@ class Aws:
                                  f"sova-test-expiry-{run}").get("Schedules", []):
             if scoped(schedule["Name"], run):
                 found.append(("schedule", schedule["Name"]))
+        for cluster in self.cli("eks", "list-clusters").get("clusters", []):
+            if scoped(cluster, run):
+                for group in self.cli("eks", "list-nodegroups", "--cluster-name", cluster).get(
+                        "nodegroups", []):
+                    found.append(("eks-nodegroup", f"{cluster}/{group}"))
+                found.append(("eks-cluster", cluster))
         return found
 
     def sweep(self, run, log):
@@ -356,6 +483,20 @@ class Aws:
         for name in kinds.get("schedule", []):
             self.cli("scheduler", "delete-schedule", "--name", name, check=False)
             log(f"aws schedule deleted: {name}")
+        groups = [g.split("/", 1) for g in kinds.get("eks-nodegroup", [])]
+        for cluster, group in groups:
+            self.cli("eks", "delete-nodegroup", "--cluster-name", cluster, "--nodegroup-name",
+                     group, check=False)
+        for cluster, group in groups:
+            self.run(["aws", "eks", "wait", "nodegroup-deleted", "--cluster-name", cluster,
+                      "--nodegroup-name", group, "--profile", self.profile,
+                      "--region", self.region], check=False)
+            log(f"aws eks node group deleted: {group}")
+        for cluster in kinds.get("eks-cluster", []):
+            self.cli("eks", "delete-cluster", "--name", cluster, check=False)
+            self.run(["aws", "eks", "wait", "cluster-deleted", "--name", cluster,
+                      "--profile", self.profile, "--region", self.region], check=False)
+            log(f"aws eks cluster deleted: {cluster}")
         for cluster in kinds.get("ecs-cluster", []):
             services = self.cli("ecs", "list-services", "--cluster", cluster)["serviceArns"]
             for service in services:
@@ -569,6 +710,64 @@ class Gcp:
         if state.get("instance"):
             state["backstop"] = self.backstop(lease["run"], state["instance"], expires,
                                               update=True)
+        if state.get("gke"):
+            state["gke"]["backstop"] = self._gke_backstop(lease["run"], state["gke"], expires,
+                                                          update=True)
+
+    def kubernetes(self, lease, kubeconfig):
+        """A GKE Autopilot cluster, its API reachable from this machine's address only."""
+        run = lease["run"]
+        name = f"sova-test-k8s-{run}"
+        self.g("services", "enable", "container.googleapis.com")
+        if self.g("container", "clusters", "describe", name, "--region", self.region,
+                  check=False) is None:
+            self.g("container", "clusters", "create-auto", name, "--region", self.region,
+                   f"--labels=sova-test={run}", "--enable-master-authorized-networks",
+                   f"--master-authorized-networks={lease['ip']}/32")
+        env_config = {**os.environ, "KUBECONFIG": str(kubeconfig)}
+        result = subprocess.run(["gcloud", "container", "clusters", "get-credentials", name,
+                                 "--region", self.region, "--project", self.project],
+                                env=env_config, capture_output=True, text=True, timeout=300)
+        if result.returncode:
+            raise CloudEnvError("GKE credentials not written: " +
+                                (result.stderr.strip().splitlines() or ["?"])[-1])
+        context = name + "-gke"
+        generated = f"gke_{self.project}_{self.region}_{name}"
+        self.run(["kubectl", "--kubeconfig", str(kubeconfig), "config", "delete-context",
+                  context], check=False)
+        self.run(["kubectl", "--kubeconfig", str(kubeconfig), "config", "rename-context",
+                  generated, context])
+        state = {"cluster": name, "location": self.region, "context": context}
+        state["backstop"] = self._gke_backstop(run, state, parse(lease["expires_at"]))
+        return state
+
+    def _gke_backstop(self, run, state, expires, *, update=False):
+        """A Cloud Scheduler job that deletes the cluster 45 minutes after the lease.
+        GKE takes no resource conditions here, so the expiry account may delete
+        clusters in this (test-only) project; the job names one."""
+        account = f"sova-test-expiry-{run}"
+        email = f"{account}@{self.project}.iam.gserviceaccount.com"
+        if not update:
+            self.g("projects", "add-iam-policy-binding", self.project,
+                   f"--member=serviceAccount:{email}", "--role=roles/container.clusterAdmin",
+                   "--condition=None")
+        at = expires + timedelta(minutes=45)
+        job = ["--location", self.scheduler_region, "--schedule",
+               f"{at.minute} {at.hour} {at.day} {at.month} *", "--time-zone", "Etc/UTC",
+               "--uri", (f"https://container.googleapis.com/v1/projects/{self.project}/locations/"
+                         f"{state['location']}/clusters/{state['cluster']}"),
+               "--http-method", "DELETE", "--oauth-service-account-email", email,
+               "--oauth-token-scope", "https://www.googleapis.com/auth/cloud-platform",
+               "--attempt-deadline", "60s", "--max-retry-attempts", "5"]
+        name = f"sova-test-expiry-{run}-gke"
+        verb = "update" if update or self.g("scheduler", "jobs", "describe", name, "--location",
+                                            self.scheduler_region, check=False) else "create"
+        for _ in range(24):
+            if self.g("scheduler", "jobs", verb, "http", name, *job, check=False) is not None:
+                return {"job": name, "at": iso(at)}
+            time.sleep(10)
+        self.g("scheduler", "jobs", verb, "http", name, *job)
+        return {"job": name, "at": iso(at)}
 
     # -- inventory and sweep
 
@@ -598,6 +797,10 @@ class Gcp:
             for item in self.g("dns", "managed-zones", "list") or []:
                 if scoped(item["name"], run):
                     found.append(("dns-zone", item["name"]))
+        if "container.googleapis.com" in apis:
+            for item in self.g("container", "clusters", "list") or []:
+                if scoped(item["name"], run):
+                    found.append(("gke-cluster", f"{item['name']}@{item['location']}"))
         if "cloudscheduler.googleapis.com" in apis:
             for item in self.g("scheduler", "jobs", "list", "--location",
                                self.scheduler_region) or []:
@@ -647,6 +850,10 @@ class Gcp:
             name, region = service.split("@", 1)
             self.g("run", "services", "delete", name, "--region", region, check=False)
             log(f"gcp cloud run service deleted: {name}")
+        for cluster in kinds.get("gke-cluster", []):
+            name, location = cluster.split("@", 1)
+            self.g("container", "clusters", "delete", name, "--location", location, check=False)
+            log(f"gcp gke cluster deleted: {name}")
         operations = []
         for instance in kinds.get("sql-instance", []):
             operations.append(self.g("sql", "instances", "delete", instance, "--async",
@@ -763,6 +970,35 @@ class Switch:
                          f"{self.paths.read_secret('cloudsql-root')}")
         write_private(self.paths.pgpass, "".join(line + "\n" for line in lines))
 
+    def kubernetes(self):
+        """Add a managed Kubernetes cluster in each cloud of the lease (same end,
+        same switch). Creation is idempotent: run again to resume."""
+        lease = self.lease()
+        if not lease or lease["state"] not in ("up", "partial"):
+            raise CloudEnvError("Nothing is on")
+        if not self.paths.kubeconfig.exists():
+            write_private(self.paths.kubeconfig, "")
+        providers = self.providers(list(lease["clouds"]))
+        key = {"aws": "eks", "gcp": "gke"}
+        failures = {}
+        with ThreadPoolExecutor(len(providers)) as pool:
+            futures = {name: pool.submit(p.kubernetes, lease, self.paths.kubeconfig)
+                       for name, p in providers.items()}
+            for name, future in futures.items():
+                try:
+                    lease["clouds"][name][key[name]] = future.result()
+                except Exception as error:  # noqa: BLE001 - report each cloud on its own
+                    failures[name] = str(error)
+        self.paths.kubeconfig.chmod(0o600)
+        save_json(self.paths.lease, lease)
+        for name, error in failures.items():
+            self.out(f"{name}: kubernetes FAILED - {error}")
+        for name in lease["clouds"]:
+            cluster = lease["clouds"][name].get(key[name])
+            if cluster:
+                self.out(f"{name}: {cluster['cluster']} ready as context {cluster['context']}")
+        return 1 if failures else 0
+
     def extend(self, hours):
         lease = self.lease()
         if not lease:
@@ -805,6 +1041,7 @@ class Switch:
         save_json(self.paths.history / f"{lease['run']}.json", lease)
         self.paths.lease.unlink()
         self.paths.pgpass.unlink(missing_ok=True)
+        self.paths.kubeconfig.unlink(missing_ok=True)
         for name in ("rds-master", "rds-role", "cloudsql-root", "cloudsql-role"):
             self.paths.secret(name).unlink(missing_ok=True)
         self.out(f"run {lease['run']} is down; nothing of it is left in "
@@ -886,6 +1123,13 @@ def render_env(lease, paths, config):
                f"sslmode=verify-full sslrootcert={gcp['ca']} passfile={paths.pgpass}")
         from_file("SOVA_TEST_CLOUDSQL_ROLE_PASSWORD", "cloudsql-role")
         from_file("SOVA_TEST_CLOUDSQL_ROOT_PASSWORD", "cloudsql-root")
+    contexts = {k: c["context"] for k, c in (("eks", aws.get("eks")), ("gke", gcp.get("gke")))
+                if c}
+    if contexts:
+        export("SOVA_TEST_KUBE_MANAGED_RUN", run)
+        export("SOVA_TEST_KUBE_MANAGED_KUBECONFIG", paths.kubeconfig)
+        for key, context in contexts.items():
+            export(f"SOVA_TEST_KUBE_{key.upper()}_CONTEXT", context)
     return "\n".join(out)
 
 
@@ -938,7 +1182,7 @@ def main(argv=None):
     up.add_argument("--clouds", default="aws,gcp")
     extend = sub.add_parser("extend")
     extend.add_argument("--hours", type=float, required=True)
-    for name in ("down", "expire", "status", "env"):
+    for name in ("down", "expire", "status", "env", "kubernetes"):
         sub.add_parser(name)
     args = parser.parse_args(argv)
     root = Path(os.environ.get("SOVA_TEST_ENV_STATE", Path.home() / ".sova-test-env")) / "cloud"
