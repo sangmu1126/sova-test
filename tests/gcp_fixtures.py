@@ -270,7 +270,10 @@ def identity_platform(gcp, gcp_rest):
                                                name)["keyString"]
         yield {"key": value, "rest": gcp_rest, "project": p}
     finally:
-        gcloud(gcp, "services", "api-keys", "delete", name, check=False)
+        # A key used in the last 7 days is protected from deletion unless the check is
+        # skipped (measured); this one is the session's own.
+        gcloud(gcp, "services", "api-keys", "delete", name, "--no-check-existing-usage",
+               check=False)
 
 
 def idp_password():

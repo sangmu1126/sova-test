@@ -6,6 +6,7 @@
     cloud-env.sh status                              lease, time left, what exists now
     cloud-env.sh env                                 eval "$(cloud-env.sh env)" for the tests
     cloud-env.sh kubernetes                          add an EKS and a GKE cluster to the lease
+    cloud-env.sh kubernetes-down                     remove only those clusters
     cloud-env.sh extend --hours 2                    push the end of the lease back
     cloud-env.sh down                                delete everything of this run, verify
     cloud-env.sh expire                              what the expiry agent runs
@@ -383,6 +384,49 @@ class Aws:
         state["backstop"] = self._eks_backstop(run, state, parse(lease["expires_at"]))
         return state
 
+    def kubernetes_down(self, lease, log):
+        """Remove the run's EKS cluster, node groups, schedules and roles only."""
+        run = lease["run"]
+        kinds = {}
+        for kind, ident in self.inventory(run):
+            kinds.setdefault(kind, []).append(ident)
+        for name in kinds.get("schedule", []):
+            if name.endswith(("-ng", "-eks")):
+                self.cli("scheduler", "delete-schedule", "--name", name, check=False)
+        self._sweep_clusters(kinds, log)
+        for role in (f"sova-test-eks-cluster-{run}", f"sova-test-eks-node-{run}"):
+            if role in kinds.get("iam-role", []):
+                self._delete_role(role)
+                log(f"aws role deleted: {role}")
+        self.cli("iam", "delete-role-policy", "--role-name", f"sova-test-expiry-{run}",
+                 "--policy-name", "delete-eks", check=False)
+        return [(k, i) for k, i in self.inventory(run) if k in ("eks-cluster", "eks-nodegroup")]
+
+    def _sweep_clusters(self, kinds, log):
+        groups = [g.split("/", 1) for g in kinds.get("eks-nodegroup", [])]
+        for cluster, group in groups:
+            self.cli("eks", "delete-nodegroup", "--cluster-name", cluster, "--nodegroup-name",
+                     group, check=False)
+        for cluster, group in groups:
+            self.run(["aws", "eks", "wait", "nodegroup-deleted", "--cluster-name", cluster,
+                      "--nodegroup-name", group, "--profile", self.profile,
+                      "--region", self.region], check=False)
+            log(f"aws eks node group deleted: {group}")
+        for cluster in kinds.get("eks-cluster", []):
+            self.cli("eks", "delete-cluster", "--name", cluster, check=False)
+            self.run(["aws", "eks", "wait", "cluster-deleted", "--name", cluster,
+                      "--profile", self.profile, "--region", self.region], check=False)
+            log(f"aws eks cluster deleted: {cluster}")
+
+    def _delete_role(self, role):
+        for policy in self.cli("iam", "list-role-policies", "--role-name", role)["PolicyNames"]:
+            self.cli("iam", "delete-role-policy", "--role-name", role, "--policy-name", policy)
+        for attached in self.cli("iam", "list-attached-role-policies", "--role-name", role)[
+                "AttachedPolicies"]:
+            self.cli("iam", "detach-role-policy", "--role-name", role,
+                     "--policy-arn", attached["PolicyArn"])
+        self.cli("iam", "delete-role", "--role-name", role, check=False)
+
     def _eks_backstop(self, run, state, expires, *, update=False):
         """Scheduled deletions of the node group (+30 min) and then the cluster
         (+45 min, retried while the node group is still going)."""
@@ -483,20 +527,7 @@ class Aws:
         for name in kinds.get("schedule", []):
             self.cli("scheduler", "delete-schedule", "--name", name, check=False)
             log(f"aws schedule deleted: {name}")
-        groups = [g.split("/", 1) for g in kinds.get("eks-nodegroup", [])]
-        for cluster, group in groups:
-            self.cli("eks", "delete-nodegroup", "--cluster-name", cluster, "--nodegroup-name",
-                     group, check=False)
-        for cluster, group in groups:
-            self.run(["aws", "eks", "wait", "nodegroup-deleted", "--cluster-name", cluster,
-                      "--nodegroup-name", group, "--profile", self.profile,
-                      "--region", self.region], check=False)
-            log(f"aws eks node group deleted: {group}")
-        for cluster in kinds.get("eks-cluster", []):
-            self.cli("eks", "delete-cluster", "--name", cluster, check=False)
-            self.run(["aws", "eks", "wait", "cluster-deleted", "--name", cluster,
-                      "--profile", self.profile, "--region", self.region], check=False)
-            log(f"aws eks cluster deleted: {cluster}")
+        self._sweep_clusters(kinds, log)
         for cluster in kinds.get("ecs-cluster", []):
             services = self.cli("ecs", "list-services", "--cluster", cluster)["serviceArns"]
             for service in services:
@@ -552,13 +583,7 @@ class Aws:
                     break
                 time.sleep(10)
         for role in kinds.get("iam-role", []):
-            for policy in self.cli("iam", "list-role-policies", "--role-name", role)["PolicyNames"]:
-                self.cli("iam", "delete-role-policy", "--role-name", role, "--policy-name", policy)
-            for attached in self.cli("iam", "list-attached-role-policies", "--role-name", role)[
-                    "AttachedPolicies"]:
-                self.cli("iam", "detach-role-policy", "--role-name", role,
-                         "--policy-arn", attached["PolicyArn"])
-            self.cli("iam", "delete-role", "--role-name", role, check=False)
+            self._delete_role(role)
             log(f"aws role deleted: {role}")
         return self.inventory(run)
 
@@ -741,6 +766,23 @@ class Gcp:
         state["backstop"] = self._gke_backstop(run, state, parse(lease["expires_at"]))
         return state
 
+    def kubernetes_down(self, lease, log):
+        """Remove the run's GKE cluster and its scheduled deletion only."""
+        run = lease["run"]
+        self.g("scheduler", "jobs", "delete", f"sova-test-expiry-{run}-gke", "--location",
+               self.scheduler_region, check=False)
+        for kind, ident in self.inventory(run):
+            if kind == "gke-cluster":
+                name, location = ident.split("@", 1)
+                self.g("container", "clusters", "delete", name, "--location", location,
+                       check=False)
+                log(f"gcp gke cluster deleted: {name}")
+        email = f"sova-test-expiry-{run}@{self.project}.iam.gserviceaccount.com"
+        self.g("projects", "remove-iam-policy-binding", self.project,
+               f"--member=serviceAccount:{email}", "--role=roles/container.clusterAdmin", "--all",
+               check=False)
+        return [(k, i) for k, i in self.inventory(run) if k == "gke-cluster"]
+
     def _gke_backstop(self, run, state, expires, *, update=False):
         """A Cloud Scheduler job that deletes the cluster 45 minutes after the lease.
         GKE takes no resource conditions here, so the expiry account may delete
@@ -880,7 +922,9 @@ class Gcp:
             self.rest("DELETE", f"{self.TENANTS}/projects/{self.project}/tenants/{tenant}")
             log(f"gcp identity tenant deleted: {tenant}")
         for key in kinds.get("api-key", []):
-            self.g("services", "api-keys", "delete", key, check=False)
+            # Keys used in the last 7 days refuse deletion unless the usage check is skipped.
+            self.g("services", "api-keys", "delete", key, "--no-check-existing-usage",
+                   check=False)
             log(f"gcp api key deleted: {key.rsplit('/', 1)[-1]}")
         for role, member in self._bindings(run):
             self.g("projects", "remove-iam-policy-binding", self.project, f"--member={member}",
@@ -998,6 +1042,30 @@ class Switch:
             if cluster:
                 self.out(f"{name}: {cluster['cluster']} ready as context {cluster['context']}")
         return 1 if failures else 0
+
+    def kubernetes_down(self):
+        """Remove the managed clusters and keep everything else of the lease."""
+        lease = self.lease()
+        if not lease:
+            self.out("nothing is on")
+            return 0
+        key = {"aws": "eks", "gcp": "gke"}
+        left = {}
+        for name, provider in self.providers(list(lease["clouds"])).items():
+            remaining = provider.kubernetes_down(lease, self.out)
+            if remaining:
+                left[name] = remaining
+            else:
+                lease["clouds"][name].pop(key[name], None)
+        save_json(self.paths.lease, lease)
+        if left:
+            for name, items in left.items():
+                for kind, ident in items:
+                    self.out(f"{name}: still there - {kind} {ident}")
+            return 2
+        self.paths.kubeconfig.unlink(missing_ok=True)
+        self.out("managed clusters removed; the rest of the lease stays")
+        return 0
 
     def extend(self, hours):
         lease = self.lease()
@@ -1182,7 +1250,7 @@ def main(argv=None):
     up.add_argument("--clouds", default="aws,gcp")
     extend = sub.add_parser("extend")
     extend.add_argument("--hours", type=float, required=True)
-    for name in ("down", "expire", "status", "env", "kubernetes"):
+    for name in ("down", "expire", "status", "env", "kubernetes", "kubernetes-down"):
         sub.add_parser(name)
     args = parser.parse_args(argv)
     root = Path(os.environ.get("SOVA_TEST_ENV_STATE", Path.home() / ".sova-test-env")) / "cloud"
@@ -1202,7 +1270,7 @@ def main(argv=None):
             return switch.up(args.hours, clouds)
         if args.command == "extend":
             return switch.extend(args.hours)
-        return getattr(switch, args.command)()
+        return getattr(switch, args.command.replace("-", "_"))()
     except CloudEnvError as error:
         print(f"cloud-env: {error}", file=sys.stderr)
         return 1

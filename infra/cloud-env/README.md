@@ -10,6 +10,7 @@ infra/cloud-env/cloud-env.sh up --clouds gcp       # 한쪽만
 infra/cloud-env/cloud-env.sh status                # 남은 시간, 지금 클라우드에 있는 이 실행의 자원
 eval "$(infra/cloud-env/cloud-env.sh env)"         # 실측 시험이 읽는 환경 변수
 infra/cloud-env/cloud-env.sh kubernetes           # 임대에 EKS·GKE 클러스터를 더함(아래)
+infra/cloud-env/cloud-env.sh kubernetes-down      # 클러스터만 끔(나머지 임대는 그대로)
 infra/cloud-env/cloud-env.sh extend --hours 2      # 끝나는 시각을 미룸(클라우드 쪽 예약도 함께)
 infra/cloud-env/cloud-env.sh down                  # 이 실행의 자원을 모두 지우고 남은 것이 없는지 확인
 ```
