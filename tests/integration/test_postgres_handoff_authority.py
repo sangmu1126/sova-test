@@ -35,11 +35,14 @@ def test_signed_evidence_drives_the_handoff_to_completion(handoff):
     h = handoff
     record = h["coordinator"].open(h["revision"], h["plan"], actor_id="coordinator")
     assert record.state == HandoffState.SOURCE_ACTIVE
+    measured_at = {o["id"]: o["required_at"]
+                   for o in json.loads(h["revision"].canonical)["obligations"]}
     for op in h["ops"]:
-        if op["required_evidence"]:
+        fresh = [i for i in op["required_evidence"] if measured_at[i] == op["operation_id"]]
+        if fresh:  # evidence measured at an earlier step is re-checked, not re-taken
             with pytest.raises(ContractError, match="evidence"):
                 step(h, op)
-        for obligation_id in op["required_evidence"]:
+        for obligation_id in fresh:
             h["prove"](obligation_id)
         record = step(h, op)
     assert record.state == HandoffState.HANDOFF_COMPLETE

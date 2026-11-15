@@ -318,3 +318,28 @@ def test_image_patch_uses_pinned_tls_json_patch_and_exact_registered_path(api):
     with pytest.raises(ContractError):
         transport.patch_image(operations)
     assert len(state["requests"]) == 5
+
+
+def test_each_registered_address_is_tried_in_turn_and_no_other(api, monkeypatch):
+    """A managed API endpoint has several addresses (EKS: one per zone). When
+    the first registered one refuses, the next registered one is used; a
+    request never goes to an address outside the registration."""
+    import socket as sockets
+
+    reg, ca, state = api
+    reg = replace(reg, approved_addresses=("127.0.0.1", "192.0.2.1"))  # sorted: loopback first
+    tried, real = [], sockets.create_connection
+
+    def connect(target, timeout=None, source_address=None):
+        tried.append(target[0])
+        if target[0] == "127.0.0.1" and len(tried) == 1:
+            raise ConnectionRefusedError("first address down")
+        if target[0] == "192.0.2.1":
+            return real(("127.0.0.1", target[1]), timeout=timeout)  # stands in for zone b
+        return real(target, timeout=timeout)
+
+    monkeypatch.setattr("sova.adapters.kubernetes.https.socket.create_connection", connect)
+    transport = KubernetesHTTPS(reg, ca_pem=ca, token_provider=lambda: "test-token")
+    transport.get("/api/v1/namespaces/orders", {}, timeout=2)
+    assert tried == ["127.0.0.1", "192.0.2.1"]
+    assert set(tried) <= set(reg.approved_addresses)

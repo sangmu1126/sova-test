@@ -32,7 +32,9 @@ from sova.domain.service_contracts import MigrationProfile, ServiceContract
 from sova.domain.system_graph import ResourceKind
 
 
-COMPILER_VERSION = "sova-plan-compiler.v1"
+COMPILER_VERSION = "sova-plan-compiler.v2"  # v2: target controls measured before the pause
+# Target controls whose test needs the business data on the target (ADR-0003).
+DATA_BOUND_CONTROLS = frozenset({"tested_restore"})
 MAX_PLAN_BYTES = 262144
 PRE, POST = "pre_activation", "post_activation_intent"
 
@@ -213,9 +215,25 @@ def _obligations(spec, steps, *, identity_unit=False):
     for invariant in sorted(invariants, key=lambda i: i["id"]):
         result.append(ob(f"business.{invariant['id']}", "business_invariant",
                          "verify_final_state"))
+    # FR-10 and §15.3 (ADR-0003): the target's own controls belong to its
+    # preparation (TARGET_PREPARED), and the cutover re-checks that every
+    # required condition is still valid. So they are measured at the last step
+    # before writes pause, and the activation intent requires that same
+    # evidence to be current there (unexpired, no change to the target since),
+    # without measuring it again inside the window where writes are paused.
+    # A control whose test needs the moved data (a restore drill) moves out of
+    # the window only where the data reaches the target before the pause
+    # (a sync step); a drill on an empty target would prove nothing.
+    order = [s.step_id for s in steps]
+    pause = order.index("pause_admission") if "pause_admission" in order else 0
+    before_pause = order[pause - 1] if pause > 0 else "record_activation_intent"
+    data_before_pause = "start_sync" in order[:pause]
     for control in sorted(spec["security"]["required_controls"]):
-        result.append(ob(f"security.{control}", "target_control_test",
-                         "record_activation_intent"))
+        at_step = (before_pause if control not in DATA_BOUND_CONTROLS or data_before_pause
+                   else "record_activation_intent")
+        result.append(ob(f"security.{control}", "target_control_test", at_step,
+                         **({"still_valid_at": "record_activation_intent"}
+                            if at_step != "record_activation_intent" else {})))
     effects = () if identity_unit else spec["business"]["external_effects"]
     for effect in sorted(effects, key=lambda e: e["id"]):
         result.append(ob(f"effect.{effect['id']}", "external_result_lookup",
@@ -503,6 +521,8 @@ def _freeze(contract, snapshot, boundary, manifest, qualification, source, targe
     evidence_by_step = {}
     for o in obligations:
         evidence_by_step.setdefault(o["required_at"], []).append(o["id"])
+        if o.get("still_valid_at"):  # the same evidence, re-checked there, not re-measured
+            evidence_by_step.setdefault(o["still_valid_at"], []).append(o["id"])
     operations, previous = [], None
     for step in template:
         reads, writes = _sets(step, members, resources, identity_unit=identity_unit)
@@ -531,6 +551,8 @@ def _freeze(contract, snapshot, boundary, manifest, qualification, source, targe
         previous = ids[step.step_id]
     for o in obligations:
         o["required_at"] = ids[o["required_at"]]
+        if o.get("still_valid_at"):
+            o["still_valid_at"] = ids[o["still_valid_at"]]
     valid_until = min(qualification.expires_at, snapshot.graph.valid_until)
     document = {
         "schema_version": 1,
@@ -609,6 +631,11 @@ def _check_consistency(document, members):
                 raise ContractError("Compiler consistency violation")
     if any(o["required_at"] not in seen for o in document["obligations"]):
         raise ContractError("Compiler consistency violation")
+    order = [op["operation_id"] for op in ops]
+    for o in document["obligations"]:
+        if "still_valid_at" in o and (o["still_valid_at"] not in seen or order.index(
+                o["still_valid_at"]) <= order.index(o["required_at"])):
+            raise ContractError("Compiler consistency violation")
     boundaries = [o["recovery_boundary"] for o in ops]
     first_post = boundaries.index(POST)
     if any(b != POST for b in boundaries[first_post:]) or ops[first_post]["kind"] != (

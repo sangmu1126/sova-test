@@ -146,6 +146,8 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
                 journal, engine = executor_for(lease)
                 observed[op["kind"]] = effect.observation.observed_at
                 for oid in op["required_evidence"]:
+                    if obligations[oid]["required_at"] != op["operation_id"]:
+                        continue  # re-checked from the evidence of an earlier step
                     passed, observation = measure(obligations[oid])
                     if not passed:
                         observed.setdefault("failed", []).append((oid, observation))
@@ -176,6 +178,8 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
             if after_effect:
                 after_effect(op)
         for oid in op["required_evidence"]:
+            if obligations[oid]["required_at"] != op["operation_id"]:
+                continue  # measured at an earlier step; its evidence is re-checked, not re-taken
             passed, observation = measure(obligations[oid])
             if not passed:  # kept for a failure message
                 observed.setdefault("failed", []).append((oid, observation))

@@ -118,16 +118,30 @@ class KubernetesHTTPS:
 
         # TLS SNI/hostname verification still uses endpoint.hostname. Socket uses
         # only registered numeric IPs; DNS, environment proxies and redirects cannot change it.
+        # A managed API endpoint has several addresses (EKS: one per zone); each
+        # registered one is tried in turn within the same deadline, never any other.
         def connect_peer(address, timeout, source_address=None):
-            peer = socket.create_connection(
-                (reg.approved_addresses[0], endpoint.port or 443), timeout=timeout
-            )
-            left = deadline - time.monotonic()
-            if left <= 0:
-                peer.close()
-                raise ContractError("Kubernetes connect deadline exceeded")
-            peer.settimeout(left)
-            return peer
+            failure = None
+            for registered in reg.approved_addresses:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    break
+                try:
+                    peer = socket.create_connection(
+                        (registered, endpoint.port or 443), timeout=min(timeout, left)
+                    )
+                except OSError as error:
+                    failure = error
+                    continue
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    peer.close()
+                    break
+                peer.settimeout(left)
+                return peer
+            if failure is not None and deadline - time.monotonic() > 0:
+                raise failure  # every registered address refused
+            raise ContractError("Kubernetes connect deadline exceeded")
 
         connection._create_connection = connect_peer
         try:

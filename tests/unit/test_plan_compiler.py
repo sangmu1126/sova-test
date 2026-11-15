@@ -101,10 +101,24 @@ def test_contract_requirements_become_gate_obligations_not_assumptions(world):
     by_id = {o["id"]: o for o in plan["obligations"]}
     at = {o["operation_id"]: o["kind"] for o in plan["operations"]}
     spec = world["contract"].document["spec"]
+    intent = next(o for o in plan["operations"] if o["kind"] == "record_activation_intent")
+    paused = {"pause_admission", "fence_source_writes", "copy_content", "apply_final_changes",
+              "verify_final_state"}
     for control in spec["security"]["required_controls"]:
-        assert at[by_id[f"security.{control}"]["required_at"]] == (
-            "record_activation_intent"
-        )
+        obligation = by_id[f"security.{control}"]
+        if control == "tested_restore":
+            # Offline copy: the target is empty before the pause, a drill there
+            # proves nothing, so the restore control stays at the intent.
+            assert at[obligation["required_at"]] == "record_activation_intent"
+            assert "still_valid_at" not in obligation
+            continue
+        # Measured with the target's preparation, before writes pause (FR-10, §15.3)...
+        assert at[obligation["required_at"]] == "stage_target"
+        # ...and the activation intent requires that evidence to be current there.
+        assert at[obligation["still_valid_at"]] == "record_activation_intent"
+        assert obligation["id"] in intent["required_evidence"]
+        assert not any(obligation["id"] in op["required_evidence"]
+                       for op in plan["operations"] if op["kind"] in paused)
     for name in spec["data"]["protected_sets"]:
         assert at[by_id[f"data.{name}"]["required_at"]] == "verify_final_state"
     assert at[by_id["residency.business_data"]["required_at"]] == "stage_target"
@@ -119,7 +133,8 @@ def test_contract_requirements_become_gate_obligations_not_assumptions(world):
     )
     assert plan["recovery"]["source_retirement"] == "separate_approval_required"
     for op in plan["operations"]:
-        expected = sorted(i for i, o in by_id.items() if o["required_at"] == op["operation_id"])
+        expected = sorted(i for i, o in by_id.items() if op["operation_id"] in (
+            o["required_at"], o.get("still_valid_at")))
         assert op["required_evidence"] == expected
 
 
@@ -239,3 +254,14 @@ def test_untyped_inputs_or_tenant_mismatch_are_rejected(world):
         compile_(world, expected_tenant="another-tenant")
     with pytest.raises(ContractError):
         compile_(world, manifest=None)
+
+
+def test_snapshot_cdc_measures_target_controls_after_the_initial_sync(now):
+    """With snapshot-cdc the target already holds the synced data before the
+    pause; its controls (restore drill included) are measured on it at the
+    cutover check, the last step before writes pause (CUTOVER_READY)."""
+    plan = compile_(signed(build_world(now, strategy="snapshot-cdc")))["plan"]
+    at = {o["operation_id"]: o["kind"] for o in plan["operations"]}
+    restore = next(o for o in plan["obligations"] if o["id"] == "security.tested_restore")
+    assert at[restore["required_at"]] == "check_cutover_ready"
+    assert at[restore["still_valid_at"]] == "record_activation_intent"
