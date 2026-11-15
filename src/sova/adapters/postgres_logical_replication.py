@@ -33,6 +33,7 @@ in the target's subscription catalog, so it should carry no password (use a
 password file or certificate). It never appears in evidence.
 """
 
+from contextlib import contextmanager
 import hashlib
 import time
 
@@ -62,10 +63,13 @@ class PostgresLogicalReplicationAdapter(PostgresOfflineCopyAdapter):
         self.name = replication_name(self.source_db, self.target_db)
 
     # -- observations ----------------------------------------------------------
+    @contextmanager
     def _autocommit(self, which):
-        conn = self.connect(self._db(which))
-        conn.autocommit = True
-        return conn
+        """A connection outside a transaction block (publication, subscription
+        and slot commands), whatever the connection factory gives."""
+        with self.connect(self._db(which)) as conn:
+            conn.autocommit = True
+            yield conn
 
     def _wal_level(self):
         with self.connect(self.source_db) as conn:

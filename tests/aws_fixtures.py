@@ -92,7 +92,9 @@ def cloud_business(aws, postgres_database):
     if f"sova-test-pg-{aws['run']}." not in rds:
         raise pytest.UsageError("Only this run's RDS instance may be used")
     # The source on RDS; the target, a restore scratch and another tenant on premises.
-    return managed_business(postgres_database[0], rds, password)
+    business = managed_business(postgres_database[0], rds, password)
+    yield business
+    business["release"]()
 
 
 def create_bucket_in(aws, client, bucket, **extra):

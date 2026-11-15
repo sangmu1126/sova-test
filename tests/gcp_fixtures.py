@@ -74,7 +74,9 @@ def cloudsql(gcp):
 
 @pytest.fixture
 def cloudsql_business(cloudsql, postgres_database):
-    return managed_business(postgres_database[0], cloudsql["dsn"], cloudsql["role_password"])
+    business = managed_business(postgres_database[0], cloudsql["dsn"], cloudsql["role_password"])
+    yield business
+    business["release"]()
 
 
 POD_CA = "/tmp/sova-cloud/ca.pem"
@@ -400,7 +402,8 @@ def cross_cloud_business(request, aws, cloudsql, postgres_database):
     source, target = ((rds, cloudsql["dsn"]) if request.param == "aws-to-gcp"
                       else (cloudsql["dsn"], rds))
     business = managed_business(postgres_database[0], source, password, target=target)
-    return {**business, "direction": request.param}
+    yield {**business, "direction": request.param}
+    business["release"]()
 
 
 # -- an external Application Load Balancer in front of two Cloud Run sides ------------

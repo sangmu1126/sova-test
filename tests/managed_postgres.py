@@ -12,6 +12,8 @@ from postgres_business import prepare
 import psycopg
 from psycopg import sql
 
+from sova.adapters.postgres_connections import ReusedConnections
+
 
 def managed_business(local, remote, password, *, target=None):
     """``target``, when given, is a second managed server that holds the
@@ -38,8 +40,10 @@ def managed_business(local, remote, password, *, target=None):
                 admin.execute(sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(
                     sql.Identifier(names["other"])))
 
-    def connect(database):
-        return psycopg.connect(servers[database], dbname=database)
+    # The platform's administrative connections are reused (ADR-0004 follow-up);
+    # role probes (connect_as) always open a fresh session.
+    connect = ReusedConnections(
+        lambda database: psycopg.connect(servers[database], dbname=database))
 
     def connect_as(database, role):
         secret = secrets[servers[database]]
@@ -49,4 +53,4 @@ def managed_business(local, remote, password, *, target=None):
     prepare(names, app, batch, connect, connect_as,
             schema_on=(names["src"], names["tgt"], names["scratch"]))
     return dict(names=names, app=app, batch=batch, connect=connect, connect_as=connect_as,
-                servers=servers, password=password)
+                servers=servers, password=password, release=connect.close)
