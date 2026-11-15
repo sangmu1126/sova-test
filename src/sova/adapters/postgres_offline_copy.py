@@ -33,11 +33,11 @@ UNKNOWN: current state alone never proves that an action had no effect
 it is a reference for one PostgreSQL profile, not a general data mover.
 """
 
-import hashlib
 import time
 
 from psycopg import sql
 
+from sova.adapters.postgres_digest import client_digest, table_digest
 from sova.domain.contracts import ContractError, EffectObservation, EffectStatus, canonical_json
 
 ACTIONS = frozenset({"stage_target", "verify_return_target", "start_sync", "pause_admission",
@@ -48,14 +48,8 @@ _WRITE = ("INSERT", "UPDATE", "DELETE", "TRUNCATE")
 
 
 def _content_digest(texts):
-    """Row count and SHA-256 over every row's text form, sorted bytewise and
-    length-framed. Equal content gives an equal digest whatever the physical
-    row order, the declared key's uniqueness or the server's collation."""
-    rows = sorted(text.encode() for text in texts)
-    h = hashlib.sha256()
-    for row in rows:
-        h.update(len(row).to_bytes(8, "big") + row)
-    return {"rows": len(rows), "sha256": h.hexdigest()}
+    """Kept for callers that hold row texts already; see ``postgres_digest``."""
+    return client_digest(texts)
 
 
 class PostgresOfflineCopyAdapter:
@@ -141,9 +135,7 @@ class PostgresOfflineCopyAdapter:
         out = {}
         with self.connect(self._db(which)) as conn:
             for table, _ in self.tables:
-                rows = conn.execute(sql.SQL("SELECT t::text FROM {} t").format(
-                    sql.Identifier(table))).fetchall()
-                out[table] = _content_digest(text for (text,) in rows)
+                out[table] = table_digest(conn, table)  # on the server: only the hash travels
         return out
 
     def _structure(self, which):

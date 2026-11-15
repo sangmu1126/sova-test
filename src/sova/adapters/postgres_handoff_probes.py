@@ -16,6 +16,7 @@ import hashlib
 import psycopg
 from psycopg import sql
 
+from sova.adapters.postgres_digest import table_digest
 from sova.domain.contracts import ContractError, canonical_json
 
 
@@ -77,14 +78,10 @@ class PostgresHandoffProbes:
 
     def _rows(self, which, table, *, database=None):
         """Content as a multiset: row texts sorted bytewise and length-framed, so
-        neither physical order nor a non-unique key can make equal content differ."""
+        neither physical order nor a non-unique key can make equal content
+        differ; computed on the server where the table is small enough."""
         with self.admin_connect(database or self._db(which)) as conn:
-            rows = sorted(text.encode() for (text,) in conn.execute(
-                sql.SQL("SELECT t::text FROM {} t").format(sql.Identifier(table))))
-        h = hashlib.sha256()
-        for row in rows:
-            h.update(len(row).to_bytes(8, "big") + row)
-        return {"rows": len(rows), "sha256": h.hexdigest()}
+            return table_digest(conn, table)
 
     def content_equal(self, table):
         if table not in dict(self.tables):
