@@ -1,6 +1,6 @@
 """A managed PostgreSQL in a cloud (RDS, Cloud SQL) as the source of the
 business world; the target, a restore scratch and another tenant stay on the
-local server (on premises).
+local server (on premises), or on a second managed server in another cloud.
 
 The managed server is administered by its master user, which is not a
 superuser there; the writer roles it creates log in with a password.
@@ -13,13 +13,17 @@ import psycopg
 from psycopg import sql
 
 
-def managed_business(local, remote, password):
+def managed_business(local, remote, password, *, target=None):
+    """``target``, when given, is a second managed server that holds the
+    target side instead of the local one (a handoff between two clouds)."""
     suffix = uuid4().hex[:10]
     names = {k: f"{k}_{suffix}" for k in ("src", "tgt", "scratch", "other")}
     app, batch = "orders_app_" + suffix, "orders_batch_" + suffix
-    servers = {names["src"]: remote, **{names[k]: local for k in ("tgt", "scratch", "other")}}
+    on_target = target or local
+    servers = {names["src"]: remote, **{names[k]: on_target for k in ("tgt", "scratch", "other")}}
+    secrets = {remote: password, on_target: password if target else None}
     for dsn, databases, secret in ((remote, ("src",), password),
-                                   (local, ("tgt", "scratch", "other"), None)):
+                                   (on_target, ("tgt", "scratch", "other"), secrets[on_target])):
         with psycopg.connect(dsn, autocommit=True) as admin:
             for role in (app, batch):
                 admin.execute(sql.SQL("CREATE ROLE {} LOGIN" + (" PASSWORD {}" if secret else ""))
@@ -38,7 +42,8 @@ def managed_business(local, remote, password):
         return psycopg.connect(servers[database], dbname=database)
 
     def connect_as(database, role):
-        extra = {"password": password} if servers[database] is remote else {}
+        secret = secrets[servers[database]]
+        extra = {"password": secret} if secret else {}
         return psycopg.connect(servers[database], dbname=database, user=role, **extra)
 
     prepare(names, app, batch, connect, connect_as,

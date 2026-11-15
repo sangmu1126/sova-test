@@ -363,3 +363,22 @@ def gcs_writers(gcp, gcp_rest):
 def gcs_stores(gcp, gcp_rest, gcs_writers):
     return {"admin": gcp_rest, "as": gcs_writers["as"], "members": gcs_writers["members"],
             "region": gcp["region"], "project": gcp["project"], "run": gcp["run"]}
+
+
+# -- between the two clouds ---------------------------------------------------------------
+
+
+@pytest.fixture(params=["aws-to-gcp", "gcp-to-aws"])
+def cross_cloud_business(request, aws, cloudsql, postgres_database):
+    """The business world with its source in one cloud and its target, restore
+    scratch and other tenant in the other: RDS and Cloud SQL of this run."""
+    rds, password = os.environ.get("SOVA_TEST_RDS_DSN"), os.environ.get(
+        "SOVA_TEST_RDS_ROLE_PASSWORD")
+    if not rds or not password:
+        pytest.skip("SOVA_TEST_RDS_DSN and SOVA_TEST_RDS_ROLE_PASSWORD are required")
+    if f"sova-test-pg-{aws['run']}." not in rds:
+        raise pytest.UsageError("Only this run's RDS instance may be used")
+    source, target = ((rds, cloudsql["dsn"]) if request.param == "aws-to-gcp"
+                      else (cloudsql["dsn"], rds))
+    business = managed_business(postgres_database[0], source, password, target=target)
+    return {**business, "direction": request.param}

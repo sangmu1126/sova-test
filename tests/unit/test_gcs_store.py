@@ -141,8 +141,10 @@ def test_only_cannot_access_is_denied_and_only_can_access_is_writable():
     a = access(store)
     store.access = {"app@p.iam.gserviceaccount.com": "CANNOT_ACCESS",
                     "batch@p.iam.gserviceaccount.com": "UNKNOWN_CONDITIONAL"}
+    assert a.denied(("app", "other")) == {"app": False, "other": False}  # nothing denied yet
+    a.deny("PauseAdmission", ("other",))
     assert a.denied(("app", "other")) == {"app": True, "other": False}
-    assert a.denied(("app",), by="FenceWrites") == {"app": False}  # no marker yet
+    assert a.denied(("app",), by="FenceWrites") == {"app": False}  # not that marker
     a.deny("FenceWrites", ("app",))
     assert a.denied(("app",), by="FenceWrites") == {"app": True}
     assert a.writable_by("other") is False
@@ -217,3 +219,14 @@ def test_a_fresh_grant_is_not_yet_writable():
     assert a.writable_by("app") is False
     clock.now += 60
     assert a.writable_by("app") is True
+
+
+def test_a_bucket_nobody_may_write_is_not_staged_until_the_handoff_denies():
+    store = Store()
+    store.policy["bindings"] = []
+    store.access = {"app@p.iam.gserviceaccount.com": "CANNOT_ACCESS",
+                    "batch@p.iam.gserviceaccount.com": "CANNOT_ACCESS"}
+    a = access(store, window=0)
+    assert a.denied(("app", "other")) == {"app": False, "other": False}
+    a.deny("TargetNoAccess", ("app", "other"))
+    assert a.denied(("app", "other")) == {"app": True, "other": True}

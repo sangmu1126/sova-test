@@ -477,11 +477,16 @@ class GcsBucketIamAccess:
         return answer.get("overallAccessState", "UNKNOWN")
 
     def denied(self, principals, *, by=None):
-        """``by`` also requires the handoff's own marker of that name."""
+        """A denial counts only where the handoff has denied (its marker, of
+        ``by`` when named): with allow-only IAM a principal nobody granted
+        anything is also unable to write, and that incidental state is not the
+        handoff's postcondition (a pre-created empty bucket is not staged)."""
         names = {p: self._p(p) for p in principals}  # an unknown writer is an error
         bucket, policy = self._bucket(), self._policy()
+        labels = (bucket or {}).get("labels") or {}
+        markers = {k for k in labels if k.startswith(MARKER) and k not in _BOOKKEEPING}
         if bucket is None or policy is None or not self._settled(bucket, policy) or (
-                by is not None and self._marker(by) not in (bucket.get("labels") or {})):
+                self._marker(by) not in markers if by is not None else not markers):
             return dict.fromkeys(names, False)
         return {p: all(self._access(member, permission) == "CANNOT_ACCESS"
                        for permission in _WRITE) for p, member in names.items()}
