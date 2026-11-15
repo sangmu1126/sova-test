@@ -7,6 +7,11 @@ after), each step's obligations measured and signed as evidence, and the
 authority advanced only by the coordinator. Exactly one worker holds a
 handoff at a time; the others skip it (``ExecutionBusy``) and take others.
 
+While a step runs, a keeper thread renews the lease, so a step may take
+longer than one lease (a large copy), but never longer than ``max_step_seconds``:
+past that the keeper stops, the lease runs out, and liveness (no progress)
+restarts the worker, whose successor recovers the step.
+
 When the holder dies, its lease expires. If it died between steps, the next
 worker simply takes the lease. If it died during a step, the ledger has an
 effect in flight and the database asks for recovery: a recovery lease is
@@ -23,6 +28,7 @@ from datetime import datetime, timedelta
 import json
 import logging
 import threading
+import time
 from uuid import uuid4
 
 from sova.adapters.postgres_compiled_plans import PostgresCompiledPlans
@@ -41,6 +47,7 @@ from sova.domain.contracts import ContractError, ExecutionPermit, identifier, ut
 from sova.domain.evidence import EvidenceRecord, VerificationResult
 from sova.domain.handoff_authority import HandoffState
 from sova.ports.execution import ExecutionBusy, RecoveryRequired
+from sova.ports.operations import LeaseLost
 from sova.service.control_plane import ControlPlane
 
 log = logging.getLogger("sova.worker")
@@ -67,6 +74,39 @@ class AdapterCatalog:
         return self.factories[adapter_id](tenant_id, application_id, revision)
 
 
+class LeaseKeeper:
+    """Renews an execution lease from a thread while one step runs."""
+
+    def __init__(self, ownership, lease, *, lease_seconds, max_seconds):
+        self.ownership, self.lease = ownership, lease
+        self.lease_seconds, self.max_seconds = lease_seconds, max_seconds
+        self.done = threading.Event()
+        self.thread = threading.Thread(target=self._keep, name="lease-keeper", daemon=True)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.done.set()
+        self.thread.join(timeout=10)
+
+    def _keep(self):
+        until = time.monotonic() + self.max_seconds
+        while not self.done.wait(max(1.0, self.lease_seconds / 3)):
+            if time.monotonic() > until:
+                log.error("step of %s ran past %ss; the lease is left to expire",
+                          self.lease.operation_id, self.max_seconds)
+                return
+            try:
+                self.ownership.renew(self.lease, lease_seconds=self.lease_seconds)
+            except LeaseLost:
+                log.error("lease of %s lost during a step", self.lease.operation_id)
+                return
+            except Exception:  # noqa: BLE001 - a database hiccup; the next try may pass
+                log.exception("renewing the lease of %s failed", self.lease.operation_id)
+
+
 def permit_for(command):
     return ExecutionPermit(command.scope, command.operation_id, command.plan_digest,
                            command.fingerprint, command.fencing_epoch, command.expires_at)
@@ -74,15 +114,19 @@ def permit_for(command):
 
 class HandoffWorker:
     def __init__(self, connect, *, settings, catalog, signer, clock, owner_id=None,
-                 quiescence=None, lease_seconds=120):
+                 quiescence=None, lease_seconds=120, max_step_seconds=600):
         if not isinstance(catalog, AdapterCatalog):
             raise ContractError("An adapter catalog is required")
         self.connect, self.settings, self.catalog = connect, settings, catalog
         self.signer, self.clock = signer, clock
         self.owner_id = identifier(owner_id or "worker-" + uuid4().hex[:12], "owner_id")
         self.quiescence, self.lease_seconds = quiescence, lease_seconds
+        if not lease_seconds < max_step_seconds:
+            raise ContractError("A step may run longer than one lease, not shorter")
+        self.max_step_seconds = max_step_seconds
         self.plane = ControlPlane(connect, settings=settings, clock=clock)
         self.stopping = threading.Event()
+        self.progressed = time.monotonic()  # last poll or step boundary (liveness)
 
     # -- finding work ------------------------------------------------------------------
     def open_units(self, tenant):
@@ -207,58 +251,88 @@ class HandoffWorker:
         obligations = {o["id"]: o for o in doc["obligations"]}
         execution = None
         while not self.stopping.is_set():
+            self.progressed = time.monotonic()
             record = store.current(application_id, unit_digest)
             if record.state in _BLOCKED or record.next_operation >= len(doc["operations"]):
                 return record
             op = doc["operations"][record.next_operation]
             lease = ownership.renew(lease, lease_seconds=self.lease_seconds)
-            journal, engine = self._executor(ownership, lease)
-            effect = None
-            if recovered is not None and recovered[0] == record.next_operation:
-                # Reconciled after a lost worker: its readback decides, nothing re-runs.
-                effect, recovered = recovered[1], None
-                if execution is None:
-                    execution = self.catalog.build(tenant, application_id,
-                                                   op["adapter"]["adapter_id"], revision)
-            elif op["adapter"]:
-                if execution is None:
-                    execution = self.catalog.build(tenant, application_id,
-                                                   op["adapter"]["adapter_id"], revision)
-                command = coordinator.next_command(revision, plan, operation_id=operation,
-                                                   epoch=lease.epoch)
-                try:
-                    effect = engine.execute(command, permit_for(command), execution.adapter)
-                except UncertainEffect:
-                    held = journal.get(command)
-                    return coordinator.advance_from_ledger(revision, plan, effect=held,
-                                                           actor_id=self.owner_id)
-            elif execution is None and any(
-                    obligations[i]["required_at"] == op["operation_id"]
-                    for i in op["required_evidence"]):
-                adapter_op = next(o for o in doc["operations"] if o["adapter"])
-                execution = self.catalog.build(tenant, application_id,
-                                               adapter_op["adapter"]["adapter_id"], revision)
-            times = None
-            for oid in op["required_evidence"]:
-                if obligations[oid]["required_at"] != op["operation_id"]:
-                    continue  # measured at an earlier step; re-checked, not re-taken
-                if times is None:
-                    times = self._step_times(lifecycle, tenant, application_id, operation)
-                passed, observation = execution.measure(obligations[oid], times)
-                self._prove(tenant, application_id, plan, oid, passed, observation)
-            record = coordinator.advance_from_ledger(revision, plan, effect=effect,
-                                                     actor_id=self.owner_id)
-            if record.state == HandoffState.SAFE_HOLD:
+            with LeaseKeeper(ownership, lease, lease_seconds=self.lease_seconds,
+                             max_seconds=self.max_step_seconds):
+                record, recovered, execution, done = self._step(
+                    tenant, application_id, lifecycle, plan, revision, doc, operation,
+                    ownership, lease, coordinator, record, op, obligations, recovered,
+                    execution)
+            if done:
                 return record
         return store.current(application_id, unit_digest)
 
+    def _step(self, tenant, application_id, lifecycle, plan, revision, doc, operation,
+              ownership, lease, coordinator, record, op, obligations, recovered, execution):
+        """One step: its effect (or the recovered one), its measured evidence,
+        the authority advanced. Returns (record, recovered, execution, stop)."""
+        journal, engine = self._executor(ownership, lease)
+        effect = None
+        if recovered is not None and recovered[0] == record.next_operation:
+            # Reconciled after a lost worker: its readback decides, nothing re-runs.
+            effect, recovered = recovered[1], None
+            if execution is None:
+                execution = self.catalog.build(tenant, application_id,
+                                               op["adapter"]["adapter_id"], revision)
+        elif op["adapter"]:
+            if execution is None:
+                execution = self.catalog.build(tenant, application_id,
+                                               op["adapter"]["adapter_id"], revision)
+            command = coordinator.next_command(revision, plan, operation_id=operation,
+                                               epoch=lease.epoch)
+            try:
+                effect = engine.execute(command, permit_for(command), execution.adapter)
+            except UncertainEffect:
+                held = journal.get(command)
+                return (coordinator.advance_from_ledger(revision, plan, effect=held,
+                                                        actor_id=self.owner_id),
+                        recovered, execution, True)
+        elif execution is None and any(
+                obligations[i]["required_at"] == op["operation_id"]
+                for i in op["required_evidence"]):
+            adapter_op = next(o for o in doc["operations"] if o["adapter"])
+            execution = self.catalog.build(tenant, application_id,
+                                           adapter_op["adapter"]["adapter_id"], revision)
+        times = None
+        for oid in op["required_evidence"]:
+            if obligations[oid]["required_at"] != op["operation_id"]:
+                continue  # measured at an earlier step; re-checked, not re-taken
+            if times is None:
+                times = self._step_times(lifecycle, tenant, application_id, operation)
+            passed, observation = execution.measure(obligations[oid], times)
+            self._prove(tenant, application_id, plan, oid, passed, observation)
+        record = coordinator.advance_from_ledger(revision, plan, effect=effect,
+                                                 actor_id=self.owner_id)
+        return record, recovered, execution, record.state == HandoffState.SAFE_HOLD
+
     # -- the process -----------------------------------------------------------------------
-    def run(self, tenants, *, poll_seconds=5.0):
+    def run(self, tenants, *, poll_seconds=5.0, ready=None):
         """Serve ``tenants`` until ``stopping`` is set (SIGTERM): finish the
-        current step, release the lease, take nothing new."""
+        current step, release the lease, take nothing new. While ``ready()``
+        is false (the schema is not yet this release's) nothing is taken."""
         while not self.stopping.is_set():
+            self.progressed = time.monotonic()
+            try:
+                waiting = ready is not None and not ready()
+            except Exception:  # noqa: BLE001 - the database may be back next pass
+                log.exception("readiness check failed")
+                waiting = True
+            if waiting:
+                log.info("waiting for the schema of this release")
+                self.stopping.wait(poll_seconds)
+                continue
             for tenant in tenants:
-                for application_id, unit in self.open_units(tenant):
+                try:
+                    units = self.open_units(tenant)
+                except Exception:  # noqa: BLE001 - the database may be back next pass
+                    log.exception("listing open handoffs of %s failed", tenant)
+                    continue
+                for application_id, unit in units:
                     if self.stopping.is_set():
                         return
                     try:

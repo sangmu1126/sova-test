@@ -24,6 +24,7 @@ dev = ["pytest>=8,<10", "ruff>=0.14,<0.18", "psycopg[binary]>=3.2,<4", "boto3>=1
 
 [project.scripts]
 sova = "sova.interfaces.cli:main"
+sova-service = "sova.service.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

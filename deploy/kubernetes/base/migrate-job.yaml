@@ -1,0 +1,46 @@
+# Applies the schema and the runtime role's grants as the schema owner.
+# Run once per release before the rollout (overlays add a release name
+# suffix: a Job's template cannot change). Concurrent runs serialize on an
+# advisory lock; a database whose applied migrations differ from this
+# release's stops the Job instead of guessing.
+apiVersion: batch/v1
+kind: Job
+metadata: {name: sova-migrate}
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: sova-migrate, app.kubernetes.io/component: migrate}
+    spec:
+      serviceAccountName: sova-migrate
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: migrate
+          image: sova-service
+          args: [migrate]
+          envFrom: [{configMapRef: {name: sova-config}}]
+          env:
+            - {name: SOVA_MIGRATION_DATABASE_URL_FILE, value: /etc/sova/database/migration-dsn}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: database, mountPath: /etc/sova/database, readOnly: true}
+      volumes:
+        - name: database
+          secret:
+            secretName: sova-database
+            defaultMode: 0440
+            items: [{key: migration-dsn, path: migration-dsn}]

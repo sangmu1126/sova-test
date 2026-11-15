@@ -1,0 +1,94 @@
+# The HTTP API: stateless replicas behind one Service. Every request is
+# authorized by its bearer token and served from the database, so any replica
+# answers any request; a rollout never takes the last ready one away.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: sova-api}
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  minReadySeconds: 5  # a new replica proves itself before the next old one stops
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels: {app.kubernetes.io/name: sova-api}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: sova-api, app.kubernetes.io/component: api}
+    spec:
+      serviceAccountName: sova-api
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 35
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: sova-api}}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: sova-api}}
+      containers:
+        - name: api
+          image: sova-service
+          args: [serve-api, --port, "8080"]
+          ports: [{name: http, containerPort: 8080}]
+          envFrom: [{configMapRef: {name: sova-config}}]
+          env:
+            - {name: SOVA_DATABASE_URL_FILE, value: /etc/sova/database/runtime-dsn}
+            - {name: SOVA_WITNESS_S3_FILE, value: /etc/sova/witness/config.json}
+          readinessProbe:  # the database answers and its schema is this release's
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:  # leave the endpoints before the server stops accepting
+            preStop: {sleep: {seconds: 5}}
+          resources:
+            requests: {cpu: 100m, memory: 192Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: database, mountPath: /etc/sova/database, readOnly: true}
+            - {name: witness, mountPath: /etc/sova/witness, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: database
+          secret:
+            secretName: sova-database
+            defaultMode: 0440
+            items: [{key: runtime-dsn, path: runtime-dsn}]
+        - name: witness
+          secret: {secretName: sova-witness, defaultMode: 0440}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: sova-api}
+spec:
+  selector: {app.kubernetes.io/name: sova-api}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: sova-api}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: sova-api}

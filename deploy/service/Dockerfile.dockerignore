@@ -1,0 +1,6 @@
+# The service image needs only the package metadata and its sources.
+*
+!pyproject.toml
+!src/
+src/**/__pycache__
+src/**/*.pyc

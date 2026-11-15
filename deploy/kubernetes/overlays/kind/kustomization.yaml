@@ -1,0 +1,24 @@
+# The control plane on the local kind test environment (infra/test-env):
+# PostgreSQL, Keycloak and the S3-compatible witness store of that cluster.
+# Create the Secrets first (deploy/kubernetes/README.md), then
+#   kubectl kustomize deploy/kubernetes/overlays/kind | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: sova-system
+resources:
+  - namespace.yaml
+  - ../../base
+images:
+  - {name: sova-service, newName: sova-service, newTag: dev}
+configMapGenerator:
+  - name: sova-config
+    behavior: merge
+    literals:
+      # The test Keycloak names itself by its loopback address; the pods fetch
+      # its keys over the cluster network (allowed only for a loopback issuer).
+      - SOVA_OIDC_ISSUER=http://127.0.0.1:58080/realms/sova
+      - SOVA_OIDC_JWKS_URL=http://keycloak-source.sova-test-env.svc.cluster.local:8080/realms/sova/protocol/openid-connect/certs
+      - SOVA_WITNESS=s3://sova-witness
+      - SOVA_TENANTS=tenant-orders
+      - SOVA_LEASE_SECONDS=15
+      - SOVA_WORKER_STALL_SECONDS=300
