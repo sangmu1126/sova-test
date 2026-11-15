@@ -10,8 +10,10 @@ execution file holds only their paths.
      "applications": [{
         "tenant_id": "...", "application_id": "...",
         "adapter_id": "postgres-offline-copy",
-        "mode": "offline_copy" | "logical_replication",
-        "databases": {"<db>": {"dsn_file": "<admin conninfo, no dbname>"}, ...},
+        "engine": "postgresql" | "mysql",                      # default postgresql
+        "mode": "offline_copy" | "logical_replication",        # MySQL: offline_copy
+        "databases": {"<db>": {"dsn_file": "<admin connection, no database>"}, ...},
+        "zone_of": {"<db>": "<zone label>"},                   # MySQL: where each runs
         "role_password_files": {"<role>": "<path>"},          # optional
         "source_db": "...", "target_db": "...", "scratch_db": "...", "other_db": "...",
         "app_role": "...", "writer_roles": ["...", ...],
@@ -25,32 +27,37 @@ execution file holds only their paths.
 
 The route store must be outside the worker (several workers, restarts): a
 Kubernetes Service selector here, read back from the endpoints that traffic
-actually reaches. Administrative connections are reused per database
-(ADR-0004); a role probe always opens a fresh session.
+actually reaches. PostgreSQL administrative connections are reused
+per database (ADR-0004); a role probe always opens a fresh session.
+
+For PostgreSQL a ``dsn_file`` holds a libpq conninfo; for MySQL a JSON object
+of connection settings (``host``, ``port``, ``user``, ``password``, and for
+TLS ``ssl_ca`` with ``ssl_verify_identity``). Writer identities are roles in
+PostgreSQL and ``user@host`` accounts in MySQL.
 """
 
+import json
 from pathlib import Path
-
-import psycopg
 
 from sova.adapters.kubernetes.handoff_controls import (
     KubernetesHandoffControls,
     KubernetesServiceRoute,
 )
 from sova.adapters.kubernetes.registration import decode_registration
-from sova.adapters.postgres_connections import ReusedConnections
 from sova.adapters.registration.graph_codec import json_document
 from sova.domain.contracts import ContractError
-from sova.service.postgres_execution import postgres_factory
 from sova.service.worker import AdapterCatalog
 
 SERVICE_ACCOUNT = Path("/var/run/secrets/kubernetes.io/serviceaccount")
 MODES = {"offline_copy": False, "logical_replication": True}
-_APP_KEYS = {"tenant_id", "application_id", "adapter_id", "mode", "databases",
+ENGINES = {"postgresql": set(MODES), "mysql": {"offline_copy"}}
+_APP_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode", "databases",
              "role_password_files", "source_db", "target_db", "scratch_db", "other_db",
              "app_role", "writer_roles", "tables", "schema_sql_file", "probe_insert",
-             "source_conninfo_file", "route"}
-_REQUIRED = _APP_KEYS - {"role_password_files", "source_conninfo_file"}
+             "source_conninfo_file", "route", "zone_of"}
+_REQUIRED = _APP_KEYS - {"role_password_files", "source_conninfo_file", "engine", "zone_of"}
+_MYSQL_SETTINGS = {"host", "port", "user", "password", "ssl_ca", "ssl_verify_identity",
+                   "connect_timeout"}
 
 
 def _read(path, limit=1 << 20):
@@ -90,7 +97,9 @@ def application_resolver(app, *, route_for=kubernetes_route):
     for key in ("source_db", "target_db", "scratch_db", "other_db"):
         if app[key] not in databases:
             raise ContractError(f"{key} names no configured database")
-    servers = {db: _read(entry["dsn_file"]) for db, entry in databases.items()}
+    engine = app.get("engine", "postgresql")
+    if engine not in ENGINES:
+        raise ContractError("engine is postgresql or mysql")
     passwords = {role: path for role, path in (app.get("role_password_files") or {}).items()}
     writers = _strings(app["writer_roles"], "writer_roles")
     if app["app_role"] not in writers:
@@ -100,15 +109,16 @@ def application_resolver(app, *, route_for=kubernetes_route):
         raise ContractError("tables: [table, key column] pairs required")
     if app["route"].get("kind") != "kubernetes_service":
         raise ContractError("Only a Kubernetes Service route store is supported")
-    if app["mode"] not in MODES:
-        raise ContractError("mode is offline_copy or logical_replication")
+    if app["mode"] not in ENGINES[engine]:
+        raise ContractError(f"mode {app['mode']} is not supported for {engine}")
+    zones = app.get("zone_of") or {}
+    if type(zones) is not dict or not all(type(v) is str for v in zones.values()):
+        raise ContractError("zone_of maps databases to zone labels")
     route = route_for(app["route"])
-    admin = ReusedConnections(lambda database: psycopg.connect(servers[database],
-                                                               dbname=database))
-
-    def connect_as(database, role):
-        extra = {"password": _read(passwords[role])} if role in passwords else {}
-        return psycopg.connect(servers[database], dbname=database, user=role, **extra)
+    if engine == "mysql":
+        admin, close, connect_as = _mysql_connections(databases, passwords)
+    else:
+        admin, close, connect_as = _postgres_connections(databases, passwords)
 
     resolved = {
         "connect": admin, "connect_as": connect_as, "source_db": app["source_db"],
@@ -116,6 +126,7 @@ def application_resolver(app, *, route_for=kubernetes_route):
         "other_db": app["other_db"], "app_role": app["app_role"], "writer_roles": writers,
         "tables": tables, "schema_sql": _read(app["schema_sql_file"]),
         "probe_insert": app["probe_insert"], "route": route,
+        "zone_of": (lambda database: zones.get(database)) if zones else None,
         "source_conninfo": (_read(app["source_conninfo_file"])
                             if app.get("source_conninfo_file") else None)}
 
@@ -124,7 +135,49 @@ def application_resolver(app, *, route_for=kubernetes_route):
             raise ContractError("No execution configured for this application")
         return resolved
 
-    return resolve, admin
+    return resolve, close
+
+
+def _postgres_connections(databases, passwords):
+    import psycopg
+
+    from sova.adapters.postgres_connections import ReusedConnections
+
+    servers = {db: _read(entry["dsn_file"]) for db, entry in databases.items()}
+    admin = ReusedConnections(lambda database: psycopg.connect(servers[database],
+                                                               dbname=database))
+
+    def connect_as(database, role):
+        extra = {"password": _read(passwords[role])} if role in passwords else {}
+        return psycopg.connect(servers[database], dbname=database, user=role, **extra)
+
+    return admin, admin.close, connect_as
+
+
+def _mysql_connections(databases, passwords):
+    import pymysql
+
+    servers = {}
+    for db, entry in databases.items():
+        settings = json.loads(_read(entry["dsn_file"]))
+        if type(settings) is not dict or set(settings) - _MYSQL_SETTINGS or not {
+                "host", "user"} <= set(settings):
+            raise ContractError("MySQL connection settings: host, user and known keys only")
+        if settings.get("ssl_ca"):
+            settings["ssl"] = {"ca": settings.pop("ssl_ca")}
+            settings["ssl_verify_cert"] = True
+        servers[db] = settings
+
+    def admin(database):
+        return pymysql.connect(**servers[database], autocommit=False)
+
+    def connect_as(database, account):
+        settings = {k: v for k, v in servers[database].items() if k not in ("user", "password")}
+        extra = {"password": _read(passwords[account])} if account in passwords else {}
+        return pymysql.connect(**settings, user=account.rsplit("@", 1)[0], database=database,
+                               autocommit=False, **extra)
+
+    return admin, lambda: None, connect_as
 
 
 def catalog_from(document, *, route_for=kubernetes_route):
@@ -137,12 +190,13 @@ def catalog_from(document, *, route_for=kubernetes_route):
         raise ContractError("At least one application is required")
     by_adapter, kept = {}, []
     for app in apps:
-        resolve, admin = application_resolver(app, route_for=route_for)
-        kept.append(admin)
+        resolve, close = application_resolver(app, route_for=route_for)
+        kept.append(close)
         key = (app["tenant_id"], app["application_id"])
-        entry = by_adapter.setdefault(app["adapter_id"], {"mode": app["mode"], "apps": {}})
-        if entry["mode"] != app["mode"]:
-            raise ContractError("One adapter ID, one mode")
+        kind = (app.get("engine", "postgresql"), app["mode"])
+        entry = by_adapter.setdefault(app["adapter_id"], {"kind": kind, "apps": {}})
+        if entry["kind"] != kind:
+            raise ContractError("One adapter ID, one engine and mode")
         if key in entry["apps"]:
             raise ContractError("An application is configured twice")
         entry["apps"][key] = resolve
@@ -153,13 +207,20 @@ def catalog_from(document, *, route_for=kubernetes_route):
             if found is None:
                 raise ContractError("No execution configured for this application")
             return found(tenant_id, application_id)
-        return postgres_factory(adapter_id, resolve, cdc=MODES[entry["mode"]])
+        engine, mode = entry["kind"]
+        if engine == "mysql":
+            from sova.service.mysql_execution import mysql_factory
+
+            return mysql_factory(adapter_id, resolve)
+        from sova.service.postgres_execution import postgres_factory
+
+        return postgres_factory(adapter_id, resolve, cdc=MODES[mode])
 
     catalog = AdapterCatalog({adapter_id: factory_of(adapter_id, entry)
                               for adapter_id, entry in by_adapter.items()})
 
     def close():
-        for admin in kept:
-            admin.close()
+        for each in kept:
+            each()
 
     return catalog, close

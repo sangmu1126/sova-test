@@ -13,13 +13,13 @@ WORKDIR /src
 COPY --from=wheels . /wheels/
 COPY pyproject.toml ./
 COPY src/ src/
-RUN pip wheel --no-cache-dir --wheel-dir /wheels --find-links /wheels ".[service,aws]"
+RUN pip wheel --no-cache-dir --wheel-dir /wheels --find-links /wheels ".[service,aws,mysql]"
 
 FROM ${PYTHON_IMAGE}
 RUN groupadd --system --gid 10001 sova \
  && useradd --system --uid 10001 --gid sova --no-create-home --shell /usr/sbin/nologin sova
 RUN --mount=type=bind,from=build,source=/wheels,target=/wheels \
-    pip install --no-cache-dir --no-index --find-links /wheels "sova-control-plane[service,aws]" \
+    pip install --no-cache-dir --no-index --find-links /wheels "sova-control-plane[service,aws,mysql]" \
  && pip check
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 USER 10001:10001

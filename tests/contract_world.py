@@ -52,30 +52,35 @@ class Store:
         return found[0]
 
 
-def profiles():
+ENGINE_VERSIONS = {"postgresql": "18.4", "mysql": "8.4.13"}
+
+
+def profiles(engine="postgresql"):
+    version = ENGINE_VERSIONS[engine]
     source = EnvironmentProfile(
-        "aws-source", 1, "aws", "ecs", "postgresql", "iam-role", "private", "arm64",
-        (("ecs-platform", "1.4.0"), ("postgresql", "18.4")),
+        "aws-source", 1, "aws", "ecs", engine, "iam-role", "private", "arm64",
+        (("ecs-platform", "1.4.0"), (engine, version)),
     )
     target = EnvironmentProfile(
-        "onprem-target", 1, "on_prem", "linux-vm", "postgresql", "customer-owned",
-        "private", "arm64", (("os", "linux-test"), ("postgresql", "18.4")),
+        "onprem-target", 1, "on_prem", "linux-vm", engine, "customer-owned",
+        "private", "arm64", (("os", "linux-test"), (engine, version)),
     )
     return source, target
 
 
 def build_world(now, *, contract=None, strategy="offline-copy", operations=None,
                 reverse=False, environment="synthetic-source", uid_prefix="synthetic-uid-",
-                properties=(), identity_provider=None):
+                properties=(), identity_provider=None, engine="postgresql"):
     """``reverse`` swaps the profiles and observes the unit where the forward
     target runs it, as a failback (§19.3) would."""
     contract = contract or example_service_contract()
-    source, target = profiles()
+    source, target = profiles(engine)
     if reverse:
         source, target = target, source
     operations = operations or required_operations(strategy) or ("copy_content",)
     manifest = CapabilityManifest(
-        "pg-" + strategy, "1.0.0", "a" * 64, strategy, "1.0.0",
+        {"postgresql": "pg-", "mysql": "mysql-"}[engine] + strategy, "1.0.0", "a" * 64,
+        strategy, "1.0.0",
         tuple(operations), (MigrationProfile.SINGLE_AUTHORITY,), properties,
     )
     qualification = StrategyQualification(

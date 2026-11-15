@@ -17,24 +17,15 @@ style, float digits, bytea output). Two servers with different defaults would
 show equal data differently, so both ways pin them for the transaction.
 """
 
-import hashlib
-
 from psycopg import sql
 
+from sova.adapters.row_digest import client_digest
 from sova.domain.contracts import ContractError
 
 SERVER_LIMIT_BYTES = 256 * 1024 * 1024
 _SETTINGS = ("SET LOCAL TimeZone TO 'UTC'", "SET LOCAL DateStyle TO 'ISO, YMD'",
              "SET LOCAL IntervalStyle TO 'postgres'", "SET LOCAL extra_float_digits TO 3",
              "SET LOCAL bytea_output TO 'hex'")
-
-
-def client_digest(texts):
-    rows = sorted(text.encode() for text in texts)
-    h = hashlib.sha256()
-    for row in rows:
-        h.update(len(row).to_bytes(8, "big") + row)
-    return {"rows": len(rows), "sha256": h.hexdigest()}
 
 
 def table_digest(conn, table, *, server_limit_bytes=SERVER_LIMIT_BYTES):

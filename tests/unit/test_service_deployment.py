@@ -145,3 +145,42 @@ def test_one_application_cannot_be_configured_twice_or_one_adapter_in_two_modes(
             application(tmp_path),
             application(tmp_path, application_id="billing", mode="logical_replication")]},
             route_for=lambda spec: FakeRoute())
+
+
+def mysql_application(tmp_path, **changes):
+    settings = write(tmp_path, "mysql.json", json.dumps({"host": "orders-db", "port": 3306,
+                                                          "user": "sova-admin"}))
+    base = {"engine": "mysql", "adapter_id": "mysql-offline-copy",
+            "databases": {db: {"dsn_file": settings} for db in ("src", "tgt", "scratch",
+                                                               "other")},
+            "app_role": "orders_app@%", "writer_roles": ["orders_app@%", "batch@%"],
+            "zone_of": {"tgt": "zone-a"}}
+    return application(tmp_path, **{**base, **changes})
+
+
+def test_a_mysql_application_gets_the_mysql_adapter(tmp_path):
+    catalog, close = catalog_from({"version": 1, "applications": [mysql_application(tmp_path)]},
+                                  route_for=lambda spec: FakeRoute())
+    execution = catalog.build("tenant-a", "orders", "mysql-offline-copy", None)
+    assert type(execution.adapter).__name__ == "MySqlOfflineCopyAdapter"
+    close()
+
+
+@pytest.mark.parametrize("changes", [
+    {"mode": "logical_replication"},  # no MySQL change-data-capture adapter
+    {"engine": "oracle"},
+    {"zone_of": {"tgt": 1}},
+])
+def test_a_mysql_entry_that_does_not_add_up_is_refused(tmp_path, changes):
+    with pytest.raises(ContractError):
+        catalog_from({"version": 1, "applications": [mysql_application(tmp_path, **changes)]},
+                     route_for=lambda spec: FakeRoute())
+
+
+def test_mysql_connection_settings_are_checked(tmp_path):
+    bad = write(tmp_path, "bad.json", json.dumps({"host": "db", "user": "u", "init_command":
+                                                  "SET GLOBAL read_only=0"}))
+    app = mysql_application(tmp_path, databases={
+        db: {"dsn_file": bad} for db in ("src", "tgt", "scratch", "other")})
+    with pytest.raises(ContractError):
+        catalog_from({"version": 1, "applications": [app]}, route_for=lambda spec: FakeRoute())
