@@ -1,4 +1,8 @@
-"""Secret handoff: AWS Secrets Manager (cloud) to Kubernetes Secrets (on premises).
+"""Secret handoff: a cloud secret store to Kubernetes Secrets (on premises).
+
+The source is any store that answers ``current(secret_id)`` with the current
+version and value: AWS Secrets Manager here (``AWSCURRENT``), GCP Secret
+Manager in ``gcp_secret_manager``.
 
 Each registered mapping names a source secret and a target Kubernetes Secret
 with a data key. The target Secret is created beforehand by the environment's
@@ -42,23 +46,38 @@ def _value(response):
     raise ContractError("Secret without a value")
 
 
-class SecretsManagerToKubernetes:
-    def __init__(self, adapter_id, *, secretsmanager, controls, mappings):
-        """``mappings``: source secret ID -> (target Secret name, data key)."""
-        if not callable(getattr(secretsmanager, "get_secret_value", None)):
+class AwsSecretsManagerSource:
+    def __init__(self, client):
+        if not callable(getattr(client, "get_secret_value", None)):
             raise ContractError("Secrets Manager client required")
+        self.client = client
+
+    def current(self, secret_id):
+        try:
+            response = self.client.get_secret_value(SecretId=secret_id,
+                                                    VersionStage="AWSCURRENT")
+        except ClientError:  # the provider's message is not passed on
+            raise ContractError(f"Source secret unavailable: {secret_id}") from None
+        return response["VersionId"], _value(response)
+
+
+class SecretsToKubernetes:
+    def __init__(self, adapter_id, *, source, controls, mappings):
+        """``mappings``: source secret ID -> (target Secret name, data key)."""
+        if not callable(getattr(source, "current", None)):
+            raise ContractError("Secret source required")
         if not isinstance(controls, KubernetesHandoffControls):
             raise ContractError("Registered Kubernetes controls required")
         if type(mappings) is not dict or not 1 <= len(mappings) <= 256:
             raise ContractError("Bounded secret mappings required")
         targets = set()
-        for source, target in mappings.items():
-            if type(source) is not str or not _SOURCE.fullmatch(source):
+        for secret_id, target in mappings.items():
+            if type(secret_id) is not str or not _SOURCE.fullmatch(secret_id):
                 raise ContractError("Source secret ID required")
             if type(target) is not tuple or len(target) != 2 or target in targets:
                 raise ContractError("Distinct (Secret, key) targets required")
             targets.add(target)
-        self.adapter_id, self.sm, self.controls = adapter_id, secretsmanager, controls
+        self.adapter_id, self.source, self.controls = adapter_id, source, controls
         self.mappings = dict(sorted(mappings.items()))
 
     def validate(self, command):
@@ -66,11 +85,7 @@ class SecretsManagerToKubernetes:
             raise ContractError("Unsupported secret action for this adapter")
 
     def _source(self, secret_id):
-        try:
-            response = self.sm.get_secret_value(SecretId=secret_id, VersionStage="AWSCURRENT")
-        except ClientError:  # the provider's message is not passed on
-            raise ContractError(f"Source secret unavailable: {secret_id}") from None
-        return response["VersionId"], _value(response)
+        return self.source.current(secret_id)
 
     def apply(self, command):
         for secret_id, (name, key) in self.mappings.items():
@@ -97,3 +112,15 @@ class SecretsManagerToKubernetes:
             command.scope, command.fingerprint,
             EffectStatus.APPLIED if holds else EffectStatus.UNKNOWN, now,
             canonical_json({"action": command.action, "secrets": results}, limit=65536))
+
+
+class SecretsManagerToKubernetes(SecretsToKubernetes):
+    """AWS Secrets Manager to Kubernetes Secrets."""
+
+    def __init__(self, adapter_id, *, secretsmanager, controls, mappings):
+        super().__init__(adapter_id, source=AwsSecretsManagerSource(secretsmanager),
+                         controls=controls, mappings=mappings)
+
+    @property
+    def sm(self):
+        return self.source.client

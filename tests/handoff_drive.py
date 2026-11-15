@@ -205,7 +205,8 @@ def pieces(business, adapter_id, *, source, target, route, fenced=None, cdc=Fals
                   target_db=names[target], app_role=app, tables=TABLES, schema_sql=SCHEMA,
                   route=route, writer_roles=fenced or writers)
     adapter = (PostgresLogicalReplicationAdapter(
-        adapter_id, source_conninfo=replication_conninfo(names[source]), **common)
+        adapter_id, source_conninfo=business.get("replication_conninfo", replication_conninfo)(
+            names[source]), **common)
         if cdc else PostgresOfflineCopyAdapter(adapter_id, **common))
     probes = PostgresHandoffProbes(
         connect_as=business["connect_as"], admin_connect=business["connect"],

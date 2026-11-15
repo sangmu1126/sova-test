@@ -47,7 +47,7 @@ def adapter():
     return IngressAdapter()
 
 
-pytest_plugins = ["postgres_fixtures", "postgres_business", "s3_fixtures", "keycloak_fixtures", "aws_fixtures"]
+pytest_plugins = ["postgres_fixtures", "postgres_business", "s3_fixtures", "keycloak_fixtures", "aws_fixtures", "gcp_fixtures"]
 
 
 def _verified_postgres_transport(dsn):
