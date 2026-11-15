@@ -1238,6 +1238,47 @@ DNS 수준 전환(Route 53·Cloud DNS)에 더해, 데이터 adapter의 경로 �
 
 ALB는 조건부 쓰기가 없다. 읽은 뒤 쓰기 전에 다른 사람이 바꾼 내용은 덮어쓸 수 있다. 그래서 확인은 설정과 실제 응답이 둘 다 맞을 때만이다. GCP URL map은 fingerprint로 그 경합을 막는다. 이미 열린 연결은 닫힐 때까지 예전 대상에 남을 수 있으므로, 원본은 그동안 차단된 채로 둔다.
 
+## 운영 서비스 (API·워커·배포, 2026-11-16)
+
+지금까지 시험 코드가 직접 부르던 등록·컴파일·승인·수용·실행을 운영 서비스로 묶었다. 구조와 이유는 [ADR-0005](adr/0005-operational-service.md), 배포 방법은 [배포 안내](../deploy/kubernetes/README.md)에 있다.
+
+| 구성 | 구현 | 하는 일 |
+|---|---|---|
+| 등록 저장소 | `PostgresRegistrations`, `registry_codec` | 등록 문서 다섯 종을 정규화된 형태로만 받는다. revision 비교 후 쓰기(경합에서 진 쪽은 409), 이력은 INSERT만, 같은 문서 재전송은 같은 revision |
+| control plane | `ControlPlane` | 등록, 증명 수집(서명 확인), 컴파일(요청을 함께 저장), 승인(계획자는 자기 계획을 승인 못 함), 수용(저장된 요청으로 재컴파일 확인), 상태 조회, 중단 |
+| HTTP API | `create_app`, `BearerAuthenticator` | OIDC RS256 token. 역할은 IdP realm role `sova:<role>`, tenant는 claim. 401/403/409/422 구분, 본문 1MiB 상한, 요청 ID |
+| 워커 | `HandoffWorker`, `LeaseKeeper`, `KubernetesWorkerQuiescence` | 인계마다 실행 lease를 잡는다. 단계마다 효과 원장을 거쳐 실행하고, 의무를 probe로 측정해 서명 증거로 낸다. 사라진 워커는 정지 증명이 있을 때만 readback으로 대체한다 |
+| 실행 설정 | `catalog.py`, `config.py` | 애플리케이션별 DB, writer role, 경로 저장소(Kubernetes Service). 비밀은 mount된 파일로만 받는다 |
+| 프로세스 | `sova-service migrate`·`serve-api`·`run-worker` | Job 하나, Deployment 둘. JSON 로그. SIGTERM을 받으면 하던 일을 마치고 내려간다 |
+
+**검증자 신뢰 공개는 API에 없다.** 어떤 키의 서명을 증거로 받을지는 두 사람의 관리 경로로만 정한다. API를 탈취해 자기 키를 신뢰시키는 길을 막으려는 것이다.
+
+**워커 장애.** owner ID는 `<pod>.<uid>.<instance>`다. 단계 도중 사라진 워커의 lease가 만료되면, 다음 둘 중 하나일 때만 증명을 낸다.
+
+- API에 그 Pod가 없다.
+- 이전 owner가 같은 Pod의 이전 컨테이너다.
+
+증명이 있으면 같은 epoch의 명령으로 readback만 한다. 단계가 lease보다 길면 keeper가 갱신하되, 정체 상한까지만 갱신한다. 이 둘은 설계 중에 실제 결함을 찾아 넣었다.
+
+- 같은 Pod에서 재시작한 워커는 자기 단계를 복구하지 못했다. API로 보면 그 Pod가 계속 실행 중이기 때문이다.
+- lease보다 긴 단계는 readback 기록이 `LeaseLost`로 거부됐다(실측).
+
+### 로컬 kind 실측
+
+`tests/integration/test_service_kubernetes.py`, 연속 두 번 통과했다.
+
+- **배포.** 서비스 이미지(비 root, 기반 이미지 digest 고정)와 base 매니페스트를 Pod Security `restricted` namespace에 올렸다. 구성은 API ×2, 워커 ×2, migrate Job, PDB, RBAC, NetworkPolicy다. migrate Job이 빈 DB에 스키마를 적용했다.
+- **인증과 수용.** Keycloak realm에서 역할(`sova:<role>`), 사용자 속성 tenant(관리자만 수정), audience mapper를 설정했다. 그 token으로 HTTP를 거쳐 등록 6건 → 증명 3건 → 계획 → 승인 → 승인 실행을 했다. witness는 Object Lock bucket이다.
+- **워커 장애 복구.** 워커들이 인계를 경로 전환 단계까지 진행했다. 전환이 목적지 Pod를 기다리는 동안 lease를 가진 워커 Pod를 지웠다.
+
+  | 시점 | 경과 |
+  |---|---|
+  | 다른 워커가 복구 lease를 받음 | 29.8초(lease 30초) |
+  | 인계 완료 | 33.4초 |
+
+  경로 전환 명령은 한 번만 발행됐고, readback으로 확정됐다. 완료 뒤 애플리케이션 role이 목적지에 쓴다.
+- **API 무중단.** 클러스터 노드에서 Service로 요청을 계속 보내며 `rollout restart`를 했다. 실패한 요청은 0건이었다. 단, 이 측정은 NetworkPolicy를 지우고 했다. kind의 정책 엔진은 Pod 전환 때 새 연결을 가끔 버린다. 정책이 있으면 재시작 약 절반에서 1건이었고, 없으면 5회 모두 0건이었다.
+
 ## 로컬 통합 시험 환경
 
 통합 시험에 필요한 서비스를 kind 클러스터 하나에 모아 `infra/test-env/test-env.sh up`·`down`으로 올리고 내린다. 들어 있는 것은 다음과 같다.
@@ -1297,6 +1338,8 @@ ALB는 조건부 쓰기가 없다. 읽은 뒤 쓰기 전에 다른 사람이 바
 | Cloud Storage → 로컬 S3 호환 저장소 | 실환경 시험 통과 | 같은 객체 저장소 adapter에 GCS 접근층 |
 | Secret Manager·Cloud Run·Identity Platform 이전과 중지 | 실환경 시험 통과 | 비밀 3, compute 2, 계정 3개 시험 |
 | GCP 전체 탈출 | 실환경 시험 통과 | 데이터·객체·비밀·계정·compute를 한 계약으로 |
+| 운영 서비스: 등록 API·승인·수용·워커 | 모의 시험 통과 | 실 PostgreSQL·Keycloak·Object Lock witness. 역할 여섯, 계획자 자기 승인 금지, revision 비교 후 쓰기 |
+| control plane 이중화(API ×2, 워커 ×2)·워커 장애 복구 | 모의 시험 통과 | 로컬 kind에 실제 배포. 경로 전환 중 워커 Pod 삭제 뒤 증명·readback으로 완료. 관리형 클러스터 배포는 미시험 |
 | MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |
 | 사고 보류·증거 기한·사고 복구 확장 | 지원하지 않음 | 명세가 스키마를 정하지 않음(S.9, ADR 전제). 있으면 `NEEDS_EVIDENCE` |
