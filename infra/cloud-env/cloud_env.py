@@ -91,6 +91,10 @@ def run_command(args, *, input=None, check=True, timeout=3600):
     return result
 
 
+def _tail(link):
+    return (link or "").rsplit("/", 1)[-1]
+
+
 def _json(result):
     text = (result.stdout or "").strip()
     return json.loads(text) if text else {}
@@ -516,6 +520,15 @@ class Aws:
                         "nodegroups", []):
                     found.append(("eks-nodegroup", f"{cluster}/{group}"))
                 found.append(("eks-cluster", cluster))
+        for balancer in self.cli("elbv2", "describe-load-balancers").get("LoadBalancers", []):
+            if scoped(balancer["LoadBalancerName"], run):
+                found.append(("load-balancer", balancer["LoadBalancerArn"]))
+        for group in self.cli("elbv2", "describe-target-groups").get("TargetGroups", []):
+            if scoped(group["TargetGroupName"], run):
+                found.append(("target-group", group["TargetGroupArn"]))
+        for function in self.cli("lambda", "list-functions").get("Functions", []):
+            if scoped(function["FunctionName"], run):
+                found.append(("lambda-function", function["FunctionName"]))
         return found
 
     def sweep(self, run, log):
@@ -528,6 +541,23 @@ class Aws:
             self.cli("scheduler", "delete-schedule", "--name", name, check=False)
             log(f"aws schedule deleted: {name}")
         self._sweep_clusters(kinds, log)
+        balancers = kinds.get("load-balancer", [])
+        for balancer in balancers:
+            self.cli("elbv2", "delete-load-balancer", "--load-balancer-arn", balancer, check=False)
+        if balancers:
+            self.run(["aws", "elbv2", "wait", "load-balancers-deleted", "--load-balancer-arns",
+                      *balancers, "--profile", self.profile, "--region", self.region],
+                     check=False)
+            log(f"aws load balancers deleted: {len(balancers)}")
+        for group in kinds.get("target-group", []):
+            for _ in range(12):  # free once no listener uses it
+                if self.cli("elbv2", "delete-target-group", "--target-group-arn", group,
+                            check=False) is not None:
+                    break
+                time.sleep(5)
+        for function in kinds.get("lambda-function", []):
+            self.cli("lambda", "delete-function", "--function-name", function, check=False)
+            log(f"aws lambda deleted: {function}")
         for cluster in kinds.get("ecs-cluster", []):
             services = self.cli("ecs", "list-services", "--cluster", cluster)["serviceArns"]
             for service in services:
@@ -839,6 +869,17 @@ class Gcp:
             for item in self.g("dns", "managed-zones", "list") or []:
                 if scoped(item["name"], run):
                     found.append(("dns-zone", item["name"]))
+        if "compute.googleapis.com" in apis:
+            for kind, args in (("forwarding-rule", ("forwarding-rules", "list", "--global")),
+                               ("http-proxy", ("target-http-proxies", "list")),
+                               ("url-map", ("url-maps", "list")),
+                               ("backend-service", ("backend-services", "list", "--global")),
+                               ("serverless-neg", ("network-endpoint-groups", "list")),
+                               ("security-policy", ("security-policies", "list"))):
+                for item in self.g("compute", *args) or []:
+                    if scoped(item["name"], run):
+                        zone = _tail(item.get("region") or "")
+                        found.append((kind, f"{item['name']}@{zone}" if zone else item["name"]))
         if "container.googleapis.com" in apis:
             for item in self.g("container", "clusters", "list") or []:
                 if scoped(item["name"], run):
@@ -896,6 +937,18 @@ class Gcp:
             name, location = cluster.split("@", 1)
             self.g("container", "clusters", "delete", name, "--location", location, check=False)
             log(f"gcp gke cluster deleted: {name}")
+        for kind, command, scope in (("forwarding-rule", "forwarding-rules", "--global"),
+                                     ("http-proxy", "target-http-proxies", None),
+                                     ("url-map", "url-maps", None),
+                                     ("backend-service", "backend-services", "--global"),
+                                     ("serverless-neg", "network-endpoint-groups", "region"),
+                                     ("security-policy", "security-policies", None)):
+            for ident in kinds.get(kind, []):
+                name, _, region = ident.partition("@")
+                where = ([f"--region={region}"] if scope == "region"
+                         else [scope] if scope else [])
+                self.g("compute", command, "delete", name, *where, check=False)
+                log(f"gcp {kind} deleted: {name}")
         operations = []
         for instance in kinds.get("sql-instance", []):
             operations.append(self.g("sql", "instances", "delete", instance, "--async",

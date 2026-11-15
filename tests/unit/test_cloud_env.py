@@ -350,3 +350,24 @@ def test_the_printed_environment_names_the_managed_clusters_without_credentials(
     assert f"SOVA_TEST_KUBE_EKS_CONTEXT=sova-test-k8s-{RUN}-eks" in text
     assert f"SOVA_TEST_KUBE_GKE_CONTEXT=sova-test-k8s-{RUN}-gke" in text
     assert f"SOVA_TEST_KUBE_MANAGED_KUBECONFIG={paths.kubeconfig}" in text
+
+
+def test_load_balancer_pieces_of_this_run_are_swept_in_dependency_order():
+    run, calls = _runner([
+        (["gcloud", "services", "list"], [{"config": {"name": "compute.googleapis.com"}}]),
+        (["gcloud", "compute", "forwarding-rules", "list"], [{"name": f"sova-test-rule-{RUN}-a"},
+                                                             {"name": "prod-https"}]),
+        (["gcloud", "compute", "url-maps", "list"], [{"name": f"sova-test-map-{RUN}-a"}]),
+        (["gcloud", "compute", "network-endpoint-groups", "list"], [
+            {"name": f"sova-test-negsrc-{RUN}-a",
+             "region": "https://x/projects/q/regions/asia-northeast3"}]),
+    ])
+    gcp = cloud_env.Gcp({"project": "q", "region": "r"}, run=run,
+                        http=lambda *a, **k: pytest.fail("no REST call expected"))
+    gcp.sweep(RUN, lambda line: None)
+    deleted = [c[2:5] for c in calls if c[1] == "compute" and c[3] == "delete"]
+    assert deleted[0] == ["forwarding-rules", "delete", f"sova-test-rule-{RUN}-a"]
+    assert [d[0] for d in deleted] == ["forwarding-rules", "url-maps", "network-endpoint-groups"]
+    neg = next(c for c in calls if c[2] == "network-endpoint-groups" and c[3] == "delete")
+    assert "--region=asia-northeast3" in neg
+    assert not any("prod-https" in " ".join(c) for c in calls if "delete" in c)

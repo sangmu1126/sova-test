@@ -366,3 +366,125 @@ def authoritative(zone, record):
                              capture_output=True, text=True, timeout=30).stdout.split()
         answers.add(tuple(sorted(out)))
     return answers
+
+
+# -- an Application Load Balancer in front of two sides --------------------------------
+
+LAMBDA = '''def handler(event, context):
+    return {"statusCode": 200, "statusDescription": "200 OK", "isBase64Encoded": False,
+            "headers": {"Content-Type": "text/plain"}, "body": "%s"}
+'''
+
+
+def _lambda_zip(token):
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("lambda_function.py", LAMBDA % token)
+    return buffer.getvalue()
+
+
+def http_marker(url, tokens):
+    """Which side answered one request (by the token it serves), or None."""
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            body = response.read(4096).decode(errors="replace").strip()
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError):
+        return None
+    return next((side for side, token in tokens.items() if token == body), None)
+
+
+@pytest.fixture
+def alb_pair(aws):
+    """An internet-facing ALB, reachable from this machine only, with a
+    listener forwarding to the source side; each side is a Lambda function
+    behind its own target group, answering with a run-unique token."""
+    session, run, suffix = aws["session"], aws["run"], uuid4().hex[:6]
+    ec2, elb, lam, iam = (session.client(n) for n in ("ec2", "elbv2", "lambda", "iam"))
+    vpc = ec2.describe_vpcs(Filters=[{"Name": "isDefault", "Values": ["true"]}])["Vpcs"][0]
+    subnets = [s["SubnetId"] for s in ec2.describe_subnets(Filters=[
+        {"Name": "vpc-id", "Values": [vpc["VpcId"]]},
+        {"Name": "default-for-az", "Values": ["true"]}])["Subnets"]]
+    me = urllib.request.urlopen("https://checkip.amazonaws.com", timeout=10).read().decode()
+    created = {"groups": [], "functions": []}
+    tokens = {side: f"sova-{run}-{side}-{secrets.token_hex(6)}" for side in ("src", "tgt")}
+    try:
+        group = ec2.create_security_group(
+            GroupName=f"sova-test-alb-{run}-{suffix}", VpcId=vpc["VpcId"],
+            Description="sova test load balancer, this machine only",
+            TagSpecifications=[{"ResourceType": "security-group", "Tags": aws["tags"]}])["GroupId"]
+        created["sg"] = group
+        ec2.authorize_security_group_ingress(GroupId=group, IpProtocol="tcp", FromPort=80,
+                                             ToPort=80, CidrIp=me.strip() + "/32")
+        role = f"sova-test-lambda-{run}"
+        try:
+            role_arn = iam.create_role(RoleName=role, Tags=aws["tags"], AssumeRolePolicyDocument=
+                                       json.dumps({"Version": "2012-10-17", "Statement": [{
+                                           "Effect": "Allow",
+                                           "Principal": {"Service": "lambda.amazonaws.com"},
+                                           "Action": "sts:AssumeRole"}]}))["Role"]["Arn"]
+        except iam.exceptions.EntityAlreadyExistsException:
+            role_arn = iam.get_role(RoleName=role)["Role"]["Arn"]
+        arns = {}
+        for side in ("src", "tgt"):
+            name = f"sova-test-{side}-{run}-{suffix}"
+            for _ in range(20):  # a new role is assumable by Lambda a little later
+                try:
+                    function = lam.create_function(
+                        FunctionName=name, Runtime="python3.13", Role=role_arn,
+                        Handler="lambda_function.handler", Timeout=5, MemorySize=128,
+                        Code={"ZipFile": _lambda_zip(tokens[side])},
+                        Tags={t["Key"]: t["Value"] for t in aws["tags"]})["FunctionArn"]
+                    break
+                except lam.exceptions.InvalidParameterValueException:
+                    time.sleep(5)
+            created["functions"].append(name)
+            lam.get_waiter("function_active_v2").wait(FunctionName=name)
+            target_group = elb.create_target_group(
+                Name=name, TargetType="lambda", Tags=aws["tags"])["TargetGroups"][0][
+                "TargetGroupArn"]
+            created["groups"].append(target_group)
+            lam.add_permission(FunctionName=name, StatementId="alb", Principal=
+                               "elasticloadbalancing.amazonaws.com",
+                               Action="lambda:InvokeFunction", SourceArn=target_group)
+            elb.register_targets(TargetGroupArn=target_group, Targets=[{"Id": function}])
+            arns[side] = target_group
+        balancer = elb.create_load_balancer(
+            Name=f"sova-test-alb-{run}-{suffix}", Subnets=subnets, SecurityGroups=[group],
+            Scheme="internet-facing", Type="application", Tags=aws["tags"])[
+            "LoadBalancers"][0]
+        created["alb"] = balancer["LoadBalancerArn"]
+        elb.get_waiter("load_balancer_available").wait(LoadBalancerArns=[created["alb"]])
+        listener = elb.create_listener(
+            LoadBalancerArn=created["alb"], Protocol="HTTP", Port=80, DefaultActions=[
+                {"Type": "forward", "TargetGroupArn": arns["src"]}])["Listeners"][0]["ListenerArn"]
+        url = f"http://{balancer['DNSName']}/"
+        deadline = time.monotonic() + 300
+        while http_marker(url, tokens) != "src":  # the name and the listener come up
+            assert time.monotonic() < deadline, "the load balancer did not start serving"
+            time.sleep(5)
+        yield {"elb": elb, "listener": listener, "groups": arns, "url": url, "tokens": tokens}
+    finally:
+        if created.get("alb"):
+            elb.delete_load_balancer(LoadBalancerArn=created["alb"])
+            elb.get_waiter("load_balancers_deleted").wait(LoadBalancerArns=[created["alb"]])
+        for target_group in created["groups"]:
+            for _ in range(12):
+                try:
+                    elb.delete_target_group(TargetGroupArn=target_group)
+                    break
+                except elb.exceptions.ResourceInUseException:
+                    time.sleep(5)
+        for name in created["functions"]:
+            lam.delete_function(FunctionName=name)
+        if created["functions"]:
+            iam.delete_role(RoleName=f"sova-test-lambda-{run}")
+        if created.get("sg"):
+            for _ in range(18):
+                try:
+                    ec2.delete_security_group(GroupId=created["sg"])
+                    break
+                except ec2.exceptions.ClientError:
+                    time.sleep(10)

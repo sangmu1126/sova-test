@@ -401,3 +401,86 @@ def cross_cloud_business(request, aws, cloudsql, postgres_database):
                       else (cloudsql["dsn"], rds))
     business = managed_business(postgres_database[0], source, password, target=target)
     return {**business, "direction": request.param}
+
+
+# -- an external Application Load Balancer in front of two Cloud Run sides ------------
+
+
+def _deploy_side(gcp, name, token):
+    subprocess.run([
+        "gcloud", "run", "deploy", name, "--project", gcp["project"], "--region", gcp["region"],
+        f"--image={BUSYBOX}", "--allow-unauthenticated", "--port=8080",
+        "--ingress=internal-and-cloud-load-balancing", "--command=sh",
+        f"--args=-c,mkdir -p /www && echo {token} > /www/index.html"
+        " && exec httpd -f -p 8080 -h /www", f"--labels=sova-test={gcp['run']}",
+        "--max-instances=1", "--memory=256Mi", "--cpu=1", "--quiet"],
+        capture_output=True, text=True, check=True, timeout=900)
+
+
+@pytest.fixture
+def gcp_lb_pair(gcp, gcp_rest):
+    """A global external Application Load Balancer, admitting this machine's
+    address only (Cloud Armor), whose URL map sends everything to the source
+    side; each side is a Cloud Run service reachable only through load
+    balancers, answering with a run-unique token."""
+    from aws_fixtures import http_marker
+
+    run, region = gcp["run"], gcp["region"]
+    base = f"sova-test-{{}}-{run}-{suffix()}"
+    names = {k: base.format(k) for k in ("armor", "map", "proxy", "rule")}
+    tokens = {side: f"sova-{run}-{side}-{secrets.token_hex(6)}" for side in ("src", "tgt")}
+    me = urllib.request.urlopen("https://checkip.amazonaws.com", timeout=10).read().decode()
+    made = []
+
+    def compute(*args):
+        made.append(args)
+        return gcloud(gcp, "compute", *args)
+
+    try:
+        compute("security-policies", "create", names["armor"],
+                "--description=sova test: this machine only")
+        gcloud(gcp, "compute", "security-policies", "rules", "update", "2147483647",
+               f"--security-policy={names['armor']}", "--action=deny-403")
+        gcloud(gcp, "compute", "security-policies", "rules", "create", "1000",
+               f"--security-policy={names['armor']}", f"--src-ip-ranges={me.strip()}/32",
+               "--action=allow")
+        backends = {}
+        for side in ("src", "tgt"):
+            service = base.format(side)
+            _deploy_side(gcp, service, tokens[side])
+            made.append(("run", service))
+            neg, backend = base.format(f"neg{side}"), base.format(f"be{side}")
+            compute("network-endpoint-groups", "create", neg, f"--region={region}",
+                    "--network-endpoint-type=serverless", f"--cloud-run-service={service}")
+            compute("backend-services", "create", backend, "--global",
+                    "--load-balancing-scheme=EXTERNAL_MANAGED")
+            gcloud(gcp, "compute", "backend-services", "add-backend", backend, "--global",
+                   f"--network-endpoint-group={neg}", f"--network-endpoint-group-region={region}")
+            gcloud(gcp, "compute", "backend-services", "update", backend, "--global",
+                   f"--security-policy={names['armor']}")
+            backends[side] = backend
+        compute("url-maps", "create", names["map"], f"--default-service={backends['src']}")
+        compute("target-http-proxies", "create", names["proxy"], f"--url-map={names['map']}")
+        compute("forwarding-rules", "create", names["rule"], "--global",
+                "--load-balancing-scheme=EXTERNAL_MANAGED",
+                f"--target-http-proxy={names['proxy']}", "--ports=80")
+        address = gcloud(gcp, "compute", "forwarding-rules", "describe", names["rule"],
+                         "--global")["IPAddress"]
+        url = f"http://{address}/"
+        deadline = time.monotonic() + 900
+        while http_marker(url, tokens) != "src":  # a new load balancer comes up over minutes
+            assert time.monotonic() < deadline, "the load balancer did not start serving"
+            time.sleep(10)
+        yield {"rest": gcp_rest, "url_map": names["map"], "backends": backends, "url": url,
+               "tokens": tokens}
+    finally:
+        for args in reversed(made):
+            if args[0] == "run":
+                gcloud(gcp, "run", "services", "delete", args[1], "--region", region,
+                       check=False)
+                continue
+            kind, _, name = args[:3]
+            scope = (["--global"] if kind in ("backend-services", "url-maps",
+                                              "target-http-proxies", "forwarding-rules")
+                     else [f"--region={region}"] if kind == "network-endpoint-groups" else [])
+            gcloud(gcp, "compute", kind, "delete", name, *scope, check=False)
