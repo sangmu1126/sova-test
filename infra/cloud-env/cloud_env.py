@@ -485,7 +485,9 @@ class Gcp:
         certs = self.g("sql", "ssl", "server-ca-certs", "list", f"--instance={instance}") or []
         ca = self.paths.ca / f"cloudsql-{run}.pem"
         write_private(ca, "".join(c["cert"].strip() + "\n" for c in certs))
-        state = {"instance": instance, "ip": ip, "dns_name": described.get("dnsName", "").rstrip("."),
+        # The server certificate names the instance's DNS name with its final
+        # dot (measured), so libpq must be given the name exactly that way.
+        state = {"instance": instance, "ip": ip, "dns_name": described.get("dnsName", ""),
                  "ca": str(ca), "connection_name": described.get("connectionName")}
         state["backstop"] = self.backstop(run, instance, parse(lease["expires_at"]))
         return state

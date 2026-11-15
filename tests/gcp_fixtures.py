@@ -16,6 +16,7 @@ import re
 import secrets
 import shlex
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from uuid import uuid4
@@ -66,7 +67,7 @@ def cloudsql(gcp):
     if not re.search(rf"(?:hostaddr|host)={re.escape(ip)}(?:\s|$)", dsn):
         raise pytest.UsageError("SOVA_TEST_CLOUDSQL_DSN does not reach this run's instance")
     return {"instance": instance, "dsn": dsn, "ip": ip, "described": described,
-            "dns_name": (described.get("dnsName") or "").rstrip("."),
+            "dns_name": described.get("dnsName") or "",
             "role_password": os.environ["SOVA_TEST_CLOUDSQL_ROLE_PASSWORD"],
             "root_password": os.environ["SOVA_TEST_CLOUDSQL_ROOT_PASSWORD"]}
 
@@ -305,3 +306,60 @@ def idp_login(tenant, email, password):
     except urllib.error.HTTPError as error:
         message = json.loads(error.read() or b"{}").get("error", {}).get("message", "")
         return None, message.split(" ", 1)[0] or str(error.code)
+
+
+# -- Cloud Storage: two writer service accounts the test acts as -----------------------
+
+
+def _account(gcp, writer):
+    return f"sova-test-{writer}-{gcp['run']}@{gcp['project']}.iam.gserviceaccount.com"
+
+
+@pytest.fixture(scope="session")
+def gcs_writers(gcp, gcp_rest):
+    """``app`` and ``other`` as run-scoped service accounts holding nothing of
+    their own; bucket grants decide. The test may act as them (token creator
+    on each, test-only: the adapter never impersonates a writer)."""
+    import google.auth
+    from google.auth import impersonated_credentials
+    from google.auth.transport.requests import AuthorizedSession, Request
+
+    from sova.adapters.gcp_rest import CLOUD_PLATFORM, GcpRest
+
+    me = subprocess.run(["gcloud", "config", "get-value", "account"], capture_output=True,
+                        text=True, check=True).stdout.strip()
+    source, _ = google.auth.default(scopes=[CLOUD_PLATFORM], quota_project_id=gcp["project"])
+    rests, members = {}, {}
+    for writer, name in (("app", "app"), ("other", "batch")):
+        email = _account(gcp, name)
+        if gcloud(gcp, "iam", "service-accounts", "describe", email, check=False) is None:
+            gcloud(gcp, "iam", "service-accounts", "create", f"sova-test-{name}-{gcp['run']}",
+                   f"--display-name=sova test writer {name} {gcp['run']}")
+        for _ in range(12):  # a new account is visible to IAM a little later
+            if gcloud(gcp, "iam", "service-accounts", "add-iam-policy-binding", email,
+                      f"--member=user:{me}", "--role=roles/iam.serviceAccountTokenCreator",
+                      check=False) is not None:
+                break
+            time.sleep(5)
+        credentials = impersonated_credentials.Credentials(
+            source_credentials=source, target_principal=email, target_scopes=[CLOUD_PLATFORM],
+            lifetime=3600)
+        rests[writer] = GcpRest(AuthorizedSession(credentials), gcp["project"])
+        members[writer] = f"serviceAccount:{email}"
+    deadline = time.monotonic() + 120
+    while True:  # the token creator grant reaches IAM a little later
+        try:
+            for rest in rests.values():
+                rest.session.credentials.refresh(Request())
+            break
+        except Exception:  # noqa: BLE001 - retried until the grant is visible
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(5)
+    return {"as": rests, "members": members}
+
+
+@pytest.fixture
+def gcs_stores(gcp, gcp_rest, gcs_writers):
+    return {"admin": gcp_rest, "as": gcs_writers["as"], "members": gcs_writers["members"],
+            "region": gcp["region"], "project": gcp["project"], "run": gcp["run"]}
