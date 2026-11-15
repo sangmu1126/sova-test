@@ -1174,8 +1174,8 @@ GCP adapter는 각 서비스의 공개 REST API를 `google-auth` 인증 세션�
 |---|---|---|
 | RDS → Cloud SQL, Cloud SQL → RDS | 공통 적합성 시험 16개 통과, 2개 건너뜀(두 사업자 모두 prepared transaction 꺼짐) | 양쪽 관리자 모두 superuser가 아님. 양쪽 모두 검증된 TLS라 계약의 전송 암호화 통제를 빼지 않음 |
 | control plane 전체 흐름, 양방향 | 통과(첫 실행) | 쓰기 정지 AWS→GCP **7598ms**, GCP→AWS **7884ms**(각 1회, 분포는 아래) |
-| AWS S3 → GCS, GCS → AWS S3 | {CROSS_OBJECTS} | 각 쪽을 그 사업자 방식으로 차단·개방(버킷 정책과 IAM role / 버킷 IAM과 서비스 계정) |
-| S3 객체 태그 → GCS | {CROSS_TAGS} | GCS 객체에는 태그가 없다. 태그 달린 S3 객체는 태그를 버리고 옮기지 않고 복사를 오류로 멈춤 |
+| AWS S3 → GCS, GCS → AWS S3 | 공통 적합성 시험 18개 통과(양방향) | 각 쪽을 그 사업자 방식으로 차단·개방(버킷 정책과 IAM role / 버킷 IAM과 서비스 계정) |
+| S3 객체 태그 → GCS | 통과 | GCS 객체에는 태그가 없다. 태그 달린 S3 객체는 태그를 버리고 옮기지 않고 복사를 오류로 멈춤 |
 
 **쓰기 정지 분포.** 경로·크기마다 5회 control plane 전체 인계를 돌렸다(`tests/perf/test_cloud_handoff_pause.py`, `SOVA_TEST_PERF=1`). 기본 데이터는 주문 50건 규모이고, "+1만 행"은 주문·결과·작업을 1만 행씩 더한 것이다. 원본 RDS는 db.t4g.micro, Cloud SQL은 공유 코어 db-f1-micro이고, 이 기기는 가정용 인터넷이다. 성능 주장이나 SLO 근거가 아니다.
 

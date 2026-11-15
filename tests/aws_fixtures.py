@@ -102,8 +102,9 @@ def create_bucket_in(aws, client, bucket, **extra):
 
 
 @pytest.fixture(scope="module")
-def cloud_to_onprem(aws, aws_writer_roles, s3_stores):
-    """Stores for S3World: source on AWS S3, target on the local gateway."""
+def aws_s3_store(aws, aws_writer_roles):
+    """AWS S3 as one side: the admin client, a client per writer role (``app``,
+    ``other``), their principals (role ARNs) and run-scoped bucket creation."""
     config = Config(retries={"max_attempts": 3}, s3={"addressing_style": "virtual"})
     admin = aws["session"].client("s3", config=config)
 
@@ -114,21 +115,27 @@ def cloud_to_onprem(aws, aws_writer_roles, s3_stores):
             aws_session_token=c["SessionToken"], config=config)
 
     writers = {"app": role_client("app"), "other": role_client("batch")}
+    return {"root": admin, "as": lambda writer: writers[writer],
+            "principals": {"app": aws_writer_roles["arn"]["app"],
+                           "other": aws_writer_roles["arn"]["batch"]},
+            "create_bucket": lambda client, bucket: create_bucket_in(aws, client, bucket)}
+
+
+@pytest.fixture(scope="module")
+def cloud_to_onprem(aws, aws_s3_store, s3_stores):
+    """Stores for S3World: source on AWS S3, target on the local gateway."""
+    store = aws_s3_store
     return {
-        "root": lambda side: admin if side == "source" else s3_stores["root"]("target"),
-        "as": lambda side, writer: (writers[writer] if side == "source"
+        "root": lambda side: store["root"] if side == "source" else s3_stores["root"]("target"),
+        "as": lambda side, writer: (store["as"](writer) if side == "source"
                                     else s3_stores["as"]("target", writer)),
-        "principals": {
-            "source": {"app": aws_writer_roles["arn"]["app"],
-                       "other": aws_writer_roles["arn"]["batch"]},
-            "target": s3_stores["principals"]["target"]},
+        "principals": {"source": store["principals"],
+                       "target": s3_stores["principals"]["target"]},
         "bucket_name": lambda side, suffix: (
             f"sova-test-src-{aws['run']}-{suffix}" if side == "source"
             else f"orders-tgt-{suffix}"),
-        "create_bucket": lambda client, bucket: create_bucket_in(aws, client, bucket),
+        "create_bucket": store["create_bucket"],
     }
-
-
 
 
 IMAGE = "public.ecr.aws/docker/library/busybox:1.37.0"
