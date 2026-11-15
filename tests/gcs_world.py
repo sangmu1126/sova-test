@@ -140,6 +140,8 @@ class GcsWorld(S3World):
         labels = admin.get(f"{STORAGE}/b/{bucket}").get("labels") or {}
         self._access("source").lift([k[len("sova-handoff-"):] for k in labels
                                      if k.startswith("sova-handoff-")])
+        # The reopening is real once the restored grant reaches the front ends.
+        until(lambda: self.can_write("source", "app"), "the restored grant took effect")
 
     def open_pending_write(self):
         """An XML API multipart upload with one part, started by the application."""
@@ -176,6 +178,14 @@ class GcsWorld(S3World):
         except ClientError:
             pass
         admin.delete(f"{STORAGE}/b/{bucket}", missing_ok=True)
+
+
+def until(condition, what, seconds=SEED_WAIT_SECONDS):
+    """Wait for an IAM change the world made to take effect (bounded)."""
+    deadline = time.monotonic() + seconds
+    while not condition():
+        assert time.monotonic() < deadline, f"not within {seconds} s: {what}"
+        time.sleep(3)
 
 
 def _settling(write):

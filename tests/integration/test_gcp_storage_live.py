@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 from adapter_conformance import HandoffAdapterConformance, apply, readback
 from gcp_fixtures import gcloud
-from gcs_world import GcsWorld
+from gcs_world import GcsWorld, until
 import pytest
 
 from sova.adapters.gcs_store import UPLOAD
@@ -42,10 +42,16 @@ def test_a_resumable_upload_opened_before_the_fence_cannot_complete_after_it(gcs
     completes, and a fenced writer's session is refused."""
     world = gcs_world
     session = world.g["as"]["app"].session
-    started = session.request(
-        "POST", f"{UPLOAD}/b/{world.buckets['source']}/o",
-        params={"uploadType": "resumable"}, json={"name": "orders/late.json"}, timeout=30)
-    assert started.status_code == 200
+    started = {}
+
+    def opened():  # the bucket grant reaches the front ends unevenly at first
+        started["r"] = session.request(
+            "POST", f"{UPLOAD}/b/{world.buckets['source']}/o",
+            params={"uploadType": "resumable"}, json={"name": "orders/late.json"}, timeout=30)
+        return started["r"].status_code == 200
+
+    until(opened, "the application could open an upload session")
+    started = started["r"]
     location = started.headers["Location"]
     for action in ("stage_target", "pause_admission", "fence_source_writes"):
         apply(world.adapter(), action)

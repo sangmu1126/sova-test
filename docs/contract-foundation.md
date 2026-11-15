@@ -1116,7 +1116,55 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 - 처리량·대용량 이전 측정, 반복 측정에 의한 쓰기 정지 시간 분포
 - EKS 등 다른 앱 실행 환경, 로드밸런서 수준의 트래픽 전환
 - 다른 리전·다른 계정 사이의 경로
-- GCP·Azure·NAVER Cloud
+- Azure·NAVER Cloud (GCP는 아래 절)
+
+## 실제 GCP 프로젝트 실측 (2026-11-15)
+
+사용자 승인을 받아 시험 전용 GCP 프로젝트(asia-northeast3, 서울)에서 시험했다. 자원은 AWS 때와 같은 규칙을 따른다.
+- 이름은 모두 `sova-test-…-<실행번호>`이고, 라벨이 있는 서비스에는 `sova-test` 라벨을 붙인다.
+- 시험은 `gcp_live` 표시가 있고 `SOVA_TEST_GCP_LIVE=1`일 때만 돈다.
+- 두 클라우드의 기반 자원은 [클라우드 시험 환경 스위치](../infra/cloud-env/README.md)로 함께 켜고 끈다. 끝나는 시각(이번엔 8시간)이 지나면 저절로 꺼진다.
+
+GCP adapter는 각 서비스의 공개 REST API를 `google-auth` 인증 세션으로 부른다(`gcp` extra). 오류에는 HTTP 상태와 Google의 이유 코드만 남기고 응답 본문은 옮기지 않는다. 본문이 요청 내용을, 경우에 따라 비밀값을 되풀이할 수 있기 때문이다.
+
+| 경로 | 결과 | 확인한 것 |
+|---|---|---|
+| Cloud SQL PostgreSQL 17 → 로컬 PostgreSQL | 공통 적합성 시험 8개 통과, 1개 건너뜀. 전체 인계·평문 거부 통과 | 관리자 계정(`cloudsqlsuperuser`)은 superuser가 아니다. 인스턴스는 암호화 연결만 받는다(평문 접속은 인스턴스가 거부). 인증서는 인스턴스 DNS 이름으로 `verify-full` 검증 |
+| control plane 전체 흐름, Cloud SQL → 온프레미스 | 통과 | 승인·수용·권한 기록·효과 원장·서명 측정 증거. 실측 쓰기 정지 **5405ms**(1회) |
+| Cloud SQL에서 논리 복제(snapshot-cdc) | 통과. 쓰기 정지 **5965ms**(1회) | 로컬 서버가 Cloud SQL을 검증된 TLS로 구독. 데이터는 차단 전에 옮기고, 차단 안에서는 남은 변경만 적용. 끝난 뒤 Cloud SQL에 slot·publication이 남지 않음 |
+| 복원한 백업으로 되살아난 원본(AT-32) | 통과 | 쓰기 가능하던 때의 on-demand 백업을 인계 뒤 새 인스턴스에 복원. 예전 권한이 살아 있어 원본 차단 감시가 보안 사고 보류를 엶 |
+| Cloud Storage → 로컬 S3 호환 저장소 | 공통 적합성 시험 9개와 측정 2개 통과 | 같은 객체 저장소 adapter. 쓰기 주체는 실행 전용 서비스 계정 둘, 버킷 권한만 가진다 |
+| Secret Manager → Kubernetes Secret | 3개 통과 | 값은 증거 어디에도 없음. 원본에 새 버전이 생기면 사본이 낡았다고 UNKNOWN. 등록하지 않은 Secret은 403 |
+| Cloud Run 원본 compute 중지 | 2개 통과 | 수동 확장 0으로 멈추고 예전 URL이 앱 응답을 내지 않음을 실측. 밖에서 자동 확장으로 되돌리면 UNKNOWN |
+| Cloud DNS 경로 전환 | 2개 통과 | 원자적 교체. 존의 권한 네임서버 넷이 모두 새 주소를 답함. 사이에 바뀐 레코드는 교체를 거부 |
+| Cloud Audit Logs 변경 수집기 | 1개 통과 | 실제 IAM 변경과 비밀 버전 추가가 19초 뒤 관리 활동 로그에 보여 각각 `policy`·`resource` 사건으로 한 번씩 기록 |
+| Identity Platform → Keycloak | 3개 통과 | 실제 로그인과 ID 토큰 검증(원본은 Google 공개키). UID가 주체로 유지되고, 그룹 일치, 비밀번호는 옮기지 않음. 원본 로그인을 막아도 목적지 로그인 지속 |
+| GCP 전체 탈출 | 통과(첫 실행, 2분 55초). 여섯 수준 모두 PASS | Cloud SQL·Cloud Storage·Secret Manager·Identity Platform을 한 계약으로 제거하고, compute는 Cloud Run. 각각 온프레미스로 옮긴 뒤 원본을 실제로 막음(DB 접속 금지, 버킷 권한 회수, 비밀 버전 비활성화, tenant 비밀번호 로그인 끔, 수동 확장 0). 경로 단계가 Cloud DNS 이름을 Cloud Run 앞단 주소에서 온프레미스 주소로 옮김. 마지막에 플랫폼 자격 증명을 회수하고 고객 단독 운영까지 측정 |
+
+**실측에서 드러난 것**
+
+- **Cloud SQL 인증서 이름 끝의 점.** 공유 CA 모드의 서버 인증서는 SAN에 인스턴스 DNS 이름을 `…sql.goog.`처럼 끝점까지 넣는다. 끝점 없는 이름으로 접속하면 libpq가 이름 불일치로 거부한다. 스위치와 시험은 API가 주는 이름을 끝점째 그대로 쓴다.
+- **Cloud SQL 라벨.** gcloud의 Cloud SQL 생성 명령에는 라벨 옵션이 없다. 라벨은 Admin API로 붙인다.
+- **Cloud Run에는 "멈춘 상태"가 따로 없다.** 자동 확장 서비스는 요청이 오면 인스턴스를 새로 띄운다. 그래서 "지금 도는 인스턴스가 없다"는 원본이 멈췄다는 근거가 못 된다. 수동 확장 0으로 두면 어떤 리비전도 인스턴스를 띄우지 않고 모든 요청에 503을 준다(실측). adapter는 이 상태와 반영 완료(세대 일치, 재조정 끝, 성공 조건)를 함께 확인한다. gcloud 명령은 0을 받지 않아 API로 바꾼다.
+- **감사 로그의 자원 이름.** 비밀에 새 버전을 더한 기록은 `…/secrets/<이름>/versions/<n>`처럼 하위 경로로 남는다. 이름이 정확히 같은 기록만 찾으면 비밀값 교체를 모두 놓친다. 수집기는 등록 자원과 그 아래 경로를 함께 찾는다. Secret Manager 기록의 자원 이름에는 프로젝트 ID가 아니라 프로젝트 번호가 들어간다. 로그는 호출 뒤 약 20초 안에 들어왔지만 상한이 문서화돼 있지 않아, watermark는 10분 뒤에 둔다.
+- **GCS 쓰기 차단은 IAM이다.** 버킷 정책에 Deny가 없어서 차단은 버킷 수준 권한을 빼는 것이다.
+  - 쓸 수 있는지는 직접 계산하지 않고 Policy Troubleshooter에 묻는다. 프로젝트·폴더 권한, Deny 정책, 조건까지 반영한 Google 자신의 판정이다. `CANNOT_ACCESS`만 차단으로, `CAN_ACCESS`만 쓰기 가능으로 본다.
+  - 프로젝트 수준 권한을 따로 가진 writer는 버킷에서 빼도 쓸 수 있다. 그래서 그 권한을 주인이 회수할 때까지 차단이 확인되지 않는다(시험).
+- **회수한 권한이 잠시 살아 있다.** Google은 IAM 변경이 보통 2분 안, 경우에 따라 7분 이상 걸리고, 그동안 회수한 권한을 쓸 수 있다고 문서화한다([Access change propagation](https://cloud.google.com/iam/docs/access-change-propagation)).
+  - 실측: 버킷 권한을 회수한 뒤 194회 탐침 중 6회가 여전히 허용됐고, 마지막은 회수 4.4초 뒤였다. 권한 부여 직후에도 일부 요청이 거부되다가 맞춰지는 것을 봤다.
+  - 그래서 GCS 접근층은 정책을 바꿀 때마다 시각과 정책 etag를 버킷 라벨에 남기고 전파 시간만큼 기다린다. 차단·쓰기 가능은 그 시간이 지났고 정책이 그대로일 때만 인정한다. 그 사이 다른 사람이 정책을 바꾸면 시각을 알 수 없으므로 확인하지 않는다.
+  - 기본 대기는 Google이 말한 7분이다. 이 대기는 IAM으로 차단하는 GCS의 실제 비용이고 첫 차단 단계(접수 정지)에 실린다. 시험은 60초로 둔다.
+  - 처음에는 "정책이 그대로인지"를 정책 etag로 확인했다. 그런데 GCS의 버킷 정책 etag는 버킷 메타데이터를 따라가서, 인계가 자기 표식 라벨을 쓰는 순간 etag가 바뀌었다. 그래서 차단이 영원히 확인되지 않았다(첫 실측에서 발견). 지금은 권한 바인딩 내용의 digest와 버킷 메타데이터 세대(metageneration)를 기록한다. 라벨은 `ifMetagenerationMatch`를 걸고 써서, 기록한 세대가 정확히 자기 쓰기의 결과가 되게 한다.
+  - 권한 부여 쪽도 고르지 않다. 버킷 권한을 준 뒤 몇 분 동안 같은 주체의 요청이 서버에 따라 허용되기도 하고 거부되기도 했다. 시험 world는 자기가 바꾼 권한이 실제로 적용될 때까지 기다린 뒤에 다음 단언으로 간다.
+- **재개 가능 업로드 세션은 차단을 깨지 못한다.** 세션 URI 자체가 인증이라 나열할 수 없다. 하지만 GCS는 완료 시점에 업로더 권한을 다시 확인해, 차단 전에 연 세션도 차단 뒤에는 403으로 거부했다(실측). 나열할 수 있는 XML API 멀티파트 업로드만 S3와 같은 규칙으로 차단을 미확인으로 둔다.
+- **GCS 바이트는 저장된 그대로 읽는다.** `Content-Encoding: gzip` 객체는 그냥 받으면 압축을 풀어 다른 바이트를 준다. 그래서 `Accept-Encoding: gzip`으로 저장된 바이트를 받고, 메타데이터를 읽은 세대(generation)로 고정한다. GCS 객체에는 태그가 없다(빈 태그 집합이 사실이다). 보존·hold는 S3 객체 잠금처럼 비교만 하므로, 그런 원본은 검증되지 않는다.
+- **Identity Platform 켜기는 되돌릴 수 없다.** 프로젝트를 Identity Platform으로 올리면 Firebase Authentication으로 돌아갈 수 없다. 시험 전용 프로젝트에서만 켰다. 원본의 비밀번호 해시(변형 scrypt)는 목적지가 검증할 수 없으므로 받는 즉시 버리고, 목적지에서는 새 자격 증명을 쓴다(`RESET_AND_REENROLL`).
+
+하지 않은 것은 다음과 같다.
+- Cloud SQL 보안 설정 수집기(RDS 수집기는 고정된 security 패키지의 코드다), IAM DB 인증, 다른 엔진
+- GKE 등 다른 실행 환경, 부하 분산기 수준의 전환
+- 조직 단위 감사 로그 sink, 데이터 접근 로그
+- Identity Platform의 MFA·페더레이션 사용자, Firebase 프로젝트 수준(테넌트 없는) 사용자 이전
 
 ## 로컬 통합 시험 환경
 
@@ -1158,10 +1206,12 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 | 객체 저장소 단위의 control plane 전체 인계 | 모의 시험 통과 | 같은 계획·승인·권한 기록·서명 증거, 객체용 측정. 업무 불변식 위반 시 활성화 전 보류 |
 | AWS S3 → 로컬 S3 호환 저장소 offline copy | 실환경 시험 통과 | 개인 AWS 계정, IAM role writer. 이 방향에 한함. 다른 클라우드 미검증 |
 | Kubernetes Service 경로 전환·CronJob 관리권 멈춤 실측 | 모의 시험 통과 | 로컬 kind, 최소 권한 token. 관리형 클러스터 미검증 |
-| 관리형 DB·클라우드 IAM 기반 접근 제어·Ingress/DNS 진입점용 adapter | 미검증 | 구현 없음 |
+| 클라우드 IAM 기반 쓰기 차단(GCS) | 실환경 시험 통과 | 버킷 권한 회수 + Policy Troubleshooter 판정 + 전파 대기. 프로젝트 수준 권한이 남은 writer는 미확인으로 둠 |
+| Ingress·부하 분산기 수준 진입점 adapter | 미검증 | 구현 없음(DNS 수준까지만) |
 | PostgreSQL 카탈로그 변경 수집기 | 모의 시험 통과 | 로컬 PostgreSQL, 시점 기반 귀속 |
 | 권한 witness의 Object Lock 저장소 | 실환경 시험 통과 | AWS S3 governance·compliance 모드 모두 실측 |
-| AWS CloudTrail 변경 수집기 | 실환경 시험 통과 | 이벤트 이력 조회, 실제 정책 변경 91초 뒤 기록. 조직 trail·GCP Audit Logs 미검증 |
+| AWS CloudTrail 변경 수집기 | 실환경 시험 통과 | 이벤트 이력 조회, 실제 정책 변경 91초 뒤 기록. 조직 trail 미검증 |
+| GCP Cloud Audit Logs 변경 수집기 | 실환경 시험 통과 | 관리 활동 로그, 실제 IAM 변경 19초 뒤 기록, 하위 경로(비밀 버전) 포함. 조직 sink 미검증 |
 | Keycloak 간 계정 이전·OIDC 실측 probe | 모의 시험 통과 | 로컬 Keycloak 두 대에서 실제 로그인·서명 검증. 계획 템플릿 미연결 |
 | AWS Cognito → Keycloak 계정 이전 | 실환경 시험 통과 | 실제 Cognito user pool에서 로컬 Keycloak으로. 페더레이션·MFA 사용자, Identity Pool은 미검증 |
 | AWS Secrets Manager → Kubernetes Secret 이전 | 실환경 시험 통과 | 실제 비밀 두 개에서 kind Secret으로. 원본 자격 증명 폐기는 별도 단계 |
@@ -1170,6 +1220,11 @@ Identity Pool·IAM role 연계, 앱 클라이언트·redirect URI·Lambda trigge
 | AWS 전체 탈출(RDS·S3·Secrets Manager·Cognito·ECS를 한 계약으로) | 실환경 시험 통과 | 계약의 Identity 의무 9개와 탈출 의무 10개(플랫폼 탈출 포함)를 실측, DNS 이름 전환 포함. 여섯 수준 모두 PASS. 시험 규모의 한 단위에 한함 |
 | 플랫폼 탈출(`PLATFORM_EXIT_VERIFIED`) | 모의 시험 통과 | 로컬 환경에서 플랫폼 자격 증명 넷의 실제 거부와 고객 단독 운영 실측 |
 | DNS 수준 트래픽 전환(Route 53) | 실환경 시험 통과 | 실제 호스팅 존에서 원자적 교체·권한 네임서버 응답 실측. 로드밸런서 전환 미시험 |
+| DNS 수준 트래픽 전환(Cloud DNS) | 실환경 시험 통과 | 원자적 교체, 권한 네임서버에 DNS로 직접 질의 |
+| Cloud SQL PostgreSQL → 로컬 PostgreSQL (offline-copy·snapshot-cdc) | 실환경 시험 통과 | 시험용 GCP 프로젝트, db-f1-micro → 로컬 17.11. 쓰기 정지 offline-copy 5405ms, snapshot-cdc 5965ms 각 1회 측정 |
+| Cloud Storage → 로컬 S3 호환 저장소 | 실환경 시험 통과 | 같은 객체 저장소 adapter에 GCS 접근층 |
+| Secret Manager·Cloud Run·Identity Platform 이전과 중지 | 실환경 시험 통과 | 비밀 3, compute 2, 계정 3개 시험 |
+| GCP 전체 탈출 | 실환경 시험 통과 | 데이터·객체·비밀·계정·compute를 한 계약으로 |
 | MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |
 | 사고 보류·증거 기한·사고 복구 확장 | 지원하지 않음 | 명세가 스키마를 정하지 않음(S.9, ADR 전제). 있으면 `NEEDS_EVIDENCE` |

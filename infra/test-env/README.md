@@ -47,4 +47,4 @@ kubeconfig는 `~/.kube/sova-test-env.yaml`(또는 `SOVA_TEST_KUBECONFIG`)에만 
 - 논리 복제 시험의 subscription은 서버가 자기 자신의 로컬 socket으로 원본 DB에 접속한다(`SOVA_TEST_POSTGRES_REPLICATION_CONNINFO`, 기본 `user=postgres`). slot이 남아도 `max_slot_wal_keep_size=1GB`가 WAL 보존을 제한한다.
 - 성능 측정(`tests/perf`)의 10만 행 크기는 MacBook Air M1에서 Docker Desktop VM을 두 번 비정상 종료시켰다. 이 기기에서는 기본 크기(1천·1만 행)만 쓴다.
 - 플랫폼 탈출 시험의 고객 백업은 `SOVA_TEST_POSTGRES_EXEC`(이 환경에서는 `kubectl exec deploy/postgres`)로 DB의 `pg_dump`·`pg_restore`를 쓴다.
-- 실제 AWS 실측(`aws_live`)은 이 환경과 별개로, 명시적으로 켤 때만 돈다.
+- 실제 클라우드 실측(`aws_live`, `gcp_live`)은 이 환경과 별개로, 명시적으로 켤 때만 돈다. 클라우드 쪽 자원은 [cloud-env](../cloud-env/README.md) 스위치로 AWS·GCP를 함께 켜고 끄며, 정한 시간이 지나면 저절로 꺼진다.
