@@ -243,7 +243,15 @@ spec:
   selector: {app: mysql}
   ports: [{port: 53306, targetPort: 53306, nodePort: 30306}]
 ---
-# RabbitMQ with its management API: the queue handoff adapter.
+# RabbitMQ with its management API: the queue handoff adapter. Shovel and
+# federation are on: they are write paths into a queue that outlive any client.
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: rabbitmq-plugins, namespace: sova-test-env}
+data:
+  enabled_plugins: |
+    [rabbitmq_management,rabbitmq_shovel,rabbitmq_shovel_management,rabbitmq_federation].
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata: {name: rabbitmq, namespace: sova-test-env}
@@ -266,6 +274,11 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 10
           resources: {limits: {memory: 512Mi}}
+          volumeMounts:
+            - {name: plugins, mountPath: /etc/rabbitmq/enabled_plugins, subPath: enabled_plugins}
+      volumes:
+        - name: plugins
+          configMap: {name: rabbitmq-plugins}
 ---
 apiVersion: v1
 kind: Service
