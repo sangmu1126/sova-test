@@ -205,3 +205,130 @@ spec:
   type: NodePort
   selector: {app: keycloak-target}
   ports: [{port: 8080, targetPort: 8080, nodePort: 30081}]
+---
+# MySQL: the MySQL handoff adapter's source and target databases. Row-based
+# binary log with GTIDs, as managed MySQL services run; the server listens on
+# the host's port inside the pod too.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: mysql, namespace: sova-test-env}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: mysql}}
+  template:
+    metadata: {labels: {app: mysql}}
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.4.13
+          args: ["--port=53306", "--skip-name-resolve", "--innodb-buffer-pool-size=64M",
+                 "--performance-schema=OFF", "--max-connections=300", "--binlog-format=ROW",
+                 "--gtid-mode=ON", "--enforce-gtid-consistency=ON"]
+          env:
+            - {name: MYSQL_ROOT_PASSWORD, value: sova-mysql-test-secret}
+            - {name: MYSQL_ROOT_HOST, value: "%"}
+          ports: [{containerPort: 53306}]
+          readinessProbe:
+            exec: {command: ["mysqladmin", "ping", "-h127.0.0.1", "-P53306", "-uroot",
+                             "-psova-mysql-test-secret"]}
+            periodSeconds: 3
+          resources: {limits: {memory: 768Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: mysql, namespace: sova-test-env}
+spec:
+  type: NodePort
+  selector: {app: mysql}
+  ports: [{port: 53306, targetPort: 53306, nodePort: 30306}]
+---
+# RabbitMQ with its management API: the queue handoff adapter.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: rabbitmq, namespace: sova-test-env}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: rabbitmq}}
+  template:
+    metadata: {labels: {app: rabbitmq}}
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:4.1.8-management
+          env:
+            - {name: RABBITMQ_DEFAULT_USER, value: sova-admin}
+            - {name: RABBITMQ_DEFAULT_PASS, value: sova-rabbit-test-secret}
+          ports: [{containerPort: 5672}, {containerPort: 15672}]
+          readinessProbe:
+            exec: {command: ["rabbitmq-diagnostics", "-q", "check_port_connectivity"]}
+            periodSeconds: 5
+            timeoutSeconds: 10
+          resources: {limits: {memory: 512Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: rabbitmq, namespace: sova-test-env}
+spec:
+  type: NodePort
+  selector: {app: rabbitmq}
+  ports:
+    - {name: amqp, port: 5672, targetPort: 5672, nodePort: 30672}
+    - {name: http, port: 15672, targetPort: 15672, nodePort: 30673}
+---
+# Redpanda (Kafka API) with SASL/SCRAM and authorization: the stream handoff
+# adapter. Clients on the host use the external listener, advertised at the
+# host's address; the admin API manages users.
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: redpanda-bootstrap, namespace: sova-test-env}
+data:
+  .bootstrap.yaml: |
+    enable_sasl: true
+    superusers: ["sova-admin"]
+    auto_create_topics_enabled: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: redpanda, namespace: sova-test-env}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: redpanda}}
+  template:
+    metadata: {labels: {app: redpanda}}
+    spec:
+      containers:
+        - name: redpanda
+          image: redpandadata/redpanda:v26.2.5
+          args: ["redpanda", "start", "--mode", "dev-container", "--smp", "1",
+                 "--memory", "512M", "--reserve-memory", "0M", "--overprovisioned",
+                 "--default-log-level=warn",
+                 "--kafka-addr", "internal://0.0.0.0:9092,external://0.0.0.0:19092",
+                 "--advertise-kafka-addr",
+                 "internal://redpanda.sova-test-env.svc.cluster.local:9092,external://127.0.0.1:59092",
+                 "--rpc-addr", "0.0.0.0:33145", "--advertise-rpc-addr", "127.0.0.1:33145"]
+          env:
+            - {name: RP_BOOTSTRAP_USER, value: "sova-admin:sova-kafka-test-secret:SCRAM-SHA-256"}
+          ports: [{containerPort: 9092}, {containerPort: 19092}, {containerPort: 9644}]
+          readinessProbe:
+            httpGet: {path: /v1/status/ready, port: 9644}
+            periodSeconds: 3
+          resources: {limits: {memory: 1Gi}}
+          volumeMounts:
+            - {name: bootstrap, mountPath: /etc/redpanda/.bootstrap.yaml, subPath: .bootstrap.yaml}
+      volumes:
+        - name: bootstrap
+          configMap: {name: redpanda-bootstrap}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: redpanda, namespace: sova-test-env}
+spec:
+  type: NodePort
+  selector: {app: redpanda}
+  ports:
+    - {name: kafka-internal, port: 9092, targetPort: 9092}
+    - {name: kafka, port: 19092, targetPort: 19092, nodePort: 30092}
+    - {name: admin, port: 9644, targetPort: 9644, nodePort: 30644}

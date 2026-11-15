@@ -1,7 +1,8 @@
 #!/bin/sh
 # The local integration-test environment: one disposable kind cluster holding
 # PostgreSQL (plain, and a second one that requires verified TLS), two
-# S3-compatible stores, two Keycloak servers and room for the Kubernetes tests.
+# S3-compatible stores, two Keycloak servers, MySQL, RabbitMQ, Redpanda (Kafka
+# API) and room for the Kubernetes tests.
 # Everything listens on 127.0.0.1 only.
 #
 #   test-env.sh up         create the cluster and wait until every service is ready
@@ -25,7 +26,8 @@ TLS="$STATE/tls"
 k() { kubectl --kubeconfig "$KCFG" --context "kind-$CLUSTER" -n sova-test-env "$@"; }
 
 wait_ready() {
-  for deployment in postgres postgres-tls s3-source s3-target keycloak-source keycloak-target; do
+  for deployment in postgres postgres-tls s3-source s3-target keycloak-source keycloak-target \
+      mysql rabbitmq redpanda; do
     k rollout status "deployment/$deployment" --timeout=300s
   done
 }
@@ -79,6 +81,14 @@ export SOVA_TEST_S3_WRITERS="appuser:appuser-test-secret,batchuser:batchuser-tes
 export SOVA_TEST_S3_PLATFORM="platformuser:platformuser-test-secret"
 export SOVA_TEST_KEYCLOAK_URLS="http://127.0.0.1:58080,http://127.0.0.1:58081"
 export SOVA_TEST_KEYCLOAK_ADMIN="sova-admin:sova-admin-test-secret"
+export SOVA_TEST_MYSQL="127.0.0.1:53306"
+export SOVA_TEST_MYSQL_ROOT="root:sova-mysql-test-secret"
+export SOVA_TEST_RABBITMQ="127.0.0.1:55672"
+export SOVA_TEST_RABBITMQ_HTTP="http://127.0.0.1:55673"
+export SOVA_TEST_RABBITMQ_ADMIN="sova-admin:sova-rabbit-test-secret"
+export SOVA_TEST_KAFKA="127.0.0.1:59092"
+export SOVA_TEST_KAFKA_ADMIN_API="http://127.0.0.1:59644"
+export SOVA_TEST_KAFKA_ADMIN="sova-admin:sova-kafka-test-secret"
 EOF
     ;;
   reset-db)
