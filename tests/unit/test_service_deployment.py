@@ -304,3 +304,28 @@ def test_a_composite_entry_that_does_not_add_up_is_refused(tmp_path, change):
                                route_for=lambda spec: FakeServiceRoute(),
                                controls_for=fake_volume_controls)[0]
         catalog.build("tenant-a", "board", "board-whole", None)
+
+
+def test_a_database_unit_may_switch_its_traffic_at_a_gateway(tmp_path):
+    seen = []
+    app = application(tmp_path, route={
+        "kind": "gateway_httproute", "registration_file": "unused", "route": "orders",
+        "parents": [["infra", "public"]], "sides": {"src": ["orders-a", 80], "tgt": ["orders-b", 80]},
+        "probe": {"url": "https://orders.example.com/healthz", "header": "X-Sova-Side",
+                  "values": {"src": "a", "tgt": "b"}}})
+    catalog, close = catalog_from({"version": 1, "applications": [app]},
+                                  route_for=lambda spec: seen.append(spec["kind"]) or FakeRoute())
+    catalog.build("tenant-a", "orders", "postgres-offline-copy", None)
+    assert seen == ["gateway_httproute"]
+    close()
+
+
+def test_sessions_drain_only_behind_a_service_selector(tmp_path):
+    entry = {"tenant_id": "tenant-a", "application_id": "game", **session_entry(),
+             "mode": "offline_copy"}
+    entry["route"] = {"kind": "gateway_httproute"}
+    with pytest.raises(ContractError, match="Service selector"):
+        catalog_from({"version": 1, "applications": [entry]},
+                     route_for=lambda spec: FakeServiceRoute(),
+                     controls_for=fake_volume_controls)[0].build(
+            "tenant-a", "game", "game-sessions", None)

@@ -9,6 +9,8 @@
 #   test-env.sh env        print the variables the integration tests read
 #   test-env.sh reset-db   restart both PostgreSQL servers empty (the suite expects
 #                          a fresh database)
+#   test-env.sh gateway    add Envoy Gateway (a Gateway API implementation) for the
+#                          entry-point route tests; pinned manifest and image
 #   test-env.sh status     show the pods
 #   test-env.sh down       delete the cluster and everything in it
 #
@@ -19,6 +21,11 @@
 # ~/.sova-test-env) and never leave this machine.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
+# Envoy Gateway: the release's install manifest (Gateway API CRDs included),
+# checked against its SHA-256, and the controller image pinned by digest.
+EG_VERSION=v1.9.3
+EG_MANIFEST_SHA256=ac89b0b564e52c97c97a3f8b4d82bb594a0fbc810431fb2e6ffd91702aabebfb
+EG_IMAGE=docker.io/envoyproxy/gateway:v1.9.3@sha256:192fc9bdadb6d2462e8cf7bd702ce3dd9648f3310c6038787448a1f509b7cd9f
 CLUSTER=sova-test-env
 KCFG=${SOVA_TEST_KUBECONFIG:-$HOME/.kube/sova-test-env.yaml}
 STATE=${SOVA_TEST_ENV_STATE:-$HOME/.sova-test-env}
@@ -98,6 +105,24 @@ EOF
     wait_sql postgres
     wait_sql postgres-tls
     ;;
+  gateway)
+    kc() { kubectl --kubeconfig "$KCFG" --context "kind-$CLUSTER" "$@"; }
+    manifest="$STATE/gateway/envoy-gateway-$EG_VERSION.yaml"
+    if [ ! -s "$manifest" ]; then
+      mkdir -p "$STATE/gateway"
+      curl -fsSL -o "$manifest.part" \
+        "https://github.com/envoyproxy/gateway/releases/download/$EG_VERSION/install.yaml"
+      mv "$manifest.part" "$manifest"
+    fi
+    echo "$EG_MANIFEST_SHA256  $manifest" | shasum -a 256 -c -
+    kc apply --server-side -f "$manifest"
+    kc -n envoy-gateway-system set image deployment/envoy-gateway "envoy-gateway=$EG_IMAGE"
+    kc -n envoy-gateway-system set resources deployment/envoy-gateway \
+      --requests=cpu=50m,memory=128Mi
+    kc -n envoy-gateway-system rollout status deployment/envoy-gateway --timeout=300s
+    kc apply -f "$HERE/gateway-class.yaml"
+    kc wait --for=condition=Accepted gatewayclass/sova-envoy --timeout=180s
+    ;;
   status)
     k get pods -o wide
     ;;
@@ -105,7 +130,7 @@ EOF
     kind delete cluster --name "$CLUSTER" --kubeconfig "$KCFG"
     ;;
   *)
-    sed -n '2,18p' "$0"
+    sed -n '2,20p' "$0"
     exit 2
     ;;
 esac

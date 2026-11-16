@@ -87,6 +87,8 @@ def session_resolver(app, *, route_for, controls_for):
     zones = session.get("zone_of") or {}
     if type(zones) is not dict or set(zones) - {"source", "target"}:
         raise ContractError("zone_of: source and target labels")
+    if (app.get("route") or {}).get("kind") != "kubernetes_service":
+        raise ContractError("A session server's sessions drain behind a Service selector")
     return {**sides, "route": route_for(app["route"]), "routes": tuple(routes),
             "port": session["port"], "image": session["image"], "run_as": tuple(run_as),
             "drain_seconds": session.get("drain_seconds", 300.0),

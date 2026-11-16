@@ -22,10 +22,10 @@ execution file holds only their paths.
         "tables": [["orders", "id"], ...],
         "schema_sql_file": "...", "probe_insert": "INSERT ...",
         "source_conninfo_file": "...",                        # logical_replication
-        "route": {"kind": "kubernetes_service",
+        "route": {"kind": "kubernetes_service",                # or gateway_httproute
                   "registration_file": "...",                 # a Kubernetes registration
                   "service": "orders", "sides": {"<db>": {"label": "value"}, ...},
-                  "converge_seconds": 60}}]}
+                  "converge_seconds": 60}}]}           # (see sova.service.route_stores)
 
 The route store must be outside the worker (several workers, restarts): a
 Kubernetes Service selector here, read back from the endpoints that traffic
@@ -41,12 +41,6 @@ PostgreSQL and ``user@host`` accounts in MySQL.
 import json
 from pathlib import Path
 
-from sova.adapters.kubernetes.handoff_controls import (
-    KubernetesHandoffControls,
-    KubernetesServiceRoute,
-)
-from sova.adapters.kubernetes.registration import decode_registration
-from sova.adapters.registration.graph_codec import json_document
 from sova.domain.contracts import ContractError
 from sova.service.worker import AdapterCatalog
 
@@ -81,17 +75,13 @@ def _strings(value, what):
 
 
 def kubernetes_route(spec, *, service_account=SERVICE_ACCOUNT):
-    """A Service-selector route store reached with this pod's own service
-    account, through the pinned transport of a Kubernetes registration."""
-    if set(spec) - {"kind", "registration_file", "service", "sides", "converge_seconds"}:
-        raise ContractError("Unknown route keys")
-    registration = decode_registration(json_document(_read(spec["registration_file"])))
-    ca = (service_account / "ca.crt").read_bytes()
-    token_file = service_account / "token"  # rotated by the kubelet: read at every use
-    controls = KubernetesHandoffControls(
-        registration, ca_pem=ca, token_provider=lambda: token_file.read_text().strip())
-    return KubernetesServiceRoute(controls, spec["service"], spec["sides"],
-                                  converge_seconds=float(spec.get("converge_seconds", 60)))
+    """The route store an entry names (a Service selector or a Gateway API
+    HTTPRoute), reached with this pod's own service account through the
+    pinned transport of a Kubernetes registration (``route_stores``)."""
+    from sova.service.route_stores import handoff_controls, route_from
+
+    return route_from(spec, controls_for=lambda entry: handoff_controls(
+        entry, service_account=service_account))
 
 
 def application_resolver(app, *, route_for=kubernetes_route):
@@ -114,8 +104,8 @@ def application_resolver(app, *, route_for=kubernetes_route):
     tables = tuple(tuple(_strings(t, "table and key")) for t in app["tables"])
     if not tables or not all(len(t) == 2 for t in tables):
         raise ContractError("tables: [table, key column] pairs required")
-    if app["route"].get("kind") != "kubernetes_service":
-        raise ContractError("Only a Kubernetes Service route store is supported")
+    if app["route"].get("kind") not in ("kubernetes_service", "gateway_httproute"):
+        raise ContractError("The route store is a Kubernetes Service or a Gateway API route")
     if app["mode"] not in ENGINES[engine]:
         raise ContractError(f"mode {app['mode']} is not supported for {engine}")
     zones = app.get("zone_of") or {}
