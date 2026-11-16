@@ -34,7 +34,12 @@ the target for a repeated copy needs ``DeleteRecords``, which they reject.
 The copy is idempotent: it first deletes the target's records
 (``DeleteRecords``) and rewrites every committed source record in one
 transaction per partition, so a copy cut short leaves nothing visible to a
-``read_committed`` reader. Offsets differ between clusters; positions are
+``read_committed`` reader. ``apply_final_changes`` (snapshot-cdc, after the
+fence) writes only what was committed since the sync: when the target's
+records are, partition by partition, exactly the first of the source's
+committed records, the rest are appended the same way; otherwise everything
+is copied again. The write stop then carries the records produced since the
+sync, not the topic. Offsets differ between clusters; positions are
 compared as "the number of records before it". Records a producer aborted
 are not business content and are not copied. ACLs are evaluated as the
 standard authorizer does: literal, prefixed and wildcard patterns, the
@@ -392,30 +397,52 @@ class KafkaTopicHandoffAdapter:
         open_ = self._open_transactions("target", self._describe("target") or 0)
         return present and not open_, {**detail, "open_transaction_partitions": open_}
 
-    def _copy(self):
+    def _kept(self, source, partitions):
+        """Per partition, how many of the source's committed records the target
+        already holds as its whole content, in order; None if the target is
+        not such a prefix (the source's retention or compaction removed records
+        since, or the target was changed): then everything is copied again."""
+        target = self._records("target", partitions)
+        kept = {}
+        for p in range(partitions):
+            n = len(target[p])
+            if n > len(source[p]) or self._digest(source[p][:n]) != self._digest(target[p]):
+                return None
+            kept[p] = n
+        return kept
+
+    def _copy(self, *, append=False):
+        """Make the target hold the source's committed records. With ``append``
+        a target that already holds a prefix of them (the sync's copy) gets
+        only the records after it: committed records only ever follow the
+        ones read at the sync, since that read stopped at the last stable
+        offset (no open transaction behind it)."""
         k = _kafka()
         partitions = self._describe("source")
         target_partitions = self._describe("target")
         if partitions is None or target_partitions != partitions:
             raise ContractError("Source and target topics must exist with equal partitions")
         source = self._records("source", partitions)
-        # Logically empty the target: its records before the high watermark go.
-        high = self._offsets("target", partitions, k["IsolationLevel"].READ_UNCOMMITTED)
-        doomed = [k["TopicPartition"](self.target_topic, p, high[p])
-                  for p in range(partitions) if high[p] > 0]
-        if doomed:
-            for future in self._admin("target").delete_records(
-                    doomed, request_timeout=self.timeout).values():
-                future.result()
+        kept = self._kept(source, partitions) if append else None
+        if kept is None:
+            # Logically empty the target: its records before the high watermark go.
+            kept = {p: 0 for p in range(partitions)}
+            high = self._offsets("target", partitions, k["IsolationLevel"].READ_UNCOMMITTED)
+            doomed = [k["TopicPartition"](self.target_topic, p, high[p])
+                      for p in range(partitions) if high[p] > 0]
+            if doomed:
+                for future in self._admin("target").delete_records(
+                        doomed, request_timeout=self.timeout).values():
+                    future.result()
         producer = k["Producer"]({**self.config("target"),
                                   "transactional.id": f"sova-copy-{self.target_topic}",
                                   "enable.idempotence": True})
         producer.init_transactions(self.timeout)
         for p in range(partitions):
-            if not source[p]:
+            if len(source[p]) <= kept[p]:
                 continue
             producer.begin_transaction()
-            for _, r in source[p]:
+            for _, r in source[p][kept[p]:]:
                 extra = {"timestamp": r["timestamp"]} if r["timestamp"] is not None else {}
                 while True:
                     try:
@@ -470,7 +497,7 @@ class KafkaTopicHandoffAdapter:
         return self._compare()
 
     def _apply_final_changes(self):
-        self._copy()
+        self._copy(append=True)  # only what was committed since the sync
 
     def _check_apply_final_changes(self):
         return self._compare()

@@ -73,3 +73,51 @@ def test_a_compact_only_topic_is_refused_before_anything_changes(world):
     with pytest.raises(ContractError):
         apply(world.adapter(), "stage_target")
     assert world.state() == before
+
+
+def records_written(world):
+    """Every offset the target topic has handed out (records and markers)."""
+    from confluent_kafka import TopicPartition
+    from confluent_kafka.admin import OffsetSpec
+
+    found = world.b["admin"].list_offsets(
+        {TopicPartition(world.names["tgt"], p): OffsetSpec.latest() for p in range(3)},
+        request_timeout=15)
+    return sum(f.result().offset for f in found.values())
+
+
+def stop_window(world, steps):
+    before = records_written(world)
+    for action in ("pause_admission", "fence_source_writes", *steps, "verify_final_state"):
+        apply(world.adapter(), action)
+    assert readback(world.adapter(), "verify_final_state") == EffectStatus.APPLIED
+    assert world.content("source") == world.content("target")
+    return records_written(world) - before
+
+
+def test_the_final_step_writes_only_what_came_since_the_sync(world):
+    world.business_write(600)
+    for action in ("stage_target", "start_sync"):
+        apply(world.adapter(), action)
+    world.business_write(5)  # the source still serves
+    written = stop_window(world, ("apply_final_changes",))
+    # The new records, and per partition at most two control batches: the commit
+    # marker and the fence Redpanda writes when a transaction first touches it.
+    assert written <= 5 + 2 * 3, written
+    print(f"snapshot-cdc: {written} offsets written inside the stop")
+
+
+def test_an_offline_copy_writes_the_whole_topic_inside_the_stop(world):
+    world.business_write(600)
+    apply(world.adapter(), "stage_target")
+    written = stop_window(world, ("copy_content",))
+    assert written >= 630, written
+    print(f"offline copy: {written} offsets written inside the stop")
+
+
+def test_a_target_that_is_not_the_sync_copy_gets_everything_again(world):
+    for action in ("stage_target", "start_sync"):
+        apply(world.adapter(), action)
+    world.tamper_target()  # no longer a prefix of the source's records
+    world.business_write(2)
+    stop_window(world, ("apply_final_changes",))
