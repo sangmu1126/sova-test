@@ -184,3 +184,63 @@ def test_mysql_connection_settings_are_checked(tmp_path):
         db: {"dsn_file": bad} for db in ("src", "tgt", "scratch", "other")})
     with pytest.raises(ContractError):
         catalog_from({"version": 1, "applications": [app]}, route_for=lambda spec: FakeRoute())
+
+
+def volume_application(tmp_path, **changes):
+    side = {"registration_file": "unused", "claims": ["board-data"],
+            "app": ["deployment", "board"], "others": [["cronjob", "board-backup"]]}
+    volume = {"source": side, "target": {**side, "claims": ["board-data-new"]},
+              "routes": ["board_src", "board_tgt"],
+              "agent_image": "docker.io/library/python@sha256:" + "5" * 64,
+              "agent_key_file": write(tmp_path, "agent.key", "ab" * 32),
+              "run_as": [10001, 10001], "write_probe": {"port": 8080, "path": "/probe"},
+              "databases": ["board.db"], "zone_of": {"target": "zone-a"},
+              "invariants": {"BOARD-01": {"database": "board.db",
+                                          "violations": "SELECT id FROM posts WHERE 0"}},
+              "scratch_claim": "sova-restore"}
+    app = {"tenant_id": "tenant-a", "application_id": "board",
+           "adapter_id": "kubernetes-volume-handoff", "engine": "kubernetes-volume",
+           "mode": "offline_copy", "volume": volume,
+           "route": {"kind": "kubernetes_service", "registration_file": "unused",
+                     "service": "board", "sides": {"board_src": {"side": "a"},
+                                                   "board_tgt": {"side": "b"}}}}
+    for key, value in changes.items():
+        (volume if key.startswith("volume.") else app)[key.removeprefix("volume.")] = value
+    return app
+
+
+def fake_volume_controls(spec):
+    from types import SimpleNamespace
+
+    from sova.adapters.kubernetes.volume_controls import KubernetesVolumeControls
+
+    controls = object.__new__(KubernetesVolumeControls)  # nothing is contacted here
+    controls.registration = SimpleNamespace(namespace="board")
+    return controls
+
+
+def test_a_volume_unit_gets_the_volume_adapter_and_its_probes(tmp_path):
+    catalog, close = catalog_from({"version": 1, "applications": [volume_application(tmp_path)]},
+                                  route_for=lambda spec: FakeRoute(),
+                                  controls_for=fake_volume_controls)
+    execution = catalog.build("tenant-a", "board", "kubernetes-volume-handoff", None)
+    assert type(execution.adapter).__name__ == "KubernetesVolumeHandoffAdapter"
+    assert execution.adapter.routes == ("board_src", "board_tgt")
+    close()
+
+
+@pytest.mark.parametrize("changes", [
+    {"mode": "logical_replication"},  # a file system has no change log to follow
+    {"volume.agent_image": "python:3.12-slim"},  # not pinned by digest
+    {"volume.routes": ["board_src"]},
+    {"volume.run_as": [0, 0]},  # never as root
+    {"volume.write_probe": {"port": 8080}},
+    {"volume.unexpected": True},
+    {"databases": {}},  # a database entry's keys do not belong here
+])
+def test_a_volume_entry_that_does_not_add_up_is_refused(tmp_path, changes):
+    with pytest.raises(ContractError):
+        catalog = catalog_from({"version": 1, "applications": [
+            volume_application(tmp_path, **changes)]}, route_for=lambda spec: FakeRoute(),
+            controls_for=fake_volume_controls)[0]
+        catalog.build("tenant-a", "board", "kubernetes-volume-handoff", None)

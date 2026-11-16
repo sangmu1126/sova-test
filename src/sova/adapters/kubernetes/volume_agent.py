@@ -315,6 +315,101 @@ def chmod(claim, path, mode):
         os.close(fd)
 
 
+def _copy_out(directory, name, destination):
+    """Copy ``name`` (never through a link) to ``destination``; False if absent."""
+    try:
+        source = os.open(name, _FILE, dir_fd=directory)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        raise Refused(409, "unreadable") from None
+    try:
+        if not stat.S_ISREG(os.fstat(source).st_mode):
+            raise Refused(409, "not_a_file")
+        with open(destination, "wb") as out:
+            while block := os.read(source, 1 << 20):
+                out.write(block)
+    finally:
+        os.close(source)
+    return True
+
+
+def _value(v):
+    if v is None or isinstance(v, (int, str)):
+        return v
+    if isinstance(v, float):
+        return {"f": repr(v)}
+    if isinstance(v, bytes):
+        return {"b": v.hex()}
+    return {"r": repr(v)}
+
+
+def _row_text(row):
+    return json.dumps([_value(v) for v in row], ensure_ascii=False, separators=(",", ":"))
+
+
+def sqlite_report(claim, path, queries):
+    """A SQLite database's logical content, read from a copy in scratch space:
+    the volume itself is never opened by SQLite (opening it would write a
+    shared-memory index or checkpoint its log). Integrity, a digest of the
+    schema, each table's rows as a multiset, and the answers to registered
+    read-only queries (at most 10000 rows each)."""
+    import shutil
+    import sqlite3
+    import tempfile
+
+    scratch = os.environ.get("SOVA_AGENT_SCRATCH", "")
+    if not scratch:
+        raise Refused(409, "no_scratch")
+    if type(queries) is not dict or len(queries) > 16 or not all(
+            type(k) is str and type(v) is str and len(v) <= 4096 for k, v in queries.items()):
+        raise Refused(400, "bad_queries")
+    fd, name = parent(claim, path)
+    work = tempfile.mkdtemp(dir=scratch)
+    try:
+        copy = os.path.join(work, "db")
+        if not _copy_out(fd, name, copy):
+            raise Refused(409, "missing")
+        with open(copy, "rb") as f:
+            if f.read(16) != b"SQLite format 3\x00":
+                raise Refused(409, "not_sqlite")
+        for companion in ("-wal", "-journal"):  # a log not yet checkpointed is content
+            _copy_out(fd, name + companion, copy + companion)
+        connection = sqlite3.connect(copy, isolation_level=None)
+        try:
+            integrity = [r[0] for r in connection.execute("PRAGMA integrity_check")][:20]
+            master = sorted(_row_text(r) for r in connection.execute(
+                "SELECT type, name, tbl_name, sql FROM sqlite_master"))
+            tables = {}
+            for (table,) in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall():
+                quoted = '"' + table.replace('"', '""') + '"'
+                texts = sorted(_row_text(r) for r in connection.execute(
+                    f"SELECT * FROM {quoted}"))
+                digest = hashlib.sha256()
+                for text in texts:
+                    digest.update(text.encode() + b"\n")
+                tables[table] = {"rows": len(texts), "digest": digest.hexdigest()}
+            connection.execute("PRAGMA query_only=ON")
+            results = {}
+            for key, sql in sorted(queries.items()):
+                try:
+                    rows = connection.execute(sql).fetchmany(10001)
+                except sqlite3.Error as error:
+                    results[key] = {"error": str(error)[:200]}
+                    continue
+                results[key] = {"rows": [[_value(v) for v in r] for r in rows[:10000]],
+                                "truncated": len(rows) > 10000}
+        finally:
+            connection.close()
+        return {"integrity": integrity,
+                "schema": hashlib.sha256("\n".join(master).encode()).hexdigest(),
+                "tables": tables, "results": results}
+    finally:
+        os.close(fd)
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def _int(query, key, low=0, high=1 << 62):
     try:
         value = int(query[key][0])
@@ -367,6 +462,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._answer(200, read(claim, _text(query, "path"),
                                               _int(query, "offset"), _int(query, "length")),
                                     "application/octet-stream")
+            if method == "POST" and url.path == "/sqlite":
+                try:
+                    queries = json.loads(body or b"{}").get("queries", {})
+                except (ValueError, AttributeError):
+                    raise Refused(400, "bad_queries") from None
+                return self._answer(200, json.dumps(sqlite_report(
+                    claim, _text(query, "path"), queries)).encode())
             if MODE != "writer":
                 raise Refused(405, "reader")
             if method == "PUT" and url.path == "/write":

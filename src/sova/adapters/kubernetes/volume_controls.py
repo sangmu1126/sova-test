@@ -119,6 +119,20 @@ class KubernetesVolumeControls(KubernetesHandoffControls):
                              timeout=_TIMEOUT, body=json.dumps(body).encode(),
                              content_type="application/json", accept=(201,))
 
+    def all_claims(self):
+        listed = self._get(self._ns("/api/v1", "persistentvolumeclaims"), {"limit": "500"})
+        if listed.get("metadata", {}).get("continue"):
+            raise ContractError("Too many claims to decide")
+        return listed.get("items", [])
+
+    def delete_claim(self, name):
+        try:
+            self._request("DELETE", self._ns("/api/v1", "persistentvolumeclaims", name), {},
+                          timeout=_TIMEOUT, accept=(200, 202))
+        except KubernetesRequestRefused as refused:
+            if refused.status != 404:
+                raise
+
     def annotate_claim(self, name, resource_version, key, value):
         if type(key) is not str or not key.startswith("sova.dev/") or type(value) is not str \
                 or len(value) > 1024:

@@ -48,18 +48,19 @@ claims that are already bound, so it never changes what it reads. Every
 action is idempotent; a postcondition that does not hold reads back UNKNOWN.
 """
 
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
-import hmac
 import json
-import re
-import secrets
 import time
 
-from sova.adapters.kubernetes.https import KubernetesRequestRefused
-from sova.adapters.kubernetes import volume_agent as _agent_module
+from sova.adapters.kubernetes.volume_agents import (
+    AGENT_DIGEST,
+    VolumeAgents,
+    differences,
+    manifest_digest,
+    sync_trees,
+)
 from sova.adapters.kubernetes.volume_controls import (
     KubernetesVolumeControls,
     alive,
@@ -74,17 +75,7 @@ from sova.domain.contracts import ContractError, EffectObservation, EffectStatus
 ACTIONS = frozenset({"stage_target", "verify_return_target", "start_sync", "pause_admission",
                      "fence_source_writes", "copy_content", "apply_final_changes",
                      "verify_final_state", "activate_target", "commit_route"})
-AGENT_PORT = 8080
-PARTIAL = ".sova-partial-"
 SYNCED = "sova.dev/synced-from"
-_IMAGE = re.compile(r"[a-z0-9.-]+(?::[0-9]+)?/[a-z0-9._/-]+(?::[A-Za-z0-9._-]+)?"
-                    r"@sha256:[0-9a-f]{64}|[a-z0-9._/-]+(?::[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}")
-_WAITING = frozenset({"ErrImagePull", "ImagePullBackOff", "InvalidImageName",
-                      "CreateContainerConfigError", "CreateContainerError", "CrashLoopBackOff"})
-
-with open(_agent_module.__file__, encoding="utf-8") as _source:
-    AGENT_SOURCE = _source.read()
-AGENT_DIGEST = hashlib.sha256(AGENT_SOURCE.encode()).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -118,68 +109,6 @@ class VolumeSide:
         return (self.app, *self.others)
 
 
-class _Agent:
-    """Requests to one agent Pod through the API server."""
-
-    def __init__(self, controls, name, token):
-        self.controls, self.name, self.token = controls, name, token
-
-    def _call(self, method, path, query, *, body=None, timeout=120, limit=1 << 20):
-        return self.controls.proxy(method, self.name, AGENT_PORT, path, query,
-                                   headers={"X-Sova-Agent-Token": self.token}, body=body,
-                                   timeout=timeout, limit=limit)
-
-    def manifest(self, claim):
-        return json.loads(self._call("GET", "/manifest", {"claim": str(claim)},
-                                     timeout=900, limit=64 << 20))
-
-    def read(self, claim, path, offset, length):
-        return self._call("GET", "/read", {"claim": str(claim), "path": path,
-                                           "offset": str(offset), "length": str(length)},
-                          limit=length + 1024)
-
-    def write(self, claim, path, offset, data):
-        self._call("PUT", "/write", {"claim": str(claim), "path": path, "offset": str(offset)},
-                   body=data)
-
-    def commit(self, claim, partial, path, size, digest, mode):
-        self._call("POST", "/commit", {"claim": str(claim), "partial": partial, "path": path,
-                                       "size": str(size), "sha256": digest, "mode": str(mode)},
-                   body=b"", timeout=600)
-
-    def mkdir(self, claim, path, mode):
-        self._call("POST", "/mkdir", {"claim": str(claim), "path": path, "mode": str(mode)},
-                   body=b"")
-
-    def symlink(self, claim, path, target):
-        self._call("POST", "/symlink", {"claim": str(claim), "path": path, "target": target},
-                   body=b"")
-
-    def remove(self, claim, path):
-        self._call("POST", "/remove", {"claim": str(claim), "path": path}, body=b"",
-                   timeout=600)
-
-    def chmod(self, claim, path, mode):
-        self._call("POST", "/chmod", {"claim": str(claim), "path": path, "mode": str(mode)},
-                   body=b"")
-
-
-def _differences(source, target, limit=20):
-    """Where two manifests differ: the first entries of each kind of difference."""
-    want, have = {e[0]: e for e in source}, {e[0]: e for e in target}
-    out = []
-    for path in sorted(set(want) | set(have)):
-        if want.get(path) != have.get(path):
-            out.append({"path": path, "source": want.get(path), "target": have.get(path)})
-            if len(out) >= limit:
-                break
-    return out
-
-
-def _manifest_digest(entries):
-    return hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
-
-
 class KubernetesVolumeHandoffAdapter:
     def __init__(self, adapter_id, *, source, target, route, routes, agent_key, image, run_as,
                  fs_group=None, storage_class=None, app_replicas=1, settle_seconds=60.0,
@@ -194,28 +123,20 @@ class KubernetesVolumeHandoffAdapter:
             raise ContractError("A route store required")
         if type(routes) is not tuple or len(routes) != 2 or routes[0] == routes[1]:
             raise ContractError("Distinct source and target route values required")
-        if type(agent_key) is not bytes or len(agent_key) < 32:
-            raise ContractError("An agent key of at least 32 bytes required")
-        if type(image) is not str or not _IMAGE.fullmatch(image):
-            raise ContractError("An agent image pinned by digest required")
-        if type(run_as) is not tuple or len(run_as) != 2 or not all(
-                type(v) is int and 1 <= v <= 2**31 - 1 for v in run_as):
-            raise ContractError("A non-root user and group for the agent required")
-        if fs_group is not None and (type(fs_group) is not int or not 1 <= fs_group < 2**31):
-            raise ContractError("A numeric file system group required")
         if type(app_replicas) is not int or not 1 <= app_replicas <= 100:
             raise ContractError("Bounded application replicas required")
         if type(chunk_bytes) is not int or not 64 << 10 <= chunk_bytes <= 16 << 20:
             raise ContractError("A chunk between 64 KiB and 16 MiB required")
         self.adapter_id, self.route, self.routes = adapter_id, route, routes
         self.sides = {"source": source, "target": target}
-        self.agent_key, self.image, self.run_as = agent_key, image, run_as
-        self.fs_group, self.storage_class = fs_group, storage_class
+        self.storage_class = storage_class
         self.app_replicas, self.chunk_bytes = app_replicas, chunk_bytes
         self.settle_seconds, self.start_seconds = settle_seconds, start_seconds
         self.unit = hashlib.sha256(json.dumps(
             [adapter_id, *sorted(f"{s.namespace}/{','.join(s.claims)}"
                                  for s in self.sides.values())]).encode()).hexdigest()[:12]
+        self.agents = VolumeAgents(label=self.unit, key=agent_key, image=image, run_as=run_as,
+                                   fs_group=fs_group, start_seconds=start_seconds)
 
     # -- EffectAdapter -------------------------------------------------------
     def validate(self, command):
@@ -307,178 +228,15 @@ class KubernetesVolumeHandoffAdapter:
         # Stopping is asynchronous: wait, bounded, until no Pod of them runs.
         self._wait(lambda: self._stopped(side, writers)[0], self.settle_seconds)
 
-    # -- agents ----------------------------------------------------------------
-    def _token(self, side, name):
-        return hmac.new(self.agent_key, f"{self.sides[side].namespace}/{name}".encode(),
-                        hashlib.sha256).hexdigest()
-
-    def _agent_pod(self, side, name, writable, node):
-        s = self.sides[side]
-        token_digest = hashlib.sha256(self._token(side, name).encode()).hexdigest()
-        security = {"runAsNonRoot": True, "runAsUser": self.run_as[0],
-                    "runAsGroup": self.run_as[1], "seccompProfile": {"type": "RuntimeDefault"}}
-        if writable and self.fs_group is not None:
-            security["fsGroup"] = self.fs_group  # a target is ours to populate
-        spec = {
-            "restartPolicy": "Never", "activeDeadlineSeconds": 3600,
-            "terminationGracePeriodSeconds": 0, "automountServiceAccountToken": False,
-            "enableServiceLinks": False, "securityContext": security,
-            "containers": [{
-                "name": "agent", "image": self.image, "imagePullPolicy": "IfNotPresent",
-                "command": ["python3", "-I", "-c", AGENT_SOURCE],
-                "env": [{"name": "SOVA_AGENT_MODE", "value": "writer" if writable else "reader"},
-                        {"name": "SOVA_AGENT_TOKEN_SHA256", "value": token_digest},
-                        {"name": "SOVA_AGENT_CLAIMS", "value": str(len(s.claims))}],
-                "ports": [{"containerPort": AGENT_PORT}],
-                "readinessProbe": {"httpGet": {"path": "/healthz", "port": AGENT_PORT},
-                                   "periodSeconds": 1, "failureThreshold": 3},
-                "resources": {"requests": {"cpu": "50m", "memory": "64Mi"},
-                              "limits": {"memory": "512Mi"}},
-                "securityContext": {"allowPrivilegeEscalation": False,
-                                    "readOnlyRootFilesystem": True,
-                                    "capabilities": {"drop": ["ALL"]}},
-                "volumeMounts": [{"name": f"claim-{i}", "mountPath": f"/v/{i}",
-                                  "readOnly": not writable} for i in range(len(s.claims))]}],
-            "volumes": [{"name": f"claim-{i}", "persistentVolumeClaim": {
-                "claimName": claim, "readOnly": not writable}}
-                for i, claim in enumerate(s.claims)]}
-        if node is not None:  # a single-node (ReadWriteOnce) volume already in use
-            spec["affinity"] = {"nodeAffinity": {"requiredDuringSchedulingIgnoredDuringExecution":
-                                {"nodeSelectorTerms": [{"matchExpressions": [{
-                                    "key": "kubernetes.io/hostname", "operator": "In",
-                                    "values": [node]}]}]}}}
-        return {"apiVersion": "v1", "kind": "Pod", "metadata": {
-            "name": name, "labels": {"app.kubernetes.io/managed-by": "sova",
-                                     "sova.dev/volume-unit": self.unit,
-                                     "sova.dev/volume-role": "writer" if writable else "reader"},
-            "annotations": {"sova.dev/agent-sha256": AGENT_DIGEST}}, "spec": spec}
-
-    def _start(self, side, writable):
-        s = self.sides[side]
-        if writable:  # a writer agent another worker left behind is never legitimate
-            for name in s.controls.pods({"sova.dev/volume-unit": self.unit,
-                                         "sova.dev/volume-role": "writer"}):
-                s.controls.delete_pod(name)
-        nodes = {m["node"] for m in self._mounting(side) if m["node"]}
-        name = f"sova-vol-{self.unit[:10]}-{'w' if writable else 'r'}-{secrets.token_hex(4)}"
-        try:
-            s.controls.create_pod(self._agent_pod(side, name, writable,
-                                                  next(iter(nodes)) if len(nodes) == 1
-                                                  else None))
-        except KubernetesRequestRefused as refused:
-            raise ContractError(f"Volume agent refused by the cluster ({refused.status})") \
-                from refused
-        return side, name
-
-    def _ready(self, side, name):
-        controls = self.sides[side].controls
-        deadline = time.monotonic() + self.start_seconds
-        while True:
-            pod = controls.pod(name)
-            if pod is not None and ready(pod):
-                return _Agent(controls, name, self._token(side, name))
-            status = (pod or {}).get("status") or {}
-            waiting = [((c.get("state") or {}).get("waiting") or {}).get("reason")
-                       for c in status.get("containerStatuses") or ()]
-            if pod is None or status.get("phase") in ("Failed", "Succeeded") or \
-                    set(waiting) & _WAITING:
-                raise ContractError(f"Volume agent did not start ({status.get('phase')}, "
-                                    f"{[w for w in waiting if w]})")
-            if time.monotonic() >= deadline:
-                raise ContractError("Volume agent did not become ready in time")
-            time.sleep(0.25)
-
-    @contextmanager
+    # -- agents and copying --------------------------------------------------------
     def _agents(self, *wanted):
         """Agents for ``(side, writable)`` pairs, started together, always reaped."""
-        started = []
-        try:
-            for side, writable in wanted:
-                started.append(self._start(side, writable))
-            yield [self._ready(side, name) for side, name in started]
-        finally:
-            for side, name in started:
-                self.sides[side].controls.delete_pod(name)
-            for side, name in started:
-                controls = self.sides[side].controls
-                self._wait(lambda: controls.pod(name) is None, 60, 0.25)
-
-    # -- copying ---------------------------------------------------------------
-    def _transfer(self, source, target, claim, entry, live):
-        path, _, mode, _, _, size, digest = entry
-        directory, _, _ = path.rpartition("/")
-        partial = PARTIAL + hashlib.sha256(path.encode()).hexdigest()[:24]
-        partial_path = f"{directory}/{partial}" if directory else partial
-        try:
-            if size == 0:
-                target.write(claim, partial_path, 0, b"")
-            offset = 0
-            while offset < size:
-                data = source.read(claim, path, offset, min(self.chunk_bytes, size - offset))
-                if not data:
-                    break  # shorter than listed: the commit refuses it below
-                target.write(claim, partial_path, offset, data)
-                offset += len(data)
-            target.commit(claim, partial, path, size, digest, mode)
-            return True
-        except KubernetesRequestRefused as refused:
-            if refused.status != 409:
-                raise
-            if not live:
-                raise ContractError(f"Source file changed during the copy: {path}") from refused
-            return False  # changed while the source still serves: the final copy takes it
+        return self.agents.running(*((self.sides[side].controls, self.sides[side].claims,
+                                      writable) for side, writable in wanted))
 
     def _sync(self, source, target, *, live):
-        """Make each target claim's tree equal to the source's; returns a report."""
-        report = {"copied_files": 0, "copied_bytes": 0, "removed": 0, "changed_later": 0}
-        for claim in range(len(self.sides["source"].claims)):
-            want = source.manifest(claim)
-            if want["unsupported"]:
-                raise ContractError(f"Source entries that cannot be copied: "
-                                    f"{want['unsupported'][:5]}")
-            have = target.manifest(claim)
-            wanted = {e[0]: e for e in want["entries"]}
-            present = {e[0]: e for e in have["entries"]}
-            # Directories the agent cannot enter or write are opened first.
-            for path, entry in present.items():
-                if entry[1] == "d" and entry[2] & 0o700 != 0o700 and path in wanted:
-                    target.chmod(claim, path, entry[2] | 0o700)
-            gone = []
-            for path in sorted(present):
-                if any(path.startswith(g + "/") for g in gone):
-                    continue
-                entry = wanted.get(path)
-                if entry is None or entry[1] != present[path][1]:
-                    target.remove(claim, path)
-                    report["removed"] += 1
-                    gone.append(path)
-            for path in gone:
-                present.pop(path, None)
-            present = {p: e for p, e in present.items()
-                       if not any(p.startswith(g + "/") for g in gone)}
-            for path in sorted(wanted):
-                entry, current = wanted[path], present.get(path)
-                if entry[1] == "d":
-                    if current is None:
-                        target.mkdir(claim, path, 0o700)
-                elif entry[1] == "l":
-                    if current is None or current[6] != entry[6]:
-                        target.symlink(claim, path, entry[6])
-                elif current is not None and current[5:] == entry[5:]:
-                    if current[2] != entry[2]:
-                        target.chmod(claim, path, entry[2])
-                elif self._transfer(source, target, claim, entry, live):
-                    report["copied_files"] += 1
-                    report["copied_bytes"] += entry[5]
-                else:
-                    report["changed_later"] += 1
-            # Directory modes last, deepest first, so the agent could fill them.
-            for path in sorted((p for p, e in wanted.items() if e[1] == "d"), reverse=True):
-                current = present.get(path)
-                if current is None or current[2] != wanted[path][2] or \
-                        current[2] & 0o700 != 0o700:
-                    target.chmod(claim, path, wanted[path][2])
-        return report
+        return sync_trees(source, target, len(self.sides["source"].claims),
+                          chunk=self.chunk_bytes, live=live)
 
     def _compare(self):
         """Both sides' manifests, through read-only agents on bound claims only."""
@@ -494,12 +252,12 @@ class KubernetesVolumeHandoffAdapter:
                 claims.append({
                     "source_claim": self.sides["source"].claims[claim],
                     "target_claim": self.sides["target"].claims[claim],
-                    "source": {"manifest": _manifest_digest(want["entries"]),
+                    "source": {"manifest": manifest_digest(want["entries"]),
                                "files": want["files"], "bytes": want["bytes"]},
-                    "target": {"manifest": _manifest_digest(have["entries"]),
+                    "target": {"manifest": manifest_digest(have["entries"]),
                                "files": have["files"], "bytes": have["bytes"]},
                     "unsupported": want["unsupported"][:20],
-                    "differences": [] if same else _differences(want["entries"],
+                    "differences": [] if same else differences(want["entries"],
                                                                 have["entries"])})
         return equal, {"claims": claims, "agent_sha256": AGENT_DIGEST}
 

@@ -139,7 +139,7 @@ RULES = [
     {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list", "create", "delete"]},
     {"apiGroups": [""], "resources": ["pods/proxy"], "verbs": ["get", "create", "update"]},
     {"apiGroups": [""], "resources": ["persistentvolumeclaims"],
-     "verbs": ["get", "create", "patch"]},
+     "verbs": ["get", "list", "create", "patch", "delete"]},
     {"apiGroups": [""], "resources": ["services"], "verbs": ["get", "patch"]},
     {"apiGroups": ["discovery.k8s.io"], "resources": ["endpointslices"], "verbs": ["list"]},
     {"apiGroups": ["apps"], "resources": ["deployments", "statefulsets"],

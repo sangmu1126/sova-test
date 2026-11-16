@@ -11,6 +11,8 @@ execution file holds only their paths.
         "tenant_id": "...", "application_id": "...",
         "adapter_id": "postgres-offline-copy",
         "engine": "postgresql" | "mysql",                      # default postgresql
+                  # (a volume unit, "kubernetes-volume", has its own keys:
+                  #  see sova.service.volume_execution)
         "mode": "offline_copy" | "logical_replication",        # MySQL: offline_copy
         "databases": {"<db>": {"dsn_file": "<admin connection, no database>"}, ...},
         "zone_of": {"<db>": "<zone label>"},                   # MySQL: where each runs
@@ -56,6 +58,8 @@ _APP_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode", "dat
              "app_role", "writer_roles", "tables", "schema_sql_file", "probe_insert",
              "source_conninfo_file", "route", "zone_of"}
 _REQUIRED = _APP_KEYS - {"role_password_files", "source_conninfo_file", "engine", "zone_of"}
+_VOLUME_APP_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode", "volume",
+                    "route"}
 _MYSQL_SETTINGS = {"host", "port", "user", "password", "ssl_ca", "ssl_verify_identity",
                    "connect_timeout"}
 
@@ -180,7 +184,7 @@ def _mysql_connections(databases, passwords):
     return admin, lambda: None, connect_as
 
 
-def catalog_from(document, *, route_for=kubernetes_route):
+def catalog_from(document, *, route_for=kubernetes_route, controls_for=None):
     """(AdapterCatalog, close) from a parsed execution file."""
     if type(document) is not dict or document.get("version") != 1 or set(document) - {
             "version", "applications"}:
@@ -190,7 +194,16 @@ def catalog_from(document, *, route_for=kubernetes_route):
         raise ContractError("At least one application is required")
     by_adapter, kept = {}, []
     for app in apps:
-        resolve, close = application_resolver(app, route_for=route_for)
+        if type(app) is dict and app.get("engine") == "kubernetes-volume":
+            from sova.service.volume_execution import volume_resolver
+
+            if set(app) - _VOLUME_APP_KEYS or app.get("mode") != "offline_copy":
+                raise ContractError("Volume entry: known keys and mode offline_copy only")
+            resolve, close = volume_resolver(app, route_for=route_for,
+                                             **({"controls_for": controls_for}
+                                                if controls_for else {}))
+        else:
+            resolve, close = application_resolver(app, route_for=route_for)
         kept.append(close)
         key = (app["tenant_id"], app["application_id"])
         kind = (app.get("engine", "postgresql"), app["mode"])
@@ -208,6 +221,10 @@ def catalog_from(document, *, route_for=kubernetes_route):
                 raise ContractError("No execution configured for this application")
             return found(tenant_id, application_id)
         engine, mode = entry["kind"]
+        if engine == "kubernetes-volume":
+            from sova.service.volume_execution import volume_factory
+
+            return volume_factory(adapter_id, resolve)
         if engine == "mysql":
             from sova.service.mysql_execution import mysql_factory
 

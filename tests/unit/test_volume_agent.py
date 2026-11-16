@@ -15,16 +15,11 @@ import stat
 import subprocess
 import sys
 import time
-from types import SimpleNamespace
 
 import pytest
 
 from sova.adapters.kubernetes.https import KubernetesRequestRefused
-from sova.adapters.kubernetes_volume_handoff import (
-    AGENT_SOURCE,
-    KubernetesVolumeHandoffAdapter,
-    _Agent,
-)
+from sova.adapters.kubernetes.volume_agents import AGENT_SOURCE, Agent, sync_trees
 from sova.domain.contracts import ContractError
 
 TOKEN = "t" * 64
@@ -46,7 +41,10 @@ def agents(tmp_path):
         for i in range(claims):
             (root / str(i)).mkdir(parents=True)
         port = free_port()
+        scratch = tmp_path / f"{name}-scratch"
+        scratch.mkdir()
         env = {"SOVA_AGENT_ROOT": str(root), "SOVA_AGENT_MODE": mode, "SOVA_AGENT_PORT": str(port),
+               "SOVA_AGENT_SCRATCH": str(scratch),
                "SOVA_AGENT_CLAIMS": str(claims),
                "SOVA_AGENT_TOKEN_SHA256": hashlib.sha256(TOKEN.encode()).hexdigest(),
                "PATH": os.environ["PATH"]}
@@ -89,7 +87,7 @@ class Proxy:
 
 
 def agent(ports, name, token=TOKEN):
-    return _Agent(Proxy(ports), name, token)
+    return Agent(Proxy(ports), name, token)
 
 
 def raw(port, method, path, token=TOKEN, body=None):
@@ -100,12 +98,8 @@ def raw(port, method, path, token=TOKEN, body=None):
     return response.status, response.read()
 
 
-def adapter(chunk=64 << 10):
-    self = object.__new__(KubernetesVolumeHandoffAdapter)
-    self.sides = {"source": SimpleNamespace(claims=("data",)),
-                  "target": SimpleNamespace(claims=("data",))}
-    self.chunk_bytes = chunk
-    return self
+def sync(source, target, *, live):
+    return sync_trees(source, target, 1, chunk=64 << 10, live=live)
 
 
 def build_source(root):
@@ -195,17 +189,17 @@ def test_the_copy_makes_the_target_tree_identical(agents):
     (target_root / "latest").symlink_to("uploads/0.txt")
     ports = {"source": source_port, "target": target_port}
     source, target = agent(ports, "source"), agent(ports, "target")
-    report = KubernetesVolumeHandoffAdapter._sync(adapter(), source, target, live=False)
+    report = sync(source, target, live=False)
     want, have = source.manifest(0), target.manifest(0)
     assert have["entries"] == want["entries"], [
         (a, b) for a, b in zip(want["entries"], have["entries"]) if a != b]
     assert report["removed"] >= 3 and report["copied_files"] >= 8
     # A second copy finds nothing to do.
-    again = KubernetesVolumeHandoffAdapter._sync(adapter(), source, target, live=False)
+    again = sync(source, target, live=False)
     assert again == {"copied_files": 0, "copied_bytes": 0, "removed": 0, "changed_later": 0}
 
 
-class Changing(_Agent):
+class Changing(Agent):
     """A source whose file changes between the listing and the copy."""
 
     def read(self, claim, path, offset, length):
@@ -220,8 +214,35 @@ def test_a_source_that_changes_fails_the_final_copy_and_waits_for_it_while_live(
     ports = {"source": source_port, "target": target_port}
     changing, target = Changing(Proxy(ports), "source", TOKEN), agent(ports, "target")
     with pytest.raises(ContractError, match="changed during the copy"):
-        KubernetesVolumeHandoffAdapter._sync(adapter(), changing, target, live=False)
+        sync(changing, target, live=False)
     assert not (target_root / "board.db").exists()
-    report = KubernetesVolumeHandoffAdapter._sync(adapter(), changing, target, live=True)
+    report = sync(changing, target, live=True)
     assert report["changed_later"] == 1 and not (target_root / "board.db").exists()
     assert not [n for n in os.listdir(target_root) if n.startswith(".sova-partial-")]
+
+
+def test_a_sqlite_database_is_read_from_a_copy_never_from_the_volume(agents):
+    import sqlite3
+
+    root, port = agents("source", "reader")
+    db = sqlite3.connect(root / "board.db", isolation_level=None)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("CREATE TABLE posts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, "
+               "attachment TEXT)")
+    db.execute("INSERT INTO posts(title, attachment) VALUES ('a', '1.txt'), ('b', NULL)")
+    # The writer is still open: the last rows are only in the log (-wal).
+    before = {p.name: p.read_bytes() for p in root.iterdir()}
+    assert "board.db-wal" in before
+    proxy = Agent(Proxy({"source": port}), "source", TOKEN)
+    report = proxy.sqlite(0, "board.db", {"files": "SELECT attachment FROM posts "
+                                                   "WHERE attachment IS NOT NULL",
+                                          "change": "DELETE FROM posts"})
+    assert report["integrity"] == ["ok"]
+    assert report["tables"]["posts"]["rows"] == 2
+    assert report["results"]["files"]["rows"] == [["1.txt"]]
+    assert "error" in report["results"]["change"]  # queries are read-only
+    after = {p.name: p.read_bytes() for p in root.iterdir()}
+    assert after == before  # SQLite never opened the volume's files
+    db.close()
+    status, _ = raw(port, "POST", "/sqlite?claim=0&path=missing.db", body=b"{}")
+    assert status == 409
