@@ -1378,7 +1378,7 @@ PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 ad
 - 블록 볼륨, 하드 링크, 특수 파일은 다루지 않는다.
 - ReadWriteOncePod 볼륨은 start_sync를 쓸 수 없다.
 - API 서버와 agent Pod 사이는 평문이다. 그래서 검증된 전송 암호화를 요구하는 계약은 이 단위에서 실패로 측정된다.
-- 세션 drain은 kube-proxy가 맺어진 연결을 유지하는 동작에 기댄다(Ingress·서비스 메시에서는 따로 확인해야 함).
+- 세션 drain은 이미 맺어진 연결이 유지되는 것에 기댄다. kube-proxy(iptables)와 Envoy Gateway에서 확인했고, 다른 Gateway 구현체·서비스 메시에서는 따로 확인해야 한다.
 - 관리형 클러스터에서는 실측하지 않았다. 클러스터 사이 복사는 아래처럼 로컬 kind 두 대로 실측했다.
 - 진입점은 Service selector와 Gateway API(아래 절)다. Ingress는 다루지 않는다.
 
@@ -1420,7 +1420,16 @@ Kubernetes 진입점의 표준은 Ingress에서 Gateway API로 옮겨 갔다(ing
 - 클러스터 없는 판정 시험 17 PASS(규칙 모양, 세대, 표본, 실행 설정).
 - 판정 조건 두 가지(현재 세대의 수락, 응답 표본)를 각각 빼는 결함을 넣자 시험이 잡았다.
 
-워커 실행 설정에서 경로 저장소는 `kubernetes_service`와 `gateway_httproute` 중 하나다(`sova.service.route_stores`). 세션 drain은 Service selector 뒤에서만 한다. Gateway는 상류 연결을 따로 쥐므로, 그 위에서의 drain은 따로 확인해야 하기 때문이다.
+워커 실행 설정에서 경로 저장소는 `kubernetes_service`와 `gateway_httproute` 중 하나다(`sova.service.route_stores`).
+
+**Gateway를 거친 세션 drain.** 두 경로 저장소 모두 멈춤(pause), 멈춤 확인(paused), 원본에서 벗어남(left)을 제공하고, 세션 adapter는 이것만 쓴다.
+
+- **Gateway에서 멈추는 방법.** 규칙의 backend를 비운다. 그러면 Gateway가 새 요청에 오류로 답하고, 이미 열린 스트림은 상류 연결을 유지한다.
+- **멈춤 확인.** backend가 비었고, 상위 Gateway가 이 상태를 현재 세대로 수락했고, 어느 쪽도 표본 요청에 답하지 않아야 한다.
+- **실측(Envoy Gateway, WebSocket 경기 2개).**
+  - 경로를 멈추자 새 연결은 거부됐다.
+  - 열린 경기는 원본에서 끝까지 갔다. 원본 Pod의 커널이 Envoy에서 온 연결을 세다가 0이 되자 멈춤이 확정됐다.
+  - 전환 뒤 새 경기는 목적지로 갔다.
 
 **한계.**
 

@@ -339,6 +339,7 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 - Kafka API·RabbitMQ의 control plane 연결. 이미 만든 기능 중 반쯤 끝난 것을 새 저장소보다 먼저 마무리했다. 내용은 [구현 안내](../contract-foundation.md#kafka-apirabbitmq의-control-plane-연결-2026-11-17)에 있다.
   - Kafka: 3 PASS. 첫 실행에서 probe 결함이 드러났다. 트랜잭션 ID 권한 거부를 쓰기 거부로 센 것이다. 접두어 등록과 엄격한 분류로 고쳤다. 그다음 토픽 거부가 전달 보고에 드러나지 않는 경우를 브로커 권한 판단(KIP-430)으로 보완했다. Redpanda가 이를 지원하는 것을 먼저 확인했다.
   - RabbitMQ: 2 PASS. 계약 스키마가 불변식을 최소 하나 요구해서, 메시지를 읽지 않는 개수 불변식을 등록할 수 있게 했다.
+- Gateway를 거친 세션 drain. 남겨 둔 한계("Service selector 뒤에서만")를 해소했다. 경로 저장소에 멈춤 동작을 두고, 세션 adapter는 경로 종류를 모르게 했다. Envoy Gateway에서 WebSocket 경기 drain이 첫 실행에 통과했다. kubectl의 jsonpath 대기가 빈 값을 기다리지 못해 시험 쪽을 직접 조회로 바꾼 것 말고는 수정이 없었다. 기존 세션·애플리케이션 시험 5 PASS, 단위 867 PASS.
 
 ## 이전 기록 정정
 
