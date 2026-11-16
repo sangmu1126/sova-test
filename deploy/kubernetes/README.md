@@ -121,9 +121,9 @@ rules:
 | `postgresql` | `sova.service.catalog` | DB DSN, 역할 비밀번호 | `mode: offline_copy` 또는 `logical_replication` |
 | `mysql` | 같음 | 연결 설정(JSON), 계정 비밀번호, 복제 계정 비밀번호 | `mode: replication`은 서버 복제 변경 캡처. TLS는 `ssl_ca`(호스트 검증 기본 켬) |
 | `redis` | `sova.service.redis_execution` | 서버 설정(JSON), 사용자 비밀번호 | TLS는 `ssl_ca` |
-| `kafka` | `sova.service.kafka_execution` | 관리자·principal별 클라이언트 설정(JSON) | 연결 관련 키만 받는다. probe용 트랜잭션 ID 접두어(`probe_prefix`)를 각 producer에 허용해야 한다 |
-| `rabbitmq` | `sova.service.rabbitmq_execution` | 브로커 설정(JSON), 사용자 비밀번호 | TLS는 `ssl_ca` |
-| `mongodb` | `sova.service.mongodb_execution` | 서버 설정(JSON), 사용자 비밀번호 | TLS는 `tls_ca` |
+| `kafka` | `sova.service.kafka_execution` | 관리자·principal별 클라이언트 설정(JSON) | 연결 관련 키만 받는다. probe용 트랜잭션 ID 접두어(`probe_prefix`)를 각 producer에 허용해야 한다. TLS는 `security.protocol: SASL_SSL`과 `ssl.ca.location` |
+| `rabbitmq` | `sova.service.rabbitmq_execution` | 브로커 설정(JSON), 사용자 비밀번호 | TLS는 `ssl_ca`. 관리자 자격 증명이 오가는 두 경로(AMQP, 관리 API)에 모두 쓰이므로, 관리 API 주소는 `https://`여야 한다 |
+| `mongodb` | `sova.service.mongodb_execution` | 서버 설정(JSON), 사용자 비밀번호 | `mode: change_stream`은 change stream 변경 캡처(원본이 레플리카셋이어야 함, `catch_up_seconds`). TLS는 `tls_ca` |
 | `kubernetes-volume` | `sova.service.volume_execution` | agent 키(hex), 다른 클러스터의 token | 앱 namespace 권한은 위 절 참고 |
 | `kubernetes-session` | `sova.service.composite_execution` | 다른 클러스터의 token | 경로는 Service selector 또는 Gateway API HTTPRoute |
 | `composite` | 같음 | 구성 요소의 것 | 볼륨·세션 구성 요소를 한 단위로 묶는다 |

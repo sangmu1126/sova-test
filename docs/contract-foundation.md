@@ -1538,10 +1538,32 @@ MySQL은 지금까지 offline copy만 있어서, 쓰기 정지가 데이터 크�
 | RabbitMQ: control plane 전체 흐름, probe 실패 시험 | 2 PASS. 쓰기 정지 1.68초 |
 | 실행 설정 단위 시험(Kafka·RabbitMQ 항목, 위험 설정 거부) | 통과 |
 
+**TLS 실측(추가).** 공유 시험 브로커는 평문이라, 시험 모듈마다 TLS만 받는 브로커를 따로 띄워 워커 실행 설정 경로로 실측했다(ADR-0007 결정 4). 전송 의무를 면제하지 않은 control plane 전체 흐름이 그 위에서 끝났다.
+
+- **RabbitMQ.** AMQP는 5671, 관리 API는 https만 연다(자체 CA).
+  - 찾아 고친 결함: 실행 설정의 `ssl_ca`가 AMQP에만 쓰이고, 같은 관리자 자격 증명이 오가는 관리 API 호출에는 쓰이지 않았다. 평문 http도 받아들였고, https라도 시스템 CA로 검증해 사설 CA 브로커에는 접속하지 못했을 것이다. 이제 `ssl_ca`가 있으면 두 경로가 같은 검증 context를 쓰고, 관리 API 주소가 `https://`가 아니면 거부한다. 전송 probe도 두 경로를 모두 본다.
+  - 함께 찾은 결함: pika는 TLS 핸드셰이크 실패를 AMQP 연결 오류로 감싸지 않고 `ssl` 오류 그대로 올린다. 그래서 쓰기 시도 probe가 판정 대신 예외로 끝났다. 이제 판정 불가로 기록한다(실패 쪽으로 셈).
+  - 실패해야 할 때 실패하는지: 평문 설정, CA 옆의 평문 관리 API 주소, 브로커를 보증하지 않는 CA를 시험했다.
+- **Kafka API.** Redpanda의 Kafka 리스너를 TLS 하나만 연다(안에서 SASL/SCRAM). port-forward를 고정 포트로 열고 `localhost`로 광고한다. 서버 인증서에 `localhost`가 있다.
+  - 바꾼 것: 전송 probe가 설정만 보고 판정했다. 이제 그 설정으로 메타데이터 요청까지 성공해야 통과한다. 설정이 요구한 검증을 실제 연결이 통과했다는 뜻이다.
+  - 실패해야 할 때 실패하는지: 평문 설정, 호스트 검증을 끈 설정, 브로커를 보증하지 않는 CA를 시험했다.
+  - 로컬 Redpanda의 쓰기 정지(약 9초)가 예시 계약의 예산(5초)을 넘는다. 그래서 TLS 시험은 전송 의무는 그대로 두고, 평문 시험과 같은 로컬 예산만 쓴다.
+
+| 시험 | 결과 |
+|---|---|
+| RabbitMQ: TLS 전체 흐름, 검증 안 되는 경로 시험 | 2 PASS. 기존 RabbitMQ 시험 13 PASS |
+| Kafka: TLS 전체 흐름, 검증 안 되는 설정 시험 | 2 PASS. 기존 Kafka control plane 시험 3 PASS |
+
+**Kafka 최종 단계의 증분 복사(추가).** snapshot-cdc 계획에서 `apply_final_changes`(차단 뒤)도 목적지를 비우고 토픽 전체를 다시 썼다. 그래서 쓰기 정지가 여전히 토픽 크기를 날랐다.
+
+- 이제 목적지의 레코드가 파티션마다 원본 커밋 레코드의 앞부분과 정확히 같은지 내용 digest로 확인한다. 같으면 그 뒤 레코드만 파티션당 트랜잭션 하나로 덧붙인다.
+- 원본의 보존 기간·compaction이 그사이 레코드를 지웠거나 목적지가 바뀌었으면 전체를 다시 복사한다.
+- sync의 읽기는 마지막 안정 오프셋(열린 트랜잭션이 없는 지점)에서 멈춘다. 그래서 뒤에 커밋되는 레코드는 항상 그 뒤에 온다.
+- 실측(630 레코드): 쓰기 정지 동안 목적지에 쓰인 오프셋은 증분 **11**, offline copy **636**이다. 11은 레코드 5개와, 파티션마다 commit 마커 1개와 fence 배치 1개다. fence 배치는 Redpanda가 트랜잭션이 파티션을 처음 건드릴 때 쓴다. 목적지가 앞부분이 아니면 전체 복사로 맞춰지는 것도 시험했다.
+
 **한계.**
 
 - 두 브로커 모두 한 클러스터·한 브로커 안에서만 시험했다.
-- TLS 없이 시험해 전송 암호화는 "미검증"으로 측정된다.
 - RabbitMQ의 내용 비교는 개수 수준이다. 메시지 단위 동일성은 복사 시점의 confirm으로 확보한다(adapter 설명 참고).
 
 ## MongoDB (2026-11-17)
@@ -1567,10 +1589,51 @@ MERN 계열처럼 많은 웹 앱이 쓰는 MongoDB를 추가했다. 시험은 Mo
 | control plane 전체 흐름, probe 실패 시험 | 2 PASS. 쓰기 정지 1.21초 |
 | 실행 설정의 검증된 TLS | 1 PASS |
 
+### 변경 캡처: change stream 기반 snapshot-cdc
+
+offline copy는 쓰기 정지가 데이터 크기에 비례한다. `MongoChangeStreamHandoffAdapter`(실행 설정 `mode: change_stream`)는 원본 자신의 change stream으로 그 비례를 없앤다. writer, 차단, 활성화, 비교는 offline copy adapter와 같다.
+
+MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태를 두지 않는 워커에 맞춰, 두 단계에서 변경을 따라잡는다.
+
+- **`start_sync`.**
+  1. 원본의 과반수 커밋 시점을 읽는다.
+  2. 원본이 계속 서비스하는 동안 문서를 복사한다(과반수 읽기). 읽는 데이터는 모두 그 시점 이후의 것이다.
+  3. change stream을 그 시점부터 열어, 지금의 과반수 커밋 시점까지 변경을 적용한다.
+  4. resume token을 목적지의 표시 컬렉션(단위 밖)에 둔다.
+- **적용 규칙.** 문서 키 기준으로 멱등이라, 순서대로 적용하면 각 문서가 원본의 마지막 판으로 끝난다.
+  - insert·replace: 이벤트의 문서를 쓴다.
+  - update: 원본이 지금 가진 문서를 쓴다(`updateLookup`). 원본에서 사라졌으면 지운다.
+  - delete: 지운다.
+  - 문서는 원시 BSON을 유지한다.
+- **`apply_final_changes`(차단 뒤).**
+  1. 원본의 마지막 쓰기가 과반수 커밋되기를 기다린다(상한 `catch_up_seconds`). change stream은 과반수 커밋된 변경만 보여 주기 때문이다.
+  2. 보관한 token부터 stream을 재개해, 그 쓰기를 지날 때까지 적용한다.
+  3. 그사이 원본에 생긴 인덱스를 만든다.
+  내용과 정의가 같아야 완료로 읽는다.
+- **전체 복사로 대체.** sync를 하지 않았거나, 원본이 그 token으로 재개를 거부하면 여기서 전체를 복사한다. 거부되는 경우는 oplog가 token을 더 갖고 있지 않거나, 이 stream의 token이 아닐 때다. 원본은 이미 차단되어 있어 전체 복사가 정확하다. readback에 어느 쪽으로 맞췄는지와 이유를 적는다.
+- **구조 변경.** sync 중 단위 컬렉션의 drop·rename이나 DB drop은 옮길 변경이 아니므로 오류로 끝낸다.
+- **"지났다"의 판정.** token이 나타내는 클러스터 시각을 token에서 읽는다(Debezium 등이 쓰는 방식). 한 트랜잭션의 이벤트는 commit 시각을 공유한다. 그래서 이벤트는 그 시각을 넘어야, 빈 배치는 그 시각 이상이어야 지난 것으로 본다.
+
+**시험이 잡은 결함 둘.**
+
+- **계속 쓰이는 원본을 끝없이 쫓음.** 처음에는 빈 배치를 받았을 때만 도달 여부를 봤다. 원본이 계속 쓰이면 빈 배치가 오지 않아, 목표 시점을 지나서도 실시간 변경을 쫓았다. 이벤트가 있으면 마감 시간도 확인하지 않았다. 이벤트마다 도달을 판정하고 마감을 늘 확인하게 고쳤다. 지속 쓰기, 트랜잭션 공유 시각, 뒤처진 빈 배치, 마감을 단위 시험으로 고정했다.
+- **복사 중 변경을 잃음(간헐적).** 처음에는 복사 전에 stream을 열어 그 token을 시작점으로 썼다. 그런데 바쁜 원본에서는 stream을 여는 aggregate의 첫 배치에 이미 이벤트가 담겨 와, pymongo가 시작 token을 주지 않는다. 그러면 복사 뒤 따라잡기가 "지금"부터 시작해 복사 동안의 갱신·삭제가 빠졌다. 4회 중 2회 재현했고, 빠진 문서를 직접 대조해 원인을 확인했다. 시작점을 복사 전에 읽은 과반수 커밋 시각(`startAtOperationTime`)으로 바꾼 뒤 6회 연속 통과했다.
+
+| 시험 | 결과 |
+|---|---|
+| 적합성 키트(두 템플릿) + 고유 7 | 16 PASS |
+| 쓰기 정지 동안 목적지에 쓴 문서(2만 건 + 업무 쓰기, 2회) | change stream **3건**·0.15~0.18초, offline copy **20,080건**·0.27~0.29초 |
+| 복사 중 동시 쓰기(삽입·갱신·삭제·교체) | 6회 연속 PASS |
+| 재개 거부 시 전체 복사 대체(서버의 실제 거부로) | PASS |
+| control plane 전체 흐름(snapshot-cdc) | PASS. 쓰기 정지 1.21초(같은 실행의 offline copy 전체 흐름 1.65초) |
+
+작은 문서 2만 건에서는 정지 시간 차이가 작다. 차이는 정지 동안 쓰는 양이며, 데이터가 클수록 시간 차이로 커진다. 시험용 MongoDB는 이제 단일 구성원 레플리카셋(keyFile 내부 인증)으로 띄운다. 기존 MongoDB 시험도 모두 그 위에서 다시 통과했다(MongoDB 전체 30 PASS).
+
 **한계.** 다음은 다루지 않았다.
 
-- 변경 캡처(change stream 기반 snapshot-cdc). 서버 쪽 복제를 단위 단위로 걸 방법이 없어, 별도 동기화 에이전트가 필요하다.
-- 레플리카셋·샤딩 구성. 시험은 단독 서버로 했다.
+- 샤딩 클러스터. change stream adapter는 레플리카셋 원본만 받는다.
+- 16MB에 가까운 문서. 이벤트가 BSON 한도를 넘으면 stream이 오류로 끝난다(`$changeStreamSplitLargeEvent` 미사용).
+- 실제 oplog 순환으로 인한 이력 유실. 새 레플리카셋의 oplog는 순환한 적이 없어, 서버의 다른 재개 거부(이 stream의 token이 아님)로 대체 경로를 시험했다.
 - TTL 인덱스가 차단 뒤에 지우는 문서. 양쪽이 같은 시각에 지우지만, 비교 시점에 따라 일시적으로 다를 수 있다.
 
 ## probe 설계 원칙 (ADR-0007)
@@ -1647,13 +1710,14 @@ MERN 계열처럼 많은 웹 앱이 쓰는 MongoDB를 추가했다. 시험은 Mo
 | control plane 이중화(API ×2, 워커 ×2)·워커 장애 복구 | 모의 시험 통과 | 로컬 kind에 실제 배포. 경로 전환 중 워커 Pod 삭제 뒤 증명·readback으로 완료. 관리형 클러스터 배포는 미시험 |
 | MySQL 간 offline copy adapter·probe | 모의 시험 통과 | 로컬 MySQL 8.4.13. 적합성 키트와 control plane 전체 흐름. TLS probe는 시험용 서버 두 대에서 실측 |
 | MySQL 변경 캡처(서버 복제, snapshot-cdc) | 모의 시험 통과 | 시험용 MySQL 8.4.13 두 대. 적합성 키트, 정지 구간 쓰기 0행(offline 20,158행), control plane 전체 흐름 |
-| Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL), 한 클러스터의 두 토픽. control plane 전체 흐름 연결(2026-11-17) |
-| RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8, 한 브로커의 두 vhost. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 전체 흐름 연결(2026-11-17) |
+| Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL), 한 클러스터의 두 토픽. control plane 전체 흐름 연결(2026-11-17). TLS 리스너만 연 Redpanda에서 검증된 TLS로 전체 흐름. snapshot-cdc 최종 단계는 sync 이후 레코드만 씀(정지 중 오프셋 11, offline 636) |
+| RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8, 한 브로커의 두 vhost. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 전체 흐름 연결(2026-11-17). TLS만 받는 브로커에서 AMQP·관리 API 모두 검증된 TLS로 전체 흐름 |
 | Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). 관리형 미실측 |
 | 메모리 세션 drain adapter | 모의 시험 통과 | 로컬 kind, WebSocket 시험 서버. 커널 TCP 테이블로 세션 계수, drain 상한 hold·terminate |
 | 애플리케이션 한 단위(볼륨 + 세션) | 모의 시험 통과 | 로컬 kind, 게시판 + 게임 서버를 control plane 전체 흐름으로. 쓰기 정지 32.5초 1회 |
 | Redis 계열(Valkey) 키 공간 adapter·probe | 모의 시험 통과 | 로컬 kind의 Valkey 9.1.3 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. Cluster·Sentinel 미시험 |
-| MongoDB 데이터베이스 adapter·probe | 모의 시험 통과 | 시험용 MongoDB 8.0.34 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. CDC·레플리카셋 미시험 |
+| MongoDB 데이터베이스 adapter·probe | 모의 시험 통과 | 시험용 MongoDB 8.0.34 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 단일 구성원 레플리카셋. 샤딩 미시험 |
+| MongoDB 변경 캡처(change stream, snapshot-cdc) | 모의 시험 통과 | 시험용 MongoDB 8.0.34 레플리카셋 두 대. 적합성 키트, 정지 구간 쓰기 3건(offline 20,080건), 복사 중 동시 쓰기, 재개 거부 시 전체 복사, control plane 전체 흐름 |
 | probe 관측값 보존·조회 | 모의 시험 통과 | 서명 digest와 일치를 DB 제약으로 강제, 테넌트 격리, API 조회 |
 | MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |

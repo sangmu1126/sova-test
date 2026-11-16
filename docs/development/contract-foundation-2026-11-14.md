@@ -350,3 +350,16 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
     - 로그인 제한이 열린 연결의 인증까지 끊는 것을 확인하고, 시험과 설명을 실제 동작에 맞췄다.
     - 전체 사용자 조회에는 권한 상세를 같이 받을 수 없어, 한 명씩 조회하게 했다.
   - 적합성 + 고유 11 PASS, 결함 주입 3건 검출. E2E·probe 2 PASS, TLS 1 PASS.
+- 세 번째 전체 회귀(새 DB, c47ccf4 기준): 평문 **1773 PASS / 0 FAIL** / 302 SKIP(37분), TLS 55 PASS / 2 SKIP.
+  - TLS 단계는 처음에 수집 오류로 돌지 않았다. 회귀가 도는 동안 새로 만든 단위 시험 파일이 통합 시험과 모듈 이름이 같았다. 이름을 바꾸고 TLS 단계만 다시 돌렸다.
+  - 회귀가 클러스터 A를 쓰는 동안 새 통합 시험은 클러스터 B에서 돌렸다. 세션 시험처럼 시간에 민감한 회귀를 흔들지 않기 위해서다.
+- 브로커 TLS 실측(ADR-0007의 남은 한계). 내용은 [구현 안내](../contract-foundation.md#kafka-apirabbitmq의-control-plane-연결-2026-11-17)에 있다.
+  - RabbitMQ: 관리 API가 `ssl_ca`를 쓰지 않던 결함과, TLS 실패가 probe를 예외로 끝내던 결함을 고쳤다. 2 PASS, 기존 13 PASS.
+  - Kafka: 전송 probe가 설정으로 실제 연결까지 하게 했다. 2 PASS, 기존 3 PASS.
+  - 처음 실패 둘은 시험 쪽 문제였다. 최소 노드 설정에 admin 리스너가 빠져 준비 확인이 닿지 않았고, 로컬 Redpanda의 정지 시간이 예시 계약 예산을 넘었다. 예산만 넓히는 helper를 `without_transport_control`에서 분리했다.
+- MongoDB 변경 캡처(남겨 둔 한계). 내용은 [구현 안내](../contract-foundation.md#변경-캡처-change-stream-기반-snapshot-cdc)에 있다.
+  - 시험이 잡은 결함 둘을 고쳤다. 계속 쓰이는 원본을 끝없이 쫓는 것과, 바쁜 원본에서 복사 동안의 변경을 잃는 것이다. 후자는 4회 중 2회 재현됐고, 빠진 문서를 직접 대조해 원인을 확인했다. 고친 뒤 6회 연속 통과했다.
+  - 처음 시험 실패 중 둘은 시험 쪽이었다. control plane 시험에 `postgres` 표시가 없어 고정 시각을 썼고, 새 레플리카셋은 oplog가 순환한 적이 없어 오래된 시점 재개를 서버가 받아들였다. 서버가 실제로 재개를 거부하는 경우(다른 DB의 token)로 바꿨다.
+  - 첫 실행이 끝나지 않아 멈췄다. 이 실행이 만든 namespace와 port-forward는 직접 지웠다.
+  - MongoDB 전체 30 PASS(레플리카셋으로 바꾼 기존 14 포함), 단위 5 PASS.
+- Kafka 최종 단계의 증분 복사. snapshot-cdc의 최종 단계도 토픽 전체를 다시 쓰던 것을, sync 뒤 레코드만 덧붙이게 했다. 정지 중 오프셋 11(offline 636). Kafka handoff 시험 15 PASS.
