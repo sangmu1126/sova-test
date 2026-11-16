@@ -1380,7 +1380,38 @@ PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 ad
 - API 서버와 agent Pod 사이는 평문이다. 그래서 검증된 전송 암호화를 요구하는 계약은 이 단위에서 실패로 측정된다.
 - 세션 drain은 kube-proxy가 맺어진 연결을 유지하는 동작에 기댄다(Ingress·서비스 메시에서는 따로 확인해야 함).
 - 시험은 한 kind 클러스터 안에서 했다. 관리형 클러스터와 클러스터 사이 복사는 실측하지 않았다.
-- Ingress·Gateway API 진입점 전환은 아직 없다.
+- 진입점은 Service selector와 Gateway API(아래 절)다. Ingress는 다루지 않는다.
+
+## Gateway API 진입점 전환 (2026-11-17)
+
+Kubernetes 진입점의 표준은 Ingress에서 Gateway API로 옮겨 갔다(ingress-nginx는 지원이 끝났다). `GatewayHttpRoute`는 HTTPRoute의 규칙 하나를 경로 저장소로 쓴다. 데이터 adapter의 `commit_route`가 여기에 쓴다. ALB·URL map과 같은 원칙이다. 다음 셋이 모두 같은 쪽을 가리킬 때만 그 쪽으로 읽는다.
+
+- **설정.** 규칙에 weight 있는 backend가 정확히 하나이고, 그것이 등록된 쪽의 Service와 포트다. 필터(미러링 등)가 붙은 규칙은 어느 쪽도 아니다.
+- **수락.** 등록된 모든 상위 Gateway가 이 route의 **현재 세대**에 대해 `Accepted`와 `ResolvedRefs`를 보고한다. 구현체가 바로 이 버전을 받아들였다는 뜻이다.
+- **실제 요청.** Gateway를 거친 표본 요청이 모두 그 쪽에서 답했다. 응답의 쪽 표식을 읽고, 추측하지 않는다. 운영에서는 공개 URL로 HTTPS 요청을 보내 응답 헤더를 읽는다(`http_side_observer`, 인증서 검증, 평문은 loopback에서만).
+
+전환은 다음처럼 한다.
+
+- 규칙이 등록된 쪽의 단순 backend가 아니면 덮어쓰지 않는다. 다른 사람의 분할 배포 같은 경우다.
+- route의 `resourceVersion`을 먼저 확인하는 JSON Patch로 바꾼다.
+- 셋이 맞을 때까지 기다린다(상한 있음).
+
+**시험.** 시험 환경에 Envoy Gateway v1.9.3을 선택 사항으로 추가했다(`test-env.sh gateway`, 설치 파일 SHA-256과 이미지 digest 고정). 시험 요청은 API 서버의 Service 프록시를 거쳐 Envoy 프록시로 들어간다. 그래서 HTTPRoute의 설정이 아니라 Envoy가 실제로 내보내는 경로를 본다.
+
+- kind 실측 4 PASS:
+  - 설정·수락·응답이 모두 맞을 때만 이동한다.
+  - 50:50 분할은 어느 쪽도 아니고, 덮어쓰지 않는다.
+  - Gateway가 수락하지 않은 route는 어느 쪽도 아니다.
+  - 데이터 adapter의 경로 단계가 Gateway에서 실제로 트래픽을 옮기고, 계획 밖에서 되돌리면 UNKNOWN이 된다.
+- 클러스터 없는 판정 시험 17 PASS(규칙 모양, 세대, 표본, 실행 설정).
+- 판정 조건 두 가지(현재 세대의 수락, 응답 표본)를 각각 빼는 결함을 넣자 시험이 잡았다.
+
+워커 실행 설정에서 경로 저장소는 `kubernetes_service`와 `gateway_httproute` 중 하나다(`sova.service.route_stores`). 세션 drain은 Service selector 뒤에서만 한다. Gateway는 상류 연결을 따로 쥐므로, 그 위에서의 drain은 따로 확인해야 하기 때문이다.
+
+**한계.**
+
+- Envoy Gateway 하나로만 시험했다. 다른 구현체(Istio, Cilium, NGINX Gateway Fabric 등)의 수락 보고 방식은 같은 표준이지만 실측하지 않았다.
+- Ingress(구 API)는 다루지 않는다.
 
 ## 로컬 통합 시험 환경
 
@@ -1423,7 +1454,8 @@ PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 ad
 | AWS S3 → 로컬 S3 호환 저장소 offline copy | 실환경 시험 통과 | 개인 AWS 계정, IAM role writer. GCS·S3↔GCS는 아래 GCP·클라우드 간 절 |
 | Kubernetes Service 경로 전환·CronJob 관리권 멈춤 실측 | 실환경 시험 통과 | 로컬 kind와 관리형 EKS·GKE Autopilot, 최소 권한 token |
 | 클라우드 IAM 기반 쓰기 차단(GCS) | 실환경 시험 통과 | 버킷 권한 회수 + Policy Troubleshooter 판정 + 전파 대기. 프로젝트 수준 권한이 남은 writer는 미확인으로 둠 |
-| 부하 분산기 수준 진입점 adapter | 실환경 시험 통과 | AWS ALB 리스너, GCP URL map. Kubernetes Ingress·Gateway API는 미구현 |
+| 부하 분산기 수준 진입점 adapter | 실환경 시험 통과 | AWS ALB 리스너, GCP URL map. Kubernetes Gateway API는 아래 행, Ingress는 미구현 |
+| Kubernetes Gateway API 진입점(HTTPRoute) | 모의 시험 통과 | 로컬 kind + Envoy Gateway v1.9.3. 설정·수락(현재 세대)·실제 응답이 모두 맞을 때만 그 쪽 |
 | PostgreSQL 카탈로그 변경 수집기 | 모의 시험 통과 | 로컬 PostgreSQL, 시점 기반 귀속 |
 | 권한 witness의 Object Lock 저장소 | 실환경 시험 통과 | AWS S3 governance·compliance 모드 모두 실측 |
 | AWS CloudTrail 변경 수집기 | 실환경 시험 통과 | 이벤트 이력 조회, 실제 정책 변경 91초 뒤 기록. 조직 trail 미검증 |
