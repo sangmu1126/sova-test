@@ -79,6 +79,39 @@ subjects: [{kind: ServiceAccount, name: sova-worker, namespace: sova-system}]
 - CA digest
 - namespace UID
 
+### 볼륨·세션 단위의 추가 권한
+
+파일 상태(볼륨) 단위와 메모리 세션 단위는 위 경로 권한에 더해 다음 권한이 필요하다([ADR-0006](../../docs/adr/0006-file-state-and-session-units.md)). 이 권한도 애플리케이션 소유자가 자기 namespace에서만 준다.
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: sova-units, namespace: board}
+rules:
+  # writer 워크로드를 멈추고 다시 올린다
+  - {apiGroups: [apps], resources: [deployments, statefulsets], verbs: [get, patch]}
+  - {apiGroups: [batch], resources: [cronjobs], verbs: [get, patch]}
+  - {apiGroups: [batch], resources: [jobs], verbs: [list]}
+  # 볼륨: 목적지·복원용 claim, 짧게 사는 agent Pod와 그 프록시
+  - {apiGroups: [""], resources: [persistentvolumeclaims], verbs: [get, list, create, patch, delete]}
+  - {apiGroups: [""], resources: [pods], verbs: [get, list, create, delete]}
+  - {apiGroups: [""], resources: [pods/proxy], verbs: [get, create, update]}
+  # 세션: 원본 Pod에 붙이는 관찰 컨테이너와 그 출력
+  - {apiGroups: [""], resources: [pods/ephemeralcontainers], verbs: [patch]}
+  - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+```
+
+- **agent Pod.** 고정된 Python 이미지에서 표준 라이브러리만으로 돈다. 다음 조건을 지키므로 restricted Pod Security를 통과한다.
+  - non-root로 돈다(`run_as`).
+  - capability를 모두 뺀다.
+  - root 파일 시스템은 읽기 전용이다.
+  - 서비스 계정 token을 마운트하지 않는다.
+  - 한 시간이 지나면 스스로 끝난다.
+- **이미지 가져오기.** 이미지가 노드에 없으면 받아 와야 한다. 사설 레지스트리를 쓰는 곳에서는 같은 digest를 미러링해 `agent_image`로 지정한다.
+- **agent 키.** 워커의 Secret에 hex로 넣고 `agent_key_file`로 가리킨다. 어느 워커 replica든 같은 키로 agent와 통신한다.
+- **NetworkPolicy.** API 서버의 Pod 프록시는 agent Pod의 8080 포트로 들어온다. 애플리케이션 namespace에 기본 거부 정책이 있다면, `app.kubernetes.io/managed-by: sova` Pod의 8080 수신을 허용해야 한다.
+- **API 서버 → agent 구간.** 이 구간은 클러스터 네트워크의 평문 HTTP다. 검증된 전송 암호화를 요구하는 계약에서 이 단위는 실패로 측정된다.
+
 ## 배포 순서
 
 1. Secret을 만든다.

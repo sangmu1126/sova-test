@@ -1324,6 +1324,64 @@ PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 ad
   경로 전환 명령은 한 번만 발행됐고, readback으로 확정됐다. 완료 뒤 애플리케이션 role이 목적지에 쓴다.
 - **API 무중단.** 클러스터 노드에서 Service로 요청을 계속 보내며 `rollout restart`를 했다. 실패한 요청은 0건이었다. 단, 이 측정은 NetworkPolicy를 지우고 했다. kind의 정책 엔진은 Pod 전환 때 새 연결을 가끔 버린다. 정책이 있으면 재시작 약 절반에서 1건이었고, 없으면 5회 모두 0건이었다.
 
+## 파일 상태·세션·애플리케이션 단위 (2026-11-17)
+
+흔한 웹 앱은 상태를 DB 말고도 볼륨 위 파일(SQLite, 업로드 폴더)과 프로세스 메모리(WebSocket 세션)에 둔다. 둘 다 회수할 권한 목록이 없다. 그래서 쓰기 차단을 "그것을 쓰는 Pod가 없음"으로 바꿔 구현했다. 그리고 한 앱의 여러 상태를 한 단위로 묶었다. 결정과 이유는 [ADR-0006](adr/0006-file-state-and-session-units.md)에 있다. 시험 앱은 데모와 같은 구조로 새로 만들었다(팀 코드는 가져오지 않았다).
+
+| 단위 | 구현 | 결과 |
+|---|---|---|
+| 볼륨(SQLite·업로드) | `KubernetesVolumeHandoffAdapter`, `volume_agent`, `KubernetesVolumeProbes` | 적합성 9 + 고유 3 + probe 실패 시험 3, **15 PASS**. 결함 주입 2건 검출 |
+| 메모리 세션(WebSocket) | `KubernetesSessionHandoffAdapter`, `KubernetesSessionProbes` | **3 PASS**. 결함 주입 1건 검출 |
+| 애플리케이션 한 단위 | `CompositeHandoffAdapter`, `composite_execution` | control plane 전체 흐름 **2 PASS**(볼륨 단독, 게시판 + 게임 서버) |
+
+**볼륨.**
+
+- **복사.** 짧게 사는 agent Pod 둘이 한다. 원본에는 읽기 전용, 목적지에는 읽기·쓰기로 마운트하고, 워커는 API 서버의 Pod 프록시로 통신한다. 그래서 클러스터 사이에도 등록된 API 서버만 있으면 된다. 복사는 차이만 쓴다.
+- **안전 장치.**
+  - 파일은 원본 SHA-256 확인 뒤 rename으로만 최종 이름을 얻는다.
+  - 경로는 구성 요소마다 `O_NOFOLLOW`로 연다. 볼륨 안 심볼릭 링크로 볼륨 밖을 읽거나 쓰는 시험이 거부됐다.
+  - 최종 복사 중 원본이 바뀌면 차단이 안 된 것이므로 실패한다.
+- **비교.** 모든 항목의 manifest를 비교한다(경로, 종류, mode, 소유자, 크기, SHA-256). agent는 root로 돌지 않으므로, 다른 사용자 소유 파일은 "다름"으로 읽힌다(시험함).
+- **readback.** 바인딩되지 않은 claim을 건드리지 않고, agent를 남기지 않는다(시험함).
+- **probe(adapter와 다른 방법).**
+  - 쓰기 거부: 앱 자신의 쓰기 probe로 실제로 쓰고 되돌려 본다. 등록되지 않은 읽기·쓰기 마운트와, 관측 구간 동안의 트리 변화도 확인한다.
+  - SQLite 내용: scratch로 복사한 뒤 논리 비교한다(무결성, 스키마, 테이블별 행 집합). WAL에만 있는 행도 읽고, 볼륨의 파일은 한 바이트도 바뀌지 않았다(시험함).
+  - 업무 불변식: "모든 게시글의 첨부 파일이 있음" 같은 등록 질의로 확인한다.
+  - 복원 훈련: 새 scratch claim으로 복원해 비교한 뒤 지운다.
+  - 교차 테넌트: 다른 테넌트 볼륨을 넘겨받은 claim이 없는지 본다.
+  - probe가 실패해야 할 때 실패하는 시험: 바뀐 행, 지워진 업로드, 사람이 띄운 Pod.
+
+**메모리 세션.**
+
+- **멈춤.** 원본 Pod를 경로에서 빼서(Pod가 없는 "paused" selector) 새 연결을 즉시 거부한다. 그다음 열린 세션이 끝나기를 기다린다. 명세에 동시 서비스 프로필이 없어 단일 권한 안에서 처리한다(ADR-0006 결정 4).
+- **세션 수.** 원본 Pod에 붙인 ephemeral container가 커널 TCP 테이블에서 센다. 앱의 자기 보고는 쓰지 않는다. kubelet probe 연결은 제외하고, 오래된 값은 "모름"이다.
+- **drain 상한.** 넘기면 `hold`(미확인 유지) 또는 `terminate`(차단이 끊을 세션 수를 증거로 남김)를 따른다. 둘 다 시험했다.
+- **실측.** 진행 중이던 경기 3개가 원본에서 정상 종료됐다. 멈춤 동안의 새 연결은 거부됐고, 전환 뒤 새 경기는 목적지 Pod로 갔다. drain을 무시하게 바꾸는 결함을 넣자 시험이 잡았다.
+
+**애플리케이션 한 단위.**
+
+- **동작.** 각 행동을 모든 구성 요소에 수행하고, 모두 APPLIED일 때만 APPLIED다.
+- **측정.** 쓰기·권한·위치 의무는 모든 구성 요소가 성립해야 한다. 내용·불변식·복원은 데이터 구성 요소가 답한다.
+- **E2E.** 게시판(SQLite + 업로드)과 게임 서버(메모리 경기)가 등록 → 컴파일 → 승인 → 수용 → 워커 실행을 거쳐 HANDOFF_COMPLETE로 끝났다.
+  - 진행 중이던 경기는 원본에서 끝났다.
+  - 게시판의 행·무결성·업로드는 목적지에서 같았고, 새 글 ID는 이어서 발급됐다.
+  - 새 경기는 목적지로 갔다.
+  - 모든 의무가 측정·서명되어 pass였다.
+  - 쓰기 정지는 32.5초(경기 drain 15초 포함)였다. 볼륨 단독은 27.5초였다.
+- **실행 설정.** 워커 실행 설정에 `kubernetes-volume`, `kubernetes-session`, `composite` 항목을 추가했다.
+
+**함께 찾아 고친 기존 결함.** `EffectObservation`은 증거를 8KiB까지만 받는데, 모든 adapter가 64KiB 한도로 증거를 만들었다. 그래서 많이 본 readback(다른 파일·테이블·파티션이 많을 때)은 판정 대신 오류로 끝났다(9000바이트로 재현). 이제 증거를 줄이고(긴 목록부터, 무엇을 줄였는지와 전체 digest를 남김), 적합성 시험이 실제 한도를 확인한다.
+
+**한계.**
+
+- 볼륨 비교는 매번 양쪽의 모든 바이트를 읽는다.
+- 블록 볼륨, 하드 링크, 특수 파일은 다루지 않는다.
+- ReadWriteOncePod 볼륨은 start_sync를 쓸 수 없다.
+- API 서버와 agent Pod 사이는 평문이다. 그래서 검증된 전송 암호화를 요구하는 계약은 이 단위에서 실패로 측정된다.
+- 세션 drain은 kube-proxy가 맺어진 연결을 유지하는 동작에 기댄다(Ingress·서비스 메시에서는 따로 확인해야 함).
+- 시험은 한 kind 클러스터 안에서 했다. 관리형 클러스터와 클러스터 사이 복사는 실측하지 않았다.
+- Ingress·Gateway API 진입점 전환은 아직 없다.
+
 ## 로컬 통합 시험 환경
 
 통합 시험에 필요한 서비스를 kind 클러스터 하나에 모아 `infra/test-env/test-env.sh up`·`down`으로 올리고 내린다. 들어 있는 것은 다음과 같다.
@@ -1388,6 +1446,9 @@ PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 ad
 | MySQL 간 offline copy adapter·probe | 모의 시험 통과 | 로컬 MySQL 8.4.13. 적합성 키트와 control plane 전체 흐름. TLS probe는 미실측, CDC 없음 |
 | Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL), 한 클러스터의 두 토픽. control plane 미연결 |
 | RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8, 한 브로커의 두 vhost. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 미연결 |
+| Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름. 클러스터 사이·관리형 미실측 |
+| 메모리 세션 drain adapter | 모의 시험 통과 | 로컬 kind, WebSocket 시험 서버. 커널 TCP 테이블로 세션 계수, drain 상한 hold·terminate |
+| 애플리케이션 한 단위(볼륨 + 세션) | 모의 시험 통과 | 로컬 kind, 게시판 + 게임 서버를 control plane 전체 흐름으로. 쓰기 정지 32.5초 1회 |
 | MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |
 | 사고 보류·증거 기한·사고 복구 확장 | 지원하지 않음 | 명세가 스키마를 정하지 않음(S.9, ADR 전제). 있으면 `NEEDS_EVIDENCE` |
