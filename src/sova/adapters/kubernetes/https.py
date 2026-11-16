@@ -83,21 +83,34 @@ class KubernetesHTTPS:
             raise ContractError("Unregistered application query")
         return self._request("GET", path, query, timeout=timeout)
 
-    def _request(self, method, path, query, *, timeout, body=None):
+    def _request(self, method, path, query, *, timeout, body=None, content_type=None,
+                 accept=(200,), limit=MAX_RESPONSE, raw=False, headers=None, transfer=False):
         """Shared pinned transport. Public methods must fix their own API paths.
 
         This is not an arbitrary URL/manifest interface. The read-only public
         get() keeps its original allowlist; bounded mutation adapters add their
         own exact resource and JSON Patch validation before reaching here.
+
+        By default a request is a small API call: GET or PATCH, a body of at
+        most 64 KiB, five seconds, a JSON answer with status 200. An adapter
+        that moves data (``transfer=True``) may send a body of up to 16 MiB and
+        wait up to 15 minutes, and takes the answer as bytes (``raw``).
         """
         reg = self.registration
+        body_limit = (16 << 20) + 4096 if transfer else 65536
         if (
-            method not in {"GET", "PATCH"}
-            or (body is not None and (type(body) is not bytes or len(body) > 65536))
+            method not in {"GET", "PATCH", "POST", "PUT", "DELETE"}
+            or (body is not None and (type(body) is not bytes or len(body) > body_limit))
             or (method == "GET" and body is not None)
+            or (method in {"POST", "PUT"} and content_type is None)
+            or not accept or not set(accept) <= {200, 201, 202}
+            or type(limit) is not int or not 0 < limit <= (64 << 20)
+            or (headers is not None and (type(headers) is not dict or any(
+                type(k) is not str or not k.startswith("X-Sova-") or type(v) is not str
+                or any(ord(c) < 33 or ord(c) > 126 for c in v) for k, v in headers.items())))
         ):
             raise ContractError("Unsupported registered Kubernetes request")
-        if type(timeout) not in (int, float) or not 0 < timeout <= 5:
+        if type(timeout) not in (int, float) or not 0 < timeout <= (900 if transfer else 5):
             raise ContractError("Invalid read timeout")
         token = self.token_provider()
         if (
@@ -161,32 +174,30 @@ class KubernetesHTTPS:
             timer = Timer(left, interrupt)
             timer.daemon = True
             timer.start()
+            kind = content_type or ("application/json-patch+json" if body is not None else None)
             connection.request(
                 method,
                 path + ("?" + urlencode(query) if query else ""),
                 body=body,
                 headers={
                     "Authorization": "Bearer " + token,
-                    "Accept": "application/json",
+                    "Accept": "*/*" if raw else "application/json",
                     "Accept-Encoding": "identity",
-                    **(
-                        {"Content-Type": "application/json-patch+json"}
-                        if body is not None
-                        else {}
-                    ),
+                    **({"Content-Type": kind} if kind is not None else {}),
+                    **(headers or {}),
                 },
             )
             response = connection.getresponse()
-            if response.status != 200:
+            if response.status not in accept:
                 raise KubernetesRequestRefused(response.status)
             if response.getheader("Content-Encoding", "identity") != "identity":
                 raise ContractError("Unsupported Kubernetes response encoding")
-            body = response.read(MAX_RESPONSE + 1)
+            body = response.read(limit + 1)
             if time.monotonic() >= deadline:
                 raise ContractError("Kubernetes read deadline exceeded")
-            if len(body) > MAX_RESPONSE:
+            if len(body) > limit:
                 raise ContractError("Kubernetes response limit exceeded")
-            return decode_api_json(body, limit=MAX_RESPONSE)
+            return body if raw else decode_api_json(body, limit=limit)
         except ContractError:
             raise
         except (OSError, http.client.HTTPException, UnicodeError, ValueError) as exc:

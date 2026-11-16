@@ -57,7 +57,7 @@ def cluster_identity(context, server):
     return f"managed-{provider}", os.environ.get(f"SOVA_TEST_{'AWS' if provider == 'eks' else 'GCP'}_REGION", "cloud"), addresses
 
 
-def kind_namespace(rules, objects, *, prefix="handoff"):
+def kind_namespace(rules, objects, *, prefix="handoff", controls_class=KubernetesHandoffControls):
     """Create a namespace with ``objects`` and a token limited to ``rules``.
     Returns (context, namespace, controls factory); the caller deletes the
     namespace with ``delete_namespace``."""
@@ -94,7 +94,7 @@ def kind_namespace(rules, objects, *, prefix="handoff"):
             "tenant-orders", "orders", environment, location, server, addresses,
             hashlib.sha256(ca).hexdigest(), namespace_name, namespace_uid, 1,
             now - timedelta(minutes=1), now + timedelta(hours=1))
-        return KubernetesHandoffControls(registration, ca_pem=ca, token_provider=lambda: token)
+        return controls_class(registration, ca_pem=ca, token_provider=lambda: token)
 
     return context, namespace, controls
 
