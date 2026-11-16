@@ -336,6 +336,9 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
   - 시험용 MySQL 두 대는 시험 모듈마다 namespace에 띄운다. limit만 주면 request가 limit과 같아져 노드 메모리 요청 한도를 넘을 수 있어, request를 작게 명시했다.
   - 적합성 + 고유 13 PASS, snapshot-cdc E2E 1 PASS.
   - 시험이 잡은 것과 고친 것: 결함 주입 2건(필터 이름 오류, 카운터 미복사). 카운터 쪽은 시험을 롤백 경우로 바꾼 뒤에 잡혔다. 서버 두 대에서 드러난 기존 복원 훈련 probe 결함도 고쳤다.
+- Kafka API·RabbitMQ의 control plane 연결. 이미 만든 기능 중 반쯤 끝난 것을 새 저장소보다 먼저 마무리했다. 내용은 [구현 안내](../contract-foundation.md#kafka-apirabbitmq의-control-plane-연결-2026-11-17)에 있다.
+  - Kafka: 3 PASS. 첫 실행에서 probe 결함이 드러났다. 트랜잭션 ID 권한 거부를 쓰기 거부로 센 것이다. 접두어 등록과 엄격한 분류로 고쳤다. 그다음 토픽 거부가 전달 보고에 드러나지 않는 경우를 브로커 권한 판단(KIP-430)으로 보완했다. Redpanda가 이를 지원하는 것을 먼저 확인했다.
+  - RabbitMQ: 2 PASS. 계약 스키마가 불변식을 최소 하나 요구해서, 메시지를 읽지 않는 개수 불변식을 등록할 수 있게 했다.
 
 ## 이전 기록 정정
 
@@ -343,6 +346,7 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 
 ## 미검증·다음 접점
 
+- Kafka·RabbitMQ·Redis 계열·MySQL 변경 캡처까지 control plane 전체 흐름에 연결했다. 모두 로컬 시험 환경에서만 했고, 관리형 서비스(MSK, Amazon MQ, ElastiCache, RDS 복제)는 실측하지 않았다.
 - 파일 상태(볼륨)·메모리 세션 단위와 애플리케이션 한 단위 인계는 로컬 kind에서만 시험했다(ADR-0006). 클러스터 사이 볼륨 복사와 관리형 클러스터는 아직이다. Gateway API 진입점은 Envoy Gateway 하나로만 시험했고, Ingress는 다루지 않는다.
 - 등록 API와 revision 비교 후 쓰기 저장은 생겼다(ADR-0005). 등록 변경이 이미 수용된 인계에 주는 영향은 여전히 변경 수집기 규약으로만 받는다. 관리형 클러스터(EKS·GKE)에는 서비스를 아직 배포하지 않았다.
 - §28.4의 부하·네트워크·failure model 전체 qualification schema와 실제 서명 소비 연결은 후속이다. 현 C3를 범용 운영 지원 행렬로 사용하지 않는다.

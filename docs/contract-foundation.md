@@ -1281,7 +1281,7 @@ PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 ad
 - MySQL 변경 데이터 캡처는 뒤에 서버 복제 기반으로 추가했다([아래](#mysql-변경-캡처-서버-복제-기반-snapshot-cdc-2026-11-17)).
 - Kafka 복사는 삭제 정책 토픽만 받는다. 압축 전용 토픽은 DeleteRecords를 쓸 수 없어서, 준비 단계에서 아무것도 바꾸기 전에 거부한다(시험함).
 - Kafka와 RabbitMQ는 한 클러스터·한 브로커 안의 두 토픽·두 vhost로만 시험했다.
-- Kafka와 RabbitMQ는 아직 워커 카탈로그와 control plane 전체 흐름에 연결하지 않았다. 메시지 단위용 계약 템플릿과 의무 probe가 필요하다.
+- Kafka와 RabbitMQ의 control plane 연결은 뒤에 추가했다([아래](#kafka-apirabbitmq의-control-plane-연결-2026-11-17)).
 
 ## 운영 서비스 (API·워커·배포, 2026-11-16)
 
@@ -1493,6 +1493,45 @@ MySQL은 지금까지 offline copy만 있어서, 쓰기 정지가 데이터 크�
 - 원본 쪽 스냅샷은 순간적인 전역 읽기 잠금이 필요하다(`RELOAD`). 관리형 서비스에서 이 권한이 없으면 대안(`performance_schema.log_status`, `BACKUP_ADMIN`)을 써야 한다.
 - 복제 중 원본의 DDL은 받는다. 다만 계획은 구조가 같다는 확인 뒤에만 활성화한다.
 
+## Kafka API·RabbitMQ의 control plane 연결 (2026-11-17)
+
+두 adapter는 있었지만 워커와 control plane에 연결되지 않아 서비스에서 쓸 수 없었다. 이제 독립 probe, 워커 실행, 실행 설정(`engine: kafka`, `engine: rabbitmq`)이 붙어, 다른 저장소처럼 등록 → 컴파일 → 승인 → 수용 → 워커 실행을 거친다.
+
+**Kafka API probe.**
+
+- **쓰기 거부.** 두 관점이 모두 동의해야 거부로 인정한다.
+  - 실제 시도: 각 producer principal이 자기 자격 증명으로, 등록된 probe용 트랜잭션 ID 접두어 아래에서 레코드 하나를 보내고 트랜잭션을 버린다.
+  - 브로커의 권한 판단: 그 principal로 물어 본 허용 작업(KIP-430)에 WRITE가 없다.
+- **내용 비교와 불변식.** 내용은 probe 자신의 `read_committed` consumer로 레코드와 group 위치를 비교한다. 불변식은 등록 검사로 본다(모든 값이 필드를 가진 JSON, 또는 키 중복 없음).
+- **복원 훈련.** scratch 토픽으로 복원해 비교하고 지운다.
+- **다른 테넌트·전송.** 다른 테넌트 토픽은 쓰기·읽기 시도가 모두 거부되어야 한다. 전송은 이 클라이언트 설정의 TLS·호스트 검증 여부를 본다.
+- **설정 파일 제한.** 연결 관련 키만 받는다. 코드를 불러오는 설정(`plugin.library.paths`)은 누가 썼든 거부한다(시험함).
+
+**처음 구현이 잡힌 결함.** probe의 트랜잭션 ID가 principal에게 허용되지 않아, 쓸 수 있는 principal도 거부되었는데 이를 "쓰기 거부"로 셌다. 차단 확인이 잘못 통과할 수 있는 결함이다. 다음 두 가지로 고쳤다.
+
+- probe 접두어를 등록값으로 받는다.
+- 토픽 권한 거부와 로그인 거부만 거부로 센다.
+
+그다음에도 토픽 거부가 트랜잭션 내부 오류로만 남고 전달 보고에는 abort의 `_PURGE_QUEUE`만 오는 경우가 있었다. 그래서 브로커의 권한 판단을 두 번째 관점으로 더했다. "probe가 돌 수 없지만 토픽 쓰기 권한은 남은 writer"를 거부로 판정하지 않는 것을 시험으로 고정했다.
+
+**RabbitMQ probe.** 메시지는 읽으면 바뀌므로, 읽지 않고 잴 수 있는 것만 잰다.
+
+- **쓰기 거부.** 실제 발행 시도(트랜잭션 안, 롤백)와 브로커의 권한 기록이 모두 동의해야 한다.
+- **내용과 불변식.** 내용은 정의와 대기 메시지 수로 비교한다. 불변식은 등록된 개수 검사만 잰다(`same_count`: 인계로 작업이 사라지거나 늘지 않음, `max_ready`). 계약 스키마가 서비스마다 불변식을 최소 하나 요구하기 때문에 필요하다.
+- **복원 훈련.** 정의만 scratch vhost에 복원해 비교한다. 메시지는 처리 중인 작업이라 복원 대상이 아니며, 관측값에 그렇다고 적는다.
+
+| 시험 | 결과 |
+|---|---|
+| Kafka: control plane 전체 흐름, probe 실패 시험, 판정 불가 writer 시험 | 3 PASS. 쓰기 정지 8.9초, 복원 훈련 30건 일치 |
+| RabbitMQ: control plane 전체 흐름, probe 실패 시험 | 2 PASS. 쓰기 정지 1.68초 |
+| 실행 설정 단위 시험(Kafka·RabbitMQ 항목, 위험 설정 거부) | 통과 |
+
+**한계.**
+
+- 두 브로커 모두 한 클러스터·한 브로커 안에서만 시험했다.
+- TLS 없이 시험해 전송 암호화는 "미검증"으로 측정된다.
+- RabbitMQ의 내용 비교는 개수 수준이다. 메시지 단위 동일성은 복사 시점의 confirm으로 확보한다(adapter 설명 참고).
+
 ## 로컬 통합 시험 환경
 
 통합 시험에 필요한 서비스를 kind 클러스터 하나에 모아 `infra/test-env/test-env.sh up`·`down`으로 올리고 내린다. 들어 있는 것은 다음과 같다.
@@ -1557,8 +1596,8 @@ MySQL은 지금까지 offline copy만 있어서, 쓰기 정지가 데이터 크�
 | control plane 이중화(API ×2, 워커 ×2)·워커 장애 복구 | 모의 시험 통과 | 로컬 kind에 실제 배포. 경로 전환 중 워커 Pod 삭제 뒤 증명·readback으로 완료. 관리형 클러스터 배포는 미시험 |
 | MySQL 간 offline copy adapter·probe | 모의 시험 통과 | 로컬 MySQL 8.4.13. 적합성 키트와 control plane 전체 흐름. TLS probe는 미실측 |
 | MySQL 변경 캡처(서버 복제, snapshot-cdc) | 모의 시험 통과 | 시험용 MySQL 8.4.13 두 대. 적합성 키트, 정지 구간 쓰기 0행(offline 20,158행), control plane 전체 흐름 |
-| Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL), 한 클러스터의 두 토픽. control plane 미연결 |
-| RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8, 한 브로커의 두 vhost. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 미연결 |
+| Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL), 한 클러스터의 두 토픽. control plane 전체 흐름 연결(2026-11-17) |
+| RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8, 한 브로커의 두 vhost. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 전체 흐름 연결(2026-11-17) |
 | Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). 관리형 미실측 |
 | 메모리 세션 drain adapter | 모의 시험 통과 | 로컬 kind, WebSocket 시험 서버. 커널 TCP 테이블로 세션 계수, drain 상한 hold·terminate |
 | 애플리케이션 한 단위(볼륨 + 세션) | 모의 시험 통과 | 로컬 kind, 게시판 + 게임 서버를 control plane 전체 흐름으로. 쓰기 정지 32.5초 1회 |
