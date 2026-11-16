@@ -11,6 +11,9 @@
 #                          a fresh database)
 #   test-env.sh gateway    add Envoy Gateway (a Gateway API implementation) for the
 #                          entry-point route tests; pinned manifest and image
+#   test-env.sh second     add a second, empty kind cluster (its own API server and
+#                          kubeconfig) for handoffs between two clusters
+#   test-env.sh down-second  delete the second cluster
 #   test-env.sh status     show the pods
 #   test-env.sh down       delete the cluster and everything in it
 #
@@ -28,6 +31,9 @@ EG_MANIFEST_SHA256=ac89b0b564e52c97c97a3f8b4d82bb594a0fbc810431fb2e6ffd91702aabe
 EG_IMAGE=docker.io/envoyproxy/gateway:v1.9.3@sha256:192fc9bdadb6d2462e8cf7bd702ce3dd9648f3310c6038787448a1f509b7cd9f
 CLUSTER=sova-test-env
 KCFG=${SOVA_TEST_KUBECONFIG:-$HOME/.kube/sova-test-env.yaml}
+SECOND=sova-test-env-b
+KCFG_B=${SOVA_TEST_KUBECONFIG_B:-$HOME/.kube/sova-test-env-b.yaml}
+PYTHON_IMAGE=docker.io/library/python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 STATE=${SOVA_TEST_ENV_STATE:-$HOME/.sova-test-env}
 TLS="$STATE/tls"
 k() { kubectl --kubeconfig "$KCFG" --context "kind-$CLUSTER" -n sova-test-env "$@"; }
@@ -97,6 +103,23 @@ export SOVA_TEST_KAFKA="127.0.0.1:59092"
 export SOVA_TEST_KAFKA_ADMIN_API="http://127.0.0.1:59644"
 export SOVA_TEST_KAFKA_ADMIN="sova-admin:sova-kafka-test-secret"
 EOF
+    if kind get clusters 2>/dev/null | grep -qx "$SECOND"; then
+      printf 'export SOVA_TEST_KUBECONFIG_B="%s"\nexport SOVA_TEST_KUBE_CONTEXT_B="kind-%s"\n' \
+        "$KCFG_B" "$SECOND"
+    fi
+    ;;
+  second)
+    if ! kind get clusters 2>/dev/null | grep -qx "$SECOND"; then
+      mkdir -p "$(dirname "$KCFG_B")"
+      kind create cluster --name "$SECOND" --kubeconfig "$KCFG_B"
+    fi
+    # The agents' and the test applications' image, by digest, on the new node.
+    docker exec "$SECOND-control-plane" crictl pull "$PYTHON_IMAGE" >/dev/null
+    kubectl --kubeconfig "$KCFG_B" --context "kind-$SECOND" wait --for=condition=Ready \
+      node --all --timeout=180s
+    ;;
+  down-second)
+    kind delete cluster --name "$SECOND" --kubeconfig "$KCFG_B"
     ;;
   reset-db)
     k rollout restart deployment/postgres deployment/postgres-tls
@@ -130,7 +153,7 @@ EOF
     kind delete cluster --name "$CLUSTER" --kubeconfig "$KCFG"
     ;;
   *)
-    sed -n '2,20p' "$0"
+    sed -n '2,23p' "$0"
     exit 2
     ;;
 esac

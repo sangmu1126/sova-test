@@ -29,10 +29,18 @@ from sova.adapters.kubernetes.handoff_controls import KubernetesHandoffControls
 from sova.domain.discovery import KubernetesReadRegistration
 
 
+def _config(context):
+    """The kubeconfig file of ``context``: the second test cluster has its own
+    (``SOVA_TEST_KUBECONFIG_B``)."""
+    if context and context == os.environ.get("SOVA_TEST_KUBE_CONTEXT_B"):
+        return os.environ.get("SOVA_TEST_KUBECONFIG_B")
+    return os.environ.get("SOVA_TEST_KUBECONFIG")
+
+
 def kubectl(context, *args, stdin=None):
     """kubectl against ``context``; ``SOVA_TEST_KUBECONFIG`` names a kubeconfig
     file of its own (the test environment never edits ~/.kube/config)."""
-    config = os.environ.get("SOVA_TEST_KUBECONFIG")
+    config = _config(context)
     prefix = ["kubectl", *(["--kubeconfig", config] if config else []), "--context", context]
     result = subprocess.run([*prefix, *args], input=stdin,
                             capture_output=True, text=True, timeout=180)
@@ -57,11 +65,13 @@ def cluster_identity(context, server):
     return f"managed-{provider}", os.environ.get(f"SOVA_TEST_{'AWS' if provider == 'eks' else 'GCP'}_REGION", "cloud"), addresses
 
 
-def kind_namespace(rules, objects, *, prefix="handoff", controls_class=KubernetesHandoffControls):
-    """Create a namespace with ``objects`` and a token limited to ``rules``.
-    Returns (context, namespace, controls factory); the caller deletes the
-    namespace with ``delete_namespace``."""
-    context = os.environ.get("SOVA_TEST_KUBE_CONTEXT")
+def kind_namespace(rules, objects, *, prefix="handoff", controls_class=KubernetesHandoffControls,
+                   context=None):
+    """Create a namespace with ``objects`` and a token limited to ``rules``, in
+    ``context`` (default: ``SOVA_TEST_KUBE_CONTEXT``). Returns (context,
+    namespace, controls factory); the caller deletes the namespace with
+    ``delete_namespace``."""
+    context = context or os.environ.get("SOVA_TEST_KUBE_CONTEXT")
     if not context or not shutil.which("kubectl"):
         pytest.skip("SOVA_TEST_KUBE_CONTEXT and kubectl are required for kind tests")
     server = kubectl(context, "config", "view", "--minify", "-o",

@@ -9,12 +9,14 @@ any worker instance can reach an agent another one started; the Pod spec
 carries only the token's digest.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import hashlib
 import hmac
 import json
 import re
 import secrets
+import threading
 import time
 
 from sova.adapters.kubernetes import volume_agent as _agent_module
@@ -228,39 +230,77 @@ def manifest_digest(entries):
     return hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
 
 
-def _transfer(source, target, claim, entry, *, chunk, live):
-    path, _, mode, _, _, size, digest = entry
+class _Changed(Exception):
+    """A source file changed while it was being copied."""
+
+
+def _partial(path):
     directory, _, _ = path.rpartition("/")
     partial = PARTIAL + hashlib.sha256(path.encode()).hexdigest()[:24]
-    partial_path = f"{directory}/{partial}" if directory else partial
-    try:
-        if size == 0:
-            target.write(claim, partial_path, 0, b"")
-        offset = 0
-        while offset < size:
-            data = source.read(claim, path, offset, min(chunk, size - offset))
-            if not data:
-                break  # shorter than listed: the commit refuses it below
-            target.write(claim, partial_path, offset, data)
-            offset += len(data)
-        target.commit(claim, partial, path, size, digest, mode)
-        return True
-    except KubernetesRequestRefused as refused:
-        if refused.status != 409:
-            raise
-        if not live:
-            raise ContractError(f"Source file changed during the copy: {path}") from refused
-        return False  # changed while the source still serves: the final copy takes it
+    return partial, f"{directory}/{partial}" if directory else partial
 
 
-def sync_trees(source, target, claims, *, chunk=4 << 20, live=False):
+def _copy_files(source, target, claim, entries, *, chunk, live, streams):
+    """Copy the content of ``entries`` with up to ``streams`` requests in flight;
+    each file reaches its name only once all of it landed and was checked.
+    Returns the paths copied and the paths that changed while live.
+
+    In three rounds, each waited for: every file's first chunk (it creates or
+    truncates the partial file, so it must land before the others), the
+    remaining chunks, the commits."""
+    changed, lock = set(), threading.Lock()
+
+    def guarded(work, path):
+        def run(*args):
+            try:
+                work(*args)
+            except (_Changed, KubernetesRequestRefused) as error:
+                if isinstance(error, KubernetesRequestRefused) and error.status != 409:
+                    raise
+                if not live:
+                    raise ContractError(f"Source file changed during the copy: {path}") \
+                        from error
+                with lock:
+                    changed.add(path)  # the final copy, inside the fence, takes it
+        return run
+
+    def piece(path, partial_path, offset, length):
+        if path in changed:
+            return
+        data = source.read(claim, path, offset, length) if length else b""
+        if len(data) != length:
+            raise _Changed(path)
+        target.write(claim, partial_path, offset, data)
+
+    def finish(path, size, digest, mode):
+        if path not in changed:
+            target.commit(claim, _partial(path)[0], path, size, digest, mode)
+
+    firsts, rest, commits = [], [], []
+    for path, _, mode, _, _, size, digest in entries:
+        partial_path = _partial(path)[1]
+        firsts.append((guarded(piece, path), (path, partial_path, 0, min(chunk, size))))
+        rest += [(guarded(piece, path), (path, partial_path, offset, min(chunk, size - offset)))
+                 for offset in range(chunk, size, chunk)]
+        commits.append((guarded(finish, path), (path, size, digest, mode)))
+    with ThreadPoolExecutor(max_workers=streams) as pool:
+        for round_ in (firsts, rest, commits):
+            for future in [pool.submit(work, *args) for work, args in round_]:
+                future.result()
+    return [e for e in entries if e[0] not in changed], sorted(changed)
+
+
+def sync_trees(source, target, claims, *, chunk=4 << 20, live=False, streams=4):
     """Make each of ``claims`` target trees equal to the source's; a report.
 
     Only what differs is written: entries whose kind changed or that the source
     no longer has are removed, files whose size or content differ are copied
-    and checked, modes are set. ``live``: the source still serves, so a file
-    that changes during its copy is left for the final copy instead of failing.
+    (``streams`` chunks in flight) and checked, modes are set. ``live``: the
+    source still serves, so a file that changes during its copy is left for the
+    final copy instead of failing.
     """
+    if type(streams) is not int or not 1 <= streams <= 16:
+        raise ContractError("Between 1 and 16 copy streams")
     report = {"copied_files": 0, "copied_bytes": 0, "removed": 0, "changed_later": 0}
     for claim in range(claims):
         want = source.manifest(claim)
@@ -285,6 +325,7 @@ def sync_trees(source, target, claims, *, chunk=4 << 20, live=False):
                 gone.append(path)
         present = {p: e for p, e in present.items()
                    if p not in gone and not any(p.startswith(g + "/") for g in gone)}
+        to_copy = []
         for path in sorted(wanted):
             entry, current = wanted[path], present.get(path)
             if entry[1] == "d":
@@ -296,11 +337,13 @@ def sync_trees(source, target, claims, *, chunk=4 << 20, live=False):
             elif current is not None and current[5:] == entry[5:]:
                 if current[2] != entry[2]:
                     target.chmod(claim, path, entry[2])
-            elif _transfer(source, target, claim, entry, chunk=chunk, live=live):
-                report["copied_files"] += 1
-                report["copied_bytes"] += entry[5]
             else:
-                report["changed_later"] += 1
+                to_copy.append(entry)
+        copied, later = _copy_files(source, target, claim, to_copy, chunk=chunk, live=live,
+                                    streams=streams)
+        report["copied_files"] += len(copied)
+        report["copied_bytes"] += sum(e[5] for e in copied)
+        report["changed_later"] += len(later)
         # Directory modes last, deepest first, so the agent could fill them.
         for path in sorted((p for p, e in wanted.items() if e[1] == "d"), reverse=True):
             current = present.get(path)
