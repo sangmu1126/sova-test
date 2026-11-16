@@ -459,3 +459,22 @@ def test_a_rabbitmq_queue_gets_the_queue_adapter(tmp_path):
     with pytest.raises(ContractError):
         catalog_from({"version": 1, "applications": [app]}, route_for=lambda spec: FakeRoute())
     close()
+
+
+def test_a_mysql_ca_file_reaches_the_driver_with_verification(tmp_path, monkeypatch):
+    """PyMySQL replaces an ``ssl`` dict by one built from its ``ssl_*`` arguments:
+    the CA must go in as ``ssl_ca`` or it is dropped (and the system store used)."""
+    pymysql = pytest.importorskip("pymysql")
+    seen = []
+    monkeypatch.setattr(pymysql, "connect", lambda **kwargs: seen.append(kwargs))
+    tls = write(tmp_path, "mysql-tls.json", json.dumps({
+        "host": "orders-db", "port": 3306, "user": "sova-admin", "ssl_ca": "/etc/sova/ca.pem"}))
+    app = mysql_application(tmp_path, databases={
+        db: {"dsn_file": tls} for db in ("src", "tgt", "scratch", "other")})
+    catalog, close = catalog_from({"version": 1, "applications": [app]},
+                                  route_for=lambda spec: FakeRoute())
+    execution = catalog.build("tenant-a", "orders", "mysql-offline-copy", None)
+    execution.adapter.connect("tgt")
+    assert seen[-1]["ssl_ca"] == "/etc/sova/ca.pem" and "ssl" not in seen[-1]
+    assert seen[-1]["ssl_verify_cert"] is True and seen[-1]["ssl_verify_identity"] is True
+    close()

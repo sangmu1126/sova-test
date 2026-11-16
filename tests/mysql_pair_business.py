@@ -36,7 +36,13 @@ def server(side, server_id):
                       "args": [f"--server-id={server_id}", "--skip-name-resolve",
                                "--innodb-buffer-pool-size=32M", "--performance-schema=OFF",
                                "--max-connections=100", "--gtid-mode=ON",
-                               "--enforce-gtid-consistency=ON", "--skip-replica-start"],
+                               "--enforce-gtid-consistency=ON", "--skip-replica-start",
+                               # TLS offered (not required): a CA of the test's own
+                               "--ssl-ca=/etc/mysql-tls/ca.pem",
+                               "--ssl-cert=/etc/mysql-tls/server-cert.pem",
+                               "--ssl-key=/etc/mysql-tls/server-key.pem"],
+                      "volumeMounts": [{"name": "tls", "mountPath": "/etc/mysql-tls",
+                                        "readOnly": True}],
                       "env": [{"name": "MYSQL_ROOT_PASSWORD", "value": ROOT},
                               {"name": "MYSQL_ROOT_HOST", "value": "%"}],
                       "ports": [{"containerPort": 3306}],
@@ -44,9 +50,50 @@ def server(side, server_id):
                           "mysqladmin", "ping", "-h127.0.0.1", "-uroot", f"-p{ROOT}"]},
                           "periodSeconds": 2},
                       "resources": {"requests": {"cpu": "50m", "memory": "128Mi"},
-                                    "limits": {"memory": "512Mi"}}}]}}}},
+                                    "limits": {"memory": "512Mi"}}}],
+                      "volumes": [{"name": "tls", "secret": {"secretName": "mysql-tls",
+                                                             "defaultMode": 0o444}}]}}}},
         {"apiVersion": "v1", "kind": "Service", "metadata": {"name": f"mysql-{side}"},
          "spec": {"selector": labels, "ports": [{"port": 3306, "targetPort": 3306}]}}]
+
+
+def tls_material(namespace):
+    """A CA and one server certificate for both servers: loopback (the test's
+    port-forward) and each server's name inside the cluster (a replica's)."""
+    from datetime import UTC, datetime, timedelta
+    from ipaddress import ip_address
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    now = datetime.now(UTC)
+
+    def certificate(subject, issuer, public, signer, *, ca, names=()):
+        builder = (x509.CertificateBuilder().subject_name(subject).issuer_name(issuer)
+                   .public_key(public).serial_number(x509.random_serial_number())
+                   .not_valid_before(now - timedelta(minutes=5))
+                   .not_valid_after(now + timedelta(days=1))
+                   .add_extension(x509.BasicConstraints(ca=ca, path_length=None), critical=True))
+        if names:
+            builder = builder.add_extension(x509.SubjectAlternativeName(list(names)),
+                                            critical=False)
+        return builder.sign(signer, hashes.SHA256())
+
+    ca_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "sova mysql test CA")])
+    ca = certificate(ca_name, ca_name, ca_key.public_key(), ca_key, ca=True)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    names = [x509.IPAddress(ip_address("127.0.0.1")), x509.DNSName("localhost"),
+             *(x509.DNSName(f"mysql-{side}.{namespace}.svc.cluster.local")
+               for side in ("source", "target"))]
+    server_cert = certificate(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "mysql")]),
+                              ca_name, key.public_key(), ca_key, ca=False, names=names)
+    pem = serialization.Encoding.PEM
+    return {"ca.pem": ca.public_bytes(pem), "server-cert.pem": server_cert.public_bytes(pem),
+            "server-key.pem": key.private_bytes(pem, serialization.PrivateFormat.PKCS8,
+                                                serialization.NoEncryption())}
 
 
 def _forward(context, namespace, deployment):
@@ -65,16 +112,25 @@ def _forward(context, namespace, deployment):
 
 
 @pytest.fixture(scope="module")
-def mysql_pair():
+def mysql_pair(tmp_path_factory):
     pymysql = pytest.importorskip("pymysql")
     from kind_support import delete_namespace, kind_namespace, kubectl
 
     if not os.environ.get("SOVA_TEST_KUBE_CONTEXT"):
         pytest.skip("SOVA_TEST_KUBE_CONTEXT is required for the two-server MySQL tests")
+    import base64
+    import json
+
     context, namespace, _ = kind_namespace([], [*server("source", 101), *server("target", 102)],
                                            prefix="mysqlpair")
     forwards = []
     try:
+        material = tls_material(namespace)  # the Pods wait for it to mount
+        kubectl(context, "-n", namespace, "apply", "-f", "-", stdin=json.dumps({
+            "apiVersion": "v1", "kind": "Secret", "metadata": {"name": "mysql-tls"},
+            "data": {k: base64.b64encode(v).decode() for k, v in material.items()}}))
+        ca_file = tmp_path_factory.mktemp("mysql-tls") / "ca.pem"
+        ca_file.write_bytes(material["ca.pem"])
         for side in ("source", "target"):
             kubectl(context, "-n", namespace, "rollout", "status", f"deployment/mysql-{side}",
                     "--timeout=300s")
@@ -96,7 +152,7 @@ def mysql_pair():
         with pymysql.connect(**admin["source"]) as conn, conn.cursor() as cur:
             cur.execute(f"CREATE USER '{REPLICATION[0]}'@'%' IDENTIFIED BY '{REPLICATION[1]}'")
             cur.execute(f"GRANT REPLICATION SLAVE ON *.* TO '{REPLICATION[0]}'@'%'")
-        yield {"admin": admin, "pymysql": pymysql,
+        yield {"admin": admin, "pymysql": pymysql, "ca_file": str(ca_file),
                "source_endpoint": (f"mysql-source.{namespace}.svc.cluster.local", 3306)}
     finally:
         for process in forwards:
@@ -158,7 +214,7 @@ def mysql_pair_business(mysql_pair):
     yield {"names": names, "app": app, "batch": batch, "connect": connect,
            "connect_as": connect_as, "quoted": quoted, "admin": admin["source"],
            "admins": admin, "pymysql": pymysql, "side_of": side_of,
-           "source_endpoint": mysql_pair["source_endpoint"]}
+           "source_endpoint": mysql_pair["source_endpoint"], "ca_file": mysql_pair["ca_file"]}
     for side in ("target", "source"):
         with pymysql.connect(**admin[side]) as conn, conn.cursor() as cur:
             if side == "target":

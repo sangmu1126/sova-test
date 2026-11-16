@@ -33,7 +33,8 @@ def mysql_factory(adapter_id, resolve, *, replication=False):
             adapter = MySqlReplicationAdapter(
                 adapter_id, source_endpoint=r["source_endpoint"],
                 replication_account=r["account"], replication_password=r["password"],
-                replication_tls=r.get("tls", False), **common)
+                replication_tls=r.get("tls", False), replication_ca_path=r.get("ca_path"),
+                **common)
         else:
             adapter = MySqlOfflineCopyAdapter(adapter_id, **common)
         probes = MySqlHandoffProbes(

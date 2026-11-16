@@ -27,7 +27,8 @@ The target server reaches the source at ``source_endpoint`` (as the target
 sees it) with a replication account the operator created on the source
 (``REPLICATION SLAVE``); its password comes from the worker's secrets. With
 ``replication_tls`` the channel requires TLS and verifies the source's
-certificate (the CA is the target server's own setting).
+certificate and host name against ``replication_ca_path``, a CA file on the
+target server.
 """
 
 import hashlib
@@ -42,7 +43,8 @@ _HOST = re.compile(r"[A-Za-z0-9.-]{1,253}")
 
 class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
     def __init__(self, adapter_id, *, source_endpoint, replication_account,
-                 replication_password, replication_tls=False, catch_up_seconds=120, **common):
+                 replication_password, replication_tls=False, replication_ca_path=None,
+                 catch_up_seconds=120, **common):
         super().__init__(adapter_id, **common)
         host, port = source_endpoint if type(source_endpoint) is tuple else (None, None)
         if type(host) is not str or not _HOST.fullmatch(host) or type(port) is not int:
@@ -51,7 +53,12 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
         if type(replication_password) is not str or not replication_password:
             raise ContractError("The replication account's password required")
         self.source_endpoint, self.replication_account = (host, port), replication_account
+        if replication_tls and (type(replication_ca_path) is not str or
+                                not replication_ca_path.startswith("/")):
+            raise ContractError("TLS replication verifies against a CA file on the target "
+                                "server: its absolute path required")
         self.replication_password, self.replication_tls = replication_password, replication_tls
+        self.replication_ca_path = replication_ca_path
         self.catch_up_seconds = catch_up_seconds
         self.channel = "sova_" + hashlib.sha256(json.dumps(
             [adapter_id, self.source_db, self.target_db]).encode()).hexdigest()[:24]
@@ -104,13 +111,15 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
     def _start_channel(self, file, position):
         user, _ = account(self.replication_account)
         host, port = self.source_endpoint
-        tls = ", SOURCE_SSL=1, SOURCE_SSL_VERIFY_SERVER_CERT=1" if self.replication_tls else ""
+        tls = (", SOURCE_SSL=1, SOURCE_SSL_VERIFY_SERVER_CERT=1, SOURCE_SSL_CA=%s"
+               if self.replication_tls else "")
         with self._session("target") as cur:
             cur.execute(
                 "CHANGE REPLICATION SOURCE TO SOURCE_HOST=%s, SOURCE_PORT=%s, SOURCE_USER=%s, "
                 "SOURCE_PASSWORD=%s, SOURCE_LOG_FILE=%s, SOURCE_LOG_POS=%s, "
                 f"SOURCE_AUTO_POSITION=0, GET_SOURCE_PUBLIC_KEY=1{tls} FOR CHANNEL %s",
-                (host, port, user, self.replication_password, file, position, self.channel))
+                (host, port, user, self.replication_password, file, position,
+                 *((self.replication_ca_path,) if self.replication_tls else ()), self.channel))
             cur.execute(
                 f"CHANGE REPLICATION FILTER REPLICATE_REWRITE_DB = (({name(self.source_db)}, "
                 f"{name(self.target_db)})), REPLICATE_DO_DB = ({name(self.target_db)}) "
@@ -136,7 +145,11 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
         holds, detail = super()._check_start_sync()
         running = status is not None and status.get("Replica_IO_Running") == "Yes" and \
             status.get("Replica_SQL_Running") == "Yes"
+        tls = status is not None and status.get("Source_SSL_Allowed") == "Yes" and \
+            status.get("Source_SSL_Verify_Server_Cert") == "Yes"
+        running = running and (tls or not self.replication_tls)
         return holds and running, {**detail, "channel": self.channel, "running": running,
+                                   "tls_verified": tls,
                                    "errors": None if status is None else {
                                        "io": status.get("Last_IO_Error") or None,
                                        "sql": status.get("Last_SQL_Error") or None}}

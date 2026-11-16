@@ -54,7 +54,7 @@ _APP_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode", "dat
              "source_conninfo_file", "route", "zone_of", "replication"}
 _REQUIRED = _APP_KEYS - {"role_password_files", "source_conninfo_file", "engine", "zone_of",
                          "replication"}
-_REPLICATION_KEYS = {"source_endpoint", "account", "password_file", "tls"}
+_REPLICATION_KEYS = {"source_endpoint", "account", "password_file", "tls", "ca_path"}
 _UNIT_ENGINES = {  # engines whose entries carry their own keys (see each module)
     "kubernetes-volume": {"volume", "route"},
     "kubernetes-session": {"session", "route"},
@@ -154,7 +154,8 @@ def _replication(spec):
     if type(endpoint) is not list or len(endpoint) != 2:
         raise ContractError("replication.source_endpoint: [host, port]")
     return {"source_endpoint": (endpoint[0], endpoint[1]), "account": spec["account"],
-            "password": _read(spec["password_file"]), "tls": bool(spec.get("tls", False))}
+            "password": _read(spec["password_file"]), "tls": bool(spec.get("tls", False)),
+            "ca_path": spec.get("ca_path")}
 
 
 def _postgres_connections(databases, passwords):
@@ -183,8 +184,10 @@ def _mysql_connections(databases, passwords):
                 "host", "user"} <= set(settings):
             raise ContractError("MySQL connection settings: host, user and known keys only")
         if settings.get("ssl_ca"):
-            settings["ssl"] = {"ca": settings.pop("ssl_ca")}
+            # PyMySQL's own arguments: an ``ssl`` dict next to any ``ssl_*`` argument
+            # is replaced by one built from them, which would drop the CA file.
             settings["ssl_verify_cert"] = True
+            settings["ssl_verify_identity"] = settings.get("ssl_verify_identity", True)
         servers[db] = settings
 
     def admin(database):
