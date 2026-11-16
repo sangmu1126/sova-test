@@ -238,3 +238,26 @@ def volume_business():
         while time.monotonic() < deadline and namespace in kubectl(
                 context, "get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}"):
             time.sleep(1)
+
+
+@pytest.fixture
+def other_tenant():
+    """Another tenant's namespace with a bound claim, read with its own token."""
+    from kind_support import delete_namespace, kind_namespace, kubectl
+
+    from sova.adapters.kubernetes.volume_controls import KubernetesVolumeControls
+
+    claim = {"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "records"},
+             "spec": {"accessModes": ["ReadWriteOnce"], "storageClassName": "standard",
+                      "resources": {"requests": {"storage": "1Gi"}}}}
+    holder = bare_pod("holder", "records", ["python3", "-c", "import time; time.sleep(86400)"],
+                      read_only=True)
+    context, namespace, controls = kind_namespace(
+        [{"apiGroups": [""], "resources": ["persistentvolumeclaims"], "verbs": ["get"]}],
+        [claim, holder], prefix="other", controls_class=KubernetesVolumeControls)
+    try:
+        kubectl(context, "-n", namespace, "wait", "--for=condition=Ready", "pod/holder",
+                "--timeout=180s")
+        yield controls()
+    finally:
+        delete_namespace(context, namespace)

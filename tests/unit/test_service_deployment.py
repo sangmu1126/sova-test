@@ -244,3 +244,63 @@ def test_a_volume_entry_that_does_not_add_up_is_refused(tmp_path, changes):
             volume_application(tmp_path, **changes)]}, route_for=lambda spec: FakeRoute(),
             controls_for=fake_volume_controls)[0]
         catalog.build("tenant-a", "board", "kubernetes-volume-handoff", None)
+
+
+def session_entry(**changes):
+    session = {"source": {"registration_file": "unused", "app": ["deployment", "game"]},
+               "target": {"registration_file": "unused", "app": ["deployment", "game-new"]},
+               "routes": ["game_src", "game_tgt", "game_paused"], "port": 8080,
+               "image": "docker.io/library/python@sha256:" + "5" * 64, "run_as": [10001, 10001],
+               "drain_seconds": 120, "on_timeout": "terminate"}
+    session.update(changes)
+    return {"adapter_id": "game-sessions", "engine": "kubernetes-session", "session": session,
+            "route": {"kind": "kubernetes_service", "registration_file": "unused",
+                      "service": "game", "sides": {}}}
+
+
+class FakeServiceRoute(FakeRoute):
+    def observe(self):
+        return {"selector_side": "game_src", "ready_endpoints": 1, "foreign_endpoints": [],
+                "route": "game_src"}
+
+
+def test_a_whole_application_is_one_unit_of_a_volume_and_a_session_server(tmp_path):
+    board = volume_application(tmp_path)
+    entry = {"tenant_id": "tenant-a", "application_id": "board", "adapter_id": "board-whole",
+             "engine": "composite", "mode": "offline_copy", "data": "board",
+             "components": [{"name": "game", **session_entry()},
+                            {"name": "board", "adapter_id": "board-volume",
+                             "engine": "kubernetes-volume", "volume": board["volume"],
+                             "route": board["route"]}]}
+    catalog, close = catalog_from({"version": 1, "applications": [entry]},
+                                  route_for=lambda spec: FakeServiceRoute(),
+                                  controls_for=fake_volume_controls)
+    execution = catalog.build("tenant-a", "board", "board-whole", None)
+    assert type(execution.adapter).__name__ == "CompositeHandoffAdapter"
+    assert [(n, type(a).__name__) for n, a in execution.adapter.components] == [
+        ("game", "KubernetesSessionHandoffAdapter"), ("board", "KubernetesVolumeHandoffAdapter")]
+    close()
+
+
+@pytest.mark.parametrize("change", [
+    lambda e: e.update(data="cache"),  # names no component
+    lambda e: e["components"].pop(),  # one component is not a composite
+    lambda e: e["components"][0].update(engine="postgresql"),
+    lambda e: e["components"][0]["session"].update(routes=["game_src", "game_tgt"]),
+    lambda e: e["components"][0]["session"].update(on_timeout="ignore"),
+    lambda e: e.update(mode="logical_replication"),
+])
+def test_a_composite_entry_that_does_not_add_up_is_refused(tmp_path, change):
+    board = volume_application(tmp_path)
+    entry = {"tenant_id": "tenant-a", "application_id": "board", "adapter_id": "board-whole",
+             "engine": "composite", "mode": "offline_copy", "data": "board",
+             "components": [{"name": "game", **session_entry()},
+                            {"name": "board", "adapter_id": "board-volume",
+                             "engine": "kubernetes-volume", "volume": board["volume"],
+                             "route": board["route"]}]}
+    change(entry)
+    with pytest.raises(ContractError):
+        catalog = catalog_from({"version": 1, "applications": [entry]},
+                               route_for=lambda spec: FakeServiceRoute(),
+                               controls_for=fake_volume_controls)[0]
+        catalog.build("tenant-a", "board", "board-whole", None)

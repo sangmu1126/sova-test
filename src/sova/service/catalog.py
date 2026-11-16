@@ -58,8 +58,11 @@ _APP_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode", "dat
              "app_role", "writer_roles", "tables", "schema_sql_file", "probe_insert",
              "source_conninfo_file", "route", "zone_of"}
 _REQUIRED = _APP_KEYS - {"role_password_files", "source_conninfo_file", "engine", "zone_of"}
-_VOLUME_APP_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode", "volume",
-                    "route"}
+_KUBERNETES_ENGINES = {
+    "kubernetes-volume": {"volume", "route"},
+    "kubernetes-session": {"session", "route"},
+    "composite": {"components", "data"}}
+_UNIT_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode"}
 _MYSQL_SETTINGS = {"host", "port", "user", "password", "ssl_ca", "ssl_verify_identity",
                    "connect_timeout"}
 
@@ -184,6 +187,32 @@ def _mysql_connections(databases, passwords):
     return admin, lambda: None, connect_as
 
 
+def _kubernetes_resolver(app, *, route_for, controls_for):
+    """A unit run by Kubernetes adapters: (factory of its Execution, close).
+
+    Only the offline-copy template applies: a file system and in-memory
+    sessions have no change log to follow while the source still serves."""
+    from sova.service.composite_execution import (
+        composite_resolver,
+        session_execution,
+        session_resolver,
+    )
+    from sova.service.volume_execution import controls_from, volume_factory, volume_resolver
+
+    engine = app["engine"]
+    if set(app) - _UNIT_KEYS - _KUBERNETES_ENGINES[engine] or app.get("mode") != "offline_copy":
+        raise ContractError(f"{engine} entry: known keys and mode offline_copy only")
+    controls_for = controls_for or controls_from
+    if engine == "kubernetes-volume":
+        resolve, close = volume_resolver(app, route_for=route_for, controls_for=controls_for)
+        return volume_factory(app["adapter_id"], resolve), close
+    if engine == "kubernetes-session":
+        settings = session_resolver(app, route_for=route_for, controls_for=controls_for)
+        return (lambda *args: session_execution(app["adapter_id"], settings)), lambda: None
+    return composite_resolver(app, route_for=route_for, controls_for=controls_for), \
+        lambda: None
+
+
 def catalog_from(document, *, route_for=kubernetes_route, controls_for=None):
     """(AdapterCatalog, close) from a parsed execution file."""
     if type(document) is not dict or document.get("version") != 1 or set(document) - {
@@ -194,14 +223,10 @@ def catalog_from(document, *, route_for=kubernetes_route, controls_for=None):
         raise ContractError("At least one application is required")
     by_adapter, kept = {}, []
     for app in apps:
-        if type(app) is dict and app.get("engine") == "kubernetes-volume":
-            from sova.service.volume_execution import volume_resolver
-
-            if set(app) - _VOLUME_APP_KEYS or app.get("mode") != "offline_copy":
-                raise ContractError("Volume entry: known keys and mode offline_copy only")
-            resolve, close = volume_resolver(app, route_for=route_for,
-                                             **({"controls_for": controls_for}
-                                                if controls_for else {}))
+        engine = app.get("engine") if type(app) is dict else None
+        if engine in _KUBERNETES_ENGINES:
+            resolve, close = _kubernetes_resolver(app, route_for=route_for,
+                                                  controls_for=controls_for)
         else:
             resolve, close = application_resolver(app, route_for=route_for)
         kept.append(close)
@@ -215,16 +240,20 @@ def catalog_from(document, *, route_for=kubernetes_route, controls_for=None):
         entry["apps"][key] = resolve
 
     def factory_of(adapter_id, entry):
+        if entry["kind"][0] in _KUBERNETES_ENGINES:  # each application's own factory
+            def build(tenant_id, application_id, revision):
+                found = entry["apps"].get((tenant_id, application_id))
+                if found is None:
+                    raise ContractError("No execution configured for this application")
+                return found(tenant_id, application_id, revision)
+            return build
+
         def resolve(tenant_id, application_id):
             found = entry["apps"].get((tenant_id, application_id))
             if found is None:
                 raise ContractError("No execution configured for this application")
             return found(tenant_id, application_id)
         engine, mode = entry["kind"]
-        if engine == "kubernetes-volume":
-            from sova.service.volume_execution import volume_factory
-
-            return volume_factory(adapter_id, resolve)
         if engine == "mysql":
             from sova.service.mysql_execution import mysql_factory
 
