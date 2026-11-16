@@ -340,21 +340,6 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
   - Kafka: 3 PASS. 첫 실행에서 probe 결함이 드러났다. 트랜잭션 ID 권한 거부를 쓰기 거부로 센 것이다. 접두어 등록과 엄격한 분류로 고쳤다. 그다음 토픽 거부가 전달 보고에 드러나지 않는 경우를 브로커 권한 판단(KIP-430)으로 보완했다. Redpanda가 이를 지원하는 것을 먼저 확인했다.
   - RabbitMQ: 2 PASS. 계약 스키마가 불변식을 최소 하나 요구해서, 메시지를 읽지 않는 개수 불변식을 등록할 수 있게 했다.
 - Gateway를 거친 세션 drain. 남겨 둔 한계("Service selector 뒤에서만")를 해소했다. 경로 저장소에 멈춤 동작을 두고, 세션 adapter는 경로 종류를 모르게 했다. Envoy Gateway에서 WebSocket 경기 drain이 첫 실행에 통과했다. kubectl의 jsonpath 대기가 빈 값을 기다리지 못해 시험 쪽을 직접 조회로 바꾼 것 말고는 수정이 없었다. 기존 세션·애플리케이션 시험 5 PASS, 단위 867 PASS.
-
-## 이전 기록 정정
-
-2026-11-13 기동 점검에서 사용한 `python -m sova.interfaces.cli`는 실제 entrypoint가 아니다. 종료 코드 0만으로 CLI 기능을 실행했다고 본 부분을 문서에서 정정했다. 올바른 `python -m sova` 경로와 JSON 출력 assertion을 이번에 검증하고 subprocess 회귀 시험을 추가했다. 이전 단위 시험의 `main()` 직접 호출과는 별도다.
-
-## 미검증·다음 접점
-
-- Kafka·RabbitMQ·Redis 계열·MySQL 변경 캡처까지 control plane 전체 흐름에 연결했다. 모두 로컬 시험 환경에서만 했고, 관리형 서비스(MSK, Amazon MQ, ElastiCache, RDS 복제)는 실측하지 않았다.
-- 파일 상태(볼륨)·메모리 세션 단위와 애플리케이션 한 단위 인계는 로컬 kind에서만 시험했다(ADR-0006). 클러스터 사이 볼륨 복사와 관리형 클러스터는 아직이다. Gateway API 진입점은 Envoy Gateway 하나로만 시험했고, Ingress는 다루지 않는다.
-- 등록 API와 revision 비교 후 쓰기 저장은 생겼다(ADR-0005). 등록 변경이 이미 수용된 인계에 주는 영향은 여전히 변경 수집기 규약으로만 받는다. 관리형 클러스터(EKS·GKE)에는 서비스를 아직 배포하지 않았다.
-- §28.4의 부하·네트워크·failure model 전체 qualification schema와 실제 서명 소비 연결은 후속이다. 현 C3를 범용 운영 지원 행렬로 사용하지 않는다.
-- 정합성 경계·컴파일·내리기·수용·권한 상태·효과 원장 연결은 구현했다. 사고 보류·증거 기한·사고 복구 확장의 의미 판정은 하지 않는다. 명세(Part IV S.9)가 필드 이름만 제안하고 스키마는 ADR·단계별 마이그레이션을 전제로 두므로, 스키마를 지어내지 않고 이 확장이 있으면 `NEEDS_EVIDENCE`로 막는다. 서명된 수집기 증명, 실제 역방향 동기화 adapter, 기존 효과 원장의 부분 효과(`PARTIAL_EFFECT`) 상태 연결은 후속이다. 권한 witness의 Object Lock 저장소는 로컬에서만 시험했다.
-- Identity: 로컬 Keycloak 두 대 사이 계정 이전과 IAM-02·04·08 실측까지 했다. 계정 집합은 이제 독립 인계 단위로 계획 안에 들어간다(ADR-0002, Keycloak 원본만). Cognito 원본의 독립 단위, MFA·복구 흐름, 앱의 이중 발급자 정책은 아직이다.
-- 보안 사고 상태 머신·클라우드 변경 수집기·AI/Harbor·패치·고객별 정책·중앙 단절·HA/DR·범용 데이터 이전의 새 실환경 시험은 수행하지 않았다.
-- 원본 제공자의 보안·법규·제품 관련 인용을 이번 원문 보존으로 독립 검증한 것은 아니다.
-- 실제 클라우드·VM·팀 공용 앱/DB·운영 권한·승인 호스트는 변경하지 않았다. S3 adapter는 로컬 gateway에서만 시험했고 AWS S3·다른 클라우드의 정책 판정과는 대조하지 않았다.
-
-[구현 안내](../contract-foundation.md) · [채택 ADR](../adr/0001-contract-driven-foundation.md)
+- MySQL TLS 실측(남겨 둔 한계). 시험용 MySQL 두 대에 자체 CA를 넣고 TLS probe와 TLS 복제를 실측했다. 3 PASS(두 서버 MySQL 시험 전체 17 PASS).
+  - 처음에는 시험 클라이언트의 검증이 "자체 서명 인증서"로 실패했다. 서버가 내놓는 인증서와 서명, `openssl verify`를 차례로 확인해 원인을 좁혔다. PyMySQL이 `ssl_*` 인자가 있으면 `ssl` 딕셔너리를 덮어써 CA 파일을 버리는 것이었다.
+  - 같은 방식으로 CA를 넘기던 워커 카탈로그에도 같은 결함이 있었다. 사설 CA MySQL에 TLS로 접속하지 못했을 것이다. 고치고 단위 시험으로 고정했다.

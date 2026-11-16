@@ -1276,7 +1276,7 @@ PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 ad
 
 **한계.**
 
-- MySQL TLS probe는 구현했지만, 로컬 서버에 TLS가 없어 실측하지 않았다.
+- MySQL TLS probe는 뒤에 시험용 MySQL 두 대(자체 CA)에서 실측했다([아래 변경 캡처 절](#mysql-변경-캡처-서버-복제-기반-snapshot-cdc-2026-11-17)).
 - MySQL 위치(zone)는 DB에 붙일 표식이 없어, 제공자나 운영 인벤토리에서 읽는다.
 - MySQL 변경 데이터 캡처는 뒤에 서버 복제 기반으로 추가했다([아래](#mysql-변경-캡처-서버-복제-기반-snapshot-cdc-2026-11-17)).
 - Kafka 복사는 삭제 정책 토픽만 받는다. 압축 전용 토픽은 DeleteRecords를 쓸 수 없어서, 준비 단계에서 아무것도 바꾸기 전에 거부한다(시험함).
@@ -1498,7 +1498,10 @@ MySQL은 지금까지 offline copy만 있어서, 쓰기 정지가 데이터 크�
 
 **한계.**
 
-- 시험 서버에 TLS가 없어, 복제 채널의 TLS(`replication_tls`)는 실측하지 않았다.
+- **TLS 실측(추가).** 시험용 MySQL 두 대에 자체 CA가 서명한 인증서를 넣었다(SAN: 127.0.0.1과 각 서버의 클러스터 DNS 이름). TLS는 제공하되 강제하지 않는다.
+  - 전송 probe는 검증된 TLS 1.3 연결에서만 pass다. 서버가 TLS를 제공하면 인증서를 검증하지 않는 클라이언트도 암호화는 되지만, 그 경우는 pass가 아니다(시험함).
+  - TLS를 요구하는 복제 채널은 목적지 서버의 CA 파일(`replication_ca_path`)로 원본 인증서와 호스트 이름을 검증한다. 원본을 보증하지 않는 CA로는 sync가 시작되지 않고 UNKNOWN으로 남는다(시험함).
+  - 함께 찾은 결함: 워커 카탈로그가 MySQL CA를 `ssl={"ca": ...}`와 `ssl_verify_cert=True`로 함께 넘겼다. PyMySQL은 `ssl_*` 인자가 있으면 `ssl` 딕셔너리를 그 인자들로 바꾸므로 CA 파일이 버려지고, 시스템 CA 저장소로 검증한다. 그래서 사설 CA(예: RDS CA)로는 접속하지 못했을 것이다. `ssl_ca`·`ssl_verify_cert`·`ssl_verify_identity`(기본 켬)로 넘기게 고치고, 드라이버에 CA가 실제로 전달되는지 단위 시험으로 고정했다.
 - 원본 쪽 스냅샷은 순간적인 전역 읽기 잠금이 필요하다(`RELOAD`). 관리형 서비스에서 이 권한이 없으면 대안(`performance_schema.log_status`, `BACKUP_ADMIN`)을 써야 한다.
 - 복제 중 원본의 DDL은 받는다. 다만 계획은 구조가 같다는 확인 뒤에만 활성화한다.
 
@@ -1603,7 +1606,7 @@ MySQL은 지금까지 offline copy만 있어서, 쓰기 정지가 데이터 크�
 | GCP 전체 탈출 | 실환경 시험 통과 | 데이터·객체·비밀·계정·compute를 한 계약으로 |
 | 운영 서비스: 등록 API·승인·수용·워커 | 모의 시험 통과 | 실 PostgreSQL·Keycloak·Object Lock witness. 역할 여섯, 계획자 자기 승인 금지, revision 비교 후 쓰기 |
 | control plane 이중화(API ×2, 워커 ×2)·워커 장애 복구 | 모의 시험 통과 | 로컬 kind에 실제 배포. 경로 전환 중 워커 Pod 삭제 뒤 증명·readback으로 완료. 관리형 클러스터 배포는 미시험 |
-| MySQL 간 offline copy adapter·probe | 모의 시험 통과 | 로컬 MySQL 8.4.13. 적합성 키트와 control plane 전체 흐름. TLS probe는 미실측 |
+| MySQL 간 offline copy adapter·probe | 모의 시험 통과 | 로컬 MySQL 8.4.13. 적합성 키트와 control plane 전체 흐름. TLS probe는 시험용 서버 두 대에서 실측 |
 | MySQL 변경 캡처(서버 복제, snapshot-cdc) | 모의 시험 통과 | 시험용 MySQL 8.4.13 두 대. 적합성 키트, 정지 구간 쓰기 0행(offline 20,158행), control plane 전체 흐름 |
 | Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL), 한 클러스터의 두 토픽. control plane 전체 흐름 연결(2026-11-17) |
 | RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8, 한 브로커의 두 vhost. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 전체 흐름 연결(2026-11-17) |
