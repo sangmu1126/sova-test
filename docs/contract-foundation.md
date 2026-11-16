@@ -1472,7 +1472,7 @@ Kubernetes 진입점의 표준은 Ingress에서 Gateway API로 옮겨 갔다(ing
 
 **한계.**
 
-- 시험 서버에 TLS가 없어 전송 암호화는 "미검증"으로 측정된다.
+- **TLS(추가 실측).** 시험용 Valkey 두 대에 자체 CA의 TLS 포트를 열었다. 워커 실행 설정의 `ssl_ca`로 만든 연결이 서버 인증서와 호스트 이름을 검증하고, 전송 probe가 이를 pass로 잰다. 그 연결로 인계 전체를 수행했고, 서버를 보증하지 않는 CA는 거부됐다.
 - Redis Cluster(슬롯 분산)와 Sentinel(자동 승격)은 다루지 않는다. Sentinel 구성에서는 승격될 수 있는 replica도 원본에 포함해 차단해야 한다.
 - `DUMP` 형식은 같은 계열·호환 버전 사이에서만 복원된다. 예를 들어 Redis 7.4 이후 형식을 Valkey가 읽는지는 버전마다 다르다.
 - 해시 필드 단위 만료(HEXPIRE)는 복사되지만 비교에는 넣지 않았다.
@@ -1613,7 +1613,7 @@ MySQL은 지금까지 offline copy만 있어서, 쓰기 정지가 데이터 크�
 | Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). 관리형 미실측 |
 | 메모리 세션 drain adapter | 모의 시험 통과 | 로컬 kind, WebSocket 시험 서버. 커널 TCP 테이블로 세션 계수, drain 상한 hold·terminate |
 | 애플리케이션 한 단위(볼륨 + 세션) | 모의 시험 통과 | 로컬 kind, 게시판 + 게임 서버를 control plane 전체 흐름으로. 쓰기 정지 32.5초 1회 |
-| Redis 계열(Valkey) 키 공간 adapter·probe | 모의 시험 통과 | 로컬 kind의 Valkey 9.1.3 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름. TLS·Cluster·Sentinel 미시험 |
+| Redis 계열(Valkey) 키 공간 adapter·probe | 모의 시험 통과 | 로컬 kind의 Valkey 9.1.3 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. Cluster·Sentinel 미시험 |
 | probe 관측값 보존·조회 | 모의 시험 통과 | 서명 digest와 일치를 DB 제약으로 강제, 테넌트 격리, API 조회 |
 | MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |

@@ -23,6 +23,11 @@ VALKEY = ("docker.io/valkey/valkey:9.1.3@sha256:"
 ADMIN = ("sova-admin", "sova-admin-test-secret")
 PASSWORD = "sova-redis-user-test-secret"
 CONFIG = f"""port 6379
+tls-port 6380
+tls-cert-file /etc/valkey-tls/server-cert.pem
+tls-key-file /etc/valkey-tls/server-key.pem
+tls-ca-cert-file /etc/valkey-tls/ca.pem
+tls-auth-clients no
 save ""
 appendonly no
 user default off
@@ -48,18 +53,22 @@ def server(side):
                                                  "readOnlyRootFilesystem": True,
                                                  "capabilities": {"drop": ["ALL"]}},
                              "volumeMounts": [{"name": "config", "mountPath": "/etc/valkey"},
+                                              {"name": "tls", "mountPath": "/etc/valkey-tls",
+                                               "readOnly": True},
                                               {"name": "data", "mountPath": "/data"}]}],
                          "volumes": [{"name": "config", "configMap": {"name": "valkey"}},
+                                     {"name": "tls", "secret": {"secretName": "valkey-tls",
+                                                                "defaultMode": 0o444}},
                                      {"name": "data", "emptyDir": {}}]}}}}
 
 
-def _forward(context, namespace, deployment):
+def _forward(context, namespace, deployment, port=6379):
     from kind_support import _config
 
     config = _config(context)
     process = subprocess.Popen(
         ["kubectl", *(["--kubeconfig", config] if config else []), "--context", context,
-         "-n", namespace, "port-forward", f"deployment/{deployment}", ":6379"],
+         "-n", namespace, "port-forward", f"deployment/{deployment}", f":{port}"],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     line = process.stdout.readline()
     found = re.search(r"127\.0\.0\.1:(\d+)", line)
@@ -70,7 +79,7 @@ def _forward(context, namespace, deployment):
 
 
 @pytest.fixture(scope="module")
-def redis_servers():
+def redis_servers(tmp_path_factory):
     pytest.importorskip("redis")
     import redis
 
@@ -80,18 +89,31 @@ def redis_servers():
         pytest.skip("SOVA_TEST_KUBE_CONTEXT is required for the Redis-protocol tests")
     configmap = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "valkey"},
                  "data": {"valkey.conf": CONFIG}}
+    import base64
+
+    from mysql_pair_business import tls_material
+
     context, namespace, _ = kind_namespace([], [configmap, server("source"), server("target")],
                                            prefix="valkey")
     forwards = []
     try:
+        material = tls_material(namespace)  # loopback and in-cluster names; Pods wait for it
+        kubectl(context, "-n", namespace, "apply", "-f", "-", stdin=json.dumps({
+            "apiVersion": "v1", "kind": "Secret", "metadata": {"name": "valkey-tls"},
+            "data": {k: base64.b64encode(v).decode() for k, v in material.items()}}))
+        ca_file = tmp_path_factory.mktemp("valkey-tls") / "ca.pem"
+        ca_file.write_bytes(material["ca.pem"])
         for side in ("source", "target"):
             kubectl(context, "-n", namespace, "rollout", "status", f"deployment/valkey-{side}",
                     "--timeout=180s")
-        ports = {}
+        ports, tls_ports = {}, {}
         for side in ("source", "target"):
             process, port = _forward(context, namespace, f"valkey-{side}")
             forwards.append(process)
             ports[side] = port
+            process, port = _forward(context, namespace, f"valkey-{side}", 6380)
+            forwards.append(process)
+            tls_ports[side] = port
         clients = {side: redis.Redis(host="127.0.0.1", port=port, username=ADMIN[0],
                                      password=ADMIN[1], socket_timeout=10)
                    for side, port in ports.items()}
@@ -105,7 +127,8 @@ def redis_servers():
                     if time.monotonic() > deadline:
                         raise
                     time.sleep(0.3)
-        yield {"ports": ports, "admin": clients, "redis": redis}
+        yield {"ports": ports, "tls_ports": tls_ports, "ca_file": str(ca_file), "admin": clients,
+               "redis": redis}
     finally:
         for process in forwards:
             process.terminate()
