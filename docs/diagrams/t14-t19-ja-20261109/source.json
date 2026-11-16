@@ -1,0 +1,15 @@
+{
+  "created_on": "2026-11-09",
+  "kind": "code-rendered-implementation-diagrams",
+  "repository": "Softbank-Hackathon-Finals/platform",
+  "reviewed_revision": "379f2ddc81f27452a62c48a790d3b24ce18a5ca7",
+  "sources": [
+    "docs/controls/README.md",
+    "services/control-runner/README.md",
+    "services/control-gate/README.md"
+  ],
+  "live_runtime_capture": false,
+  "notes": "実装構造の説明図。実際の実行証跡と検証範囲は、別途リンクした原本記録を参照。",
+  "language": "ja",
+  "translated_on": "2026-11-09"
+}

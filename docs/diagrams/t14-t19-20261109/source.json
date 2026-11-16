@@ -1,0 +1,13 @@
+{
+  "created_on": "2026-11-09",
+  "kind": "code-rendered-implementation-diagrams",
+  "repository": "Softbank-Hackathon-Finals/platform",
+  "reviewed_revision": "379f2ddc81f27452a62c48a790d3b24ce18a5ca7",
+  "sources": [
+    "docs/controls/README.md",
+    "services/control-runner/README.md",
+    "services/control-gate/README.md"
+  ],
+  "live_runtime_capture": false,
+  "notes": "구현 구조 설명용 다이어그램. 실제 실행 증거와 검증 범위는 별도 원문을 따른다."
+}

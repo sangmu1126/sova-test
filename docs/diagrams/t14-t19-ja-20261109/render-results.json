@@ -1,0 +1,18 @@
+[
+  {
+    "name": "t14-control-runner",
+    "width": 3600,
+    "height": 2920,
+    "sha256": "34f6252ced76bf0e9487f317746afc442e55c8a15639b4692f097c71190a8a15",
+    "bad": [],
+    "textCount": 29
+  },
+  {
+    "name": "t19-comparison-gate",
+    "width": 3600,
+    "height": 3580,
+    "sha256": "adb9dfc7662358cf8f92be51d881cfe3c19b65bacc4513bc07b2291f82b6f61d",
+    "bad": [],
+    "textCount": 51
+  }
+]
