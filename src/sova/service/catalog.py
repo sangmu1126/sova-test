@@ -59,7 +59,8 @@ _UNIT_ENGINES = {  # engines whose entries carry their own keys (see each module
     "kubernetes-volume": {"volume", "route"},
     "kubernetes-session": {"session", "route"},
     "composite": {"components", "data"},
-    "redis": {"redis", "route"}}
+    "redis": {"redis", "route"},
+    "kafka": {"kafka", "route"}}
 _UNIT_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode"}
 _MYSQL_SETTINGS = {"host", "port", "user", "password", "ssl_ca", "ssl_verify_identity",
                    "connect_timeout"}
@@ -218,6 +219,11 @@ def _unit_resolver(app, *, route_for, controls_for):
 
         resolve, close = redis_resolver(app, route_for=route_for)
         return redis_factory(app["adapter_id"], resolve), close
+    if engine == "kafka":
+        from sova.service.kafka_execution import kafka_factory, kafka_resolver
+
+        resolve, close = kafka_resolver(app, route_for=route_for)
+        return kafka_factory(app["adapter_id"], resolve), close
     controls_for = controls_for or controls_from
     if engine == "kubernetes-volume":
         resolve, close = volume_resolver(app, route_for=route_for, controls_for=controls_for)

@@ -392,3 +392,36 @@ def test_replication_without_its_settings_is_refused(tmp_path):
     with pytest.raises(ContractError, match="replication settings"):
         catalog.build("tenant-a", "orders", "mysql-offline-copy", None)
     close()
+
+
+def kafka_application(tmp_path, *, admin=None, **changes):
+    admin = write(tmp_path, "kafka-admin.json", json.dumps(admin or {
+        "bootstrap.servers": "broker:9092", "security.protocol": "SASL_SSL",
+        "sasl.mechanism": "SCRAM-SHA-256", "sasl.username": "sova-admin",
+        "sasl.password": "x", "ssl.ca.location": "/etc/sova/kafka-ca.pem"}))
+    entry = {"clusters": {"source": admin, "target": admin},
+             "topics": {"source": "orders", "target": "orders-new"},
+             "producers": ["User:orders-app"], "app_producer": "User:orders-app",
+             "probe_prefix": "sova-probe-orders-",
+             "principal_settings": {"User:orders-app": {"source": admin, "target": admin}}}
+    app = {"tenant_id": "tenant-a", "application_id": "orders", "adapter_id": "kafka-topic",
+           "engine": "kafka", "mode": "offline_copy", "kafka": entry,
+           "route": {"kind": "kubernetes_service", "registration_file": "unused",
+                     "service": "orders", "sides": {}}}
+    app.update(changes)
+    return app
+
+
+def test_a_kafka_topic_gets_the_topic_adapter(tmp_path):
+    catalog, close = catalog_from({"version": 1, "applications": [kafka_application(tmp_path)]},
+                                  route_for=lambda spec: FakeRoute())
+    execution = catalog.build("tenant-a", "orders", "kafka-topic", None)
+    assert type(execution.adapter).__name__ == "KafkaTopicHandoffAdapter"
+    close()
+
+
+def test_client_settings_that_load_code_are_refused_whoever_wrote_them(tmp_path):
+    with pytest.raises(ContractError, match="connection settings only"):
+        catalog_from({"version": 1, "applications": [kafka_application(tmp_path, admin={
+            "bootstrap.servers": "broker:9092",
+            "plugin.library.paths": "/tmp/evil.so"})]}, route_for=lambda spec: FakeRoute())
