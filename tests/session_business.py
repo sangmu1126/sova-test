@@ -239,7 +239,7 @@ def session_business():
 
     def started(name):
         """Wait until a client Pod runs (its sessions are being opened)."""
-        run("wait", "--for=condition=Ready", f"pod/{name}", "--timeout=120s")
+        run("wait", "--for=jsonpath={.status.phase}=Running", f"pod/{name}", "--timeout=300s")
         time.sleep(2)
 
     try:
@@ -248,3 +248,7 @@ def session_business():
                "clients": clients, "results": results, "started": started}
     finally:
         delete_namespace(context, namespace)
+        deadline = time.monotonic() + 120  # the next test starts on a settled node
+        while time.monotonic() < deadline and namespace in kubectl(
+                context, "get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}"):
+            time.sleep(1)
