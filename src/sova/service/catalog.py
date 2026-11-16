@@ -13,7 +13,8 @@ execution file holds only their paths.
         "engine": "postgresql" | "mysql",                      # default postgresql
                   # (a volume unit, "kubernetes-volume", has its own keys:
                   #  see sova.service.volume_execution)
-        "mode": "offline_copy" | "logical_replication",        # MySQL: offline_copy
+        "mode": "offline_copy" | "logical_replication",        # MySQL: offline_copy |
+                                                               #   replication
         "databases": {"<db>": {"dsn_file": "<admin connection, no database>"}, ...},
         "zone_of": {"<db>": "<zone label>"},                   # MySQL: where each runs
         "role_password_files": {"<role>": "<path>"},          # optional
@@ -46,12 +47,14 @@ from sova.service.worker import AdapterCatalog
 
 SERVICE_ACCOUNT = Path("/var/run/secrets/kubernetes.io/serviceaccount")
 MODES = {"offline_copy": False, "logical_replication": True}
-ENGINES = {"postgresql": set(MODES), "mysql": {"offline_copy"}}
+ENGINES = {"postgresql": set(MODES), "mysql": {"offline_copy", "replication"}}
 _APP_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode", "databases",
              "role_password_files", "source_db", "target_db", "scratch_db", "other_db",
              "app_role", "writer_roles", "tables", "schema_sql_file", "probe_insert",
-             "source_conninfo_file", "route", "zone_of"}
-_REQUIRED = _APP_KEYS - {"role_password_files", "source_conninfo_file", "engine", "zone_of"}
+             "source_conninfo_file", "route", "zone_of", "replication"}
+_REQUIRED = _APP_KEYS - {"role_password_files", "source_conninfo_file", "engine", "zone_of",
+                         "replication"}
+_REPLICATION_KEYS = {"source_endpoint", "account", "password_file", "tls"}
 _UNIT_ENGINES = {  # engines whose entries carry their own keys (see each module)
     "kubernetes-volume": {"volume", "route"},
     "kubernetes-session": {"session", "route"},
@@ -126,7 +129,8 @@ def application_resolver(app, *, route_for=kubernetes_route):
         "probe_insert": app["probe_insert"], "route": route,
         "zone_of": (lambda database: zones.get(database)) if zones else None,
         "source_conninfo": (_read(app["source_conninfo_file"])
-                            if app.get("source_conninfo_file") else None)}
+                            if app.get("source_conninfo_file") else None),
+        "replication": _replication(app.get("replication"))}
 
     def resolve(tenant_id, application_id):
         if (tenant_id, application_id) != (app["tenant_id"], app["application_id"]):
@@ -134,6 +138,21 @@ def application_resolver(app, *, route_for=kubernetes_route):
         return resolved
 
     return resolve, close
+
+
+def _replication(spec):
+    """MySQL change capture: the source as the target server reaches it, the
+    replication account and its password file (read here, never logged)."""
+    if spec is None:
+        return None
+    if type(spec) is not dict or set(spec) - _REPLICATION_KEYS or not {
+            "source_endpoint", "account", "password_file"} <= set(spec):
+        raise ContractError("replication: source_endpoint, account and password_file")
+    endpoint = spec["source_endpoint"]
+    if type(endpoint) is not list or len(endpoint) != 2:
+        raise ContractError("replication.source_endpoint: [host, port]")
+    return {"source_endpoint": (endpoint[0], endpoint[1]), "account": spec["account"],
+            "password": _read(spec["password_file"]), "tls": bool(spec.get("tls", False))}
 
 
 def _postgres_connections(databases, passwords):
@@ -254,7 +273,7 @@ def catalog_from(document, *, route_for=kubernetes_route, controls_for=None):
         if engine == "mysql":
             from sova.service.mysql_execution import mysql_factory
 
-            return mysql_factory(adapter_id, resolve)
+            return mysql_factory(adapter_id, resolve, replication=mode == "replication")
         from sova.service.postgres_execution import postgres_factory
 
         return postgres_factory(adapter_id, resolve, cdc=MODES[mode])

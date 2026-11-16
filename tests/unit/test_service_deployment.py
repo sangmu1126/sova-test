@@ -370,3 +370,25 @@ def test_a_redis_entry_that_does_not_add_up_is_refused(tmp_path, changes):
         catalog = catalog_from({"version": 1, "applications": [
             redis_application(tmp_path, **changes)]}, route_for=lambda spec: FakeRoute())[0]
         catalog.build("tenant-a", "board", "redis-keyspace", None)
+
+
+def test_a_mysql_application_may_capture_changes_by_replication(tmp_path):
+    secret = write(tmp_path, "repl", "replication-secret")
+    app = mysql_application(tmp_path, mode="replication", replication={
+        "source_endpoint": ["orders-db.internal", 3306], "account": "sova_repl@%",
+        "password_file": secret})
+    catalog, close = catalog_from({"version": 1, "applications": [app]},
+                                  route_for=lambda spec: FakeRoute())
+    execution = catalog.build("tenant-a", "orders", "mysql-offline-copy", None)
+    assert type(execution.adapter).__name__ == "MySqlReplicationAdapter"
+    assert execution.adapter.replication_password == "replication-secret"
+    close()
+
+
+def test_replication_without_its_settings_is_refused(tmp_path):
+    app = mysql_application(tmp_path, mode="replication")
+    catalog, close = catalog_from({"version": 1, "applications": [app]},
+                                  route_for=lambda spec: FakeRoute())
+    with pytest.raises(ContractError, match="replication settings"):
+        catalog.build("tenant-a", "orders", "mysql-offline-copy", None)
+    close()

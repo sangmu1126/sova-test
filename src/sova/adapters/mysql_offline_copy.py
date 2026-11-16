@@ -424,24 +424,29 @@ class MySqlOfflineCopyAdapter:
                 read.execute("SET SESSION time_zone='+00:00'")
                 # One consistent view of every source table.
                 read.execute("START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY")
-                with self._session("target") as write:
-                    write.execute("SET SESSION foreign_key_checks=0")
-                    for table, key in self.tables:
-                        all_columns, columns = self._columns(read, self.source_db, table)
-                        target = f"{name(self.target_db)}.{name(table)}"
-                        write.execute(f"DELETE FROM {target}")
-                        cols = ", ".join(name(c) for c in columns)
-                        read.execute(f"SELECT {cols} FROM {name(self.source_db)}.{name(table)} "
-                                     f"ORDER BY {name(key)}")
-                        insert = (f"INSERT INTO {target} ({cols}) VALUES "
-                                  f"({', '.join(['%s'] * len(columns))})")
-                        while batch := read.fetchmany(_BATCH):
-                            write.executemany(insert, batch)
-                    write.execute("SET SESSION foreign_key_checks=1")
+                self._copy_rows(read)
             source.commit()
         finally:
             source.close()
         self._copy_counters()
+
+    def _copy_rows(self, read):
+        """Replace every target table's rows by what ``read`` (a cursor inside
+        one consistent snapshot of the source) sees."""
+        with self._session("target") as write:
+            write.execute("SET SESSION foreign_key_checks=0")
+            for table, key in self.tables:
+                all_columns, columns = self._columns(read, self.source_db, table)
+                target = f"{name(self.target_db)}.{name(table)}"
+                write.execute(f"DELETE FROM {target}")
+                cols = ", ".join(name(c) for c in columns)
+                read.execute(f"SELECT {cols} FROM {name(self.source_db)}.{name(table)} "
+                             f"ORDER BY {name(key)}")
+                insert = (f"INSERT INTO {target} ({cols}) VALUES "
+                          f"({', '.join(['%s'] * len(columns))})")
+                while batch := read.fetchmany(_BATCH):
+                    write.executemany(insert, batch)
+            write.execute("SET SESSION foreign_key_checks=1")
 
     def _copy_counters(self):
         """Every AUTO_INCREMENT position, so identifiers are never issued twice."""
