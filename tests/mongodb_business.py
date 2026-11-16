@@ -28,13 +28,22 @@ def server(side):
                      "selector": {"matchLabels": labels},
                      "template": {"metadata": {"labels": labels}, "spec": {"containers": [{
                          "name": "mongo", "image": MONGO, "imagePullPolicy": "IfNotPresent",
-                         "args": ["--wiredTigerCacheSizeGB", "0.25", "--quiet"],
+                         "args": ["--wiredTigerCacheSizeGB", "0.25", "--quiet",
+                                  # TLS offered (not required): a CA of the test's own
+                                  "--tlsMode", "preferTLS",
+                                  "--tlsCertificateKeyFile", "/etc/mongo-tls/server.pem",
+                                  "--tlsCAFile", "/etc/mongo-tls/ca.pem",
+                                  "--tlsAllowConnectionsWithoutCertificates"],
+                         "volumeMounts": [{"name": "tls", "mountPath": "/etc/mongo-tls",
+                                           "readOnly": True}],
                          "env": [{"name": "MONGO_INITDB_ROOT_USERNAME", "value": ADMIN[0]},
                                  {"name": "MONGO_INITDB_ROOT_PASSWORD", "value": ADMIN[1]}],
                          "ports": [{"containerPort": 27017}],
                          "readinessProbe": {"tcpSocket": {"port": 27017}, "periodSeconds": 2},
                          "resources": {"requests": {"cpu": "50m", "memory": "128Mi"},
-                                       "limits": {"memory": "768Mi"}}}]}}}}
+                                       "limits": {"memory": "768Mi"}}}],
+                         "volumes": [{"name": "tls", "secret": {"secretName": "mongo-tls",
+                                                                "defaultMode": 0o444}}]}}}}
 
 
 def _forward(context, namespace, deployment):
@@ -53,16 +62,29 @@ def _forward(context, namespace, deployment):
 
 
 @pytest.fixture(scope="module")
-def mongo_servers():
+def mongo_servers(tmp_path_factory):
     pymongo = pytest.importorskip("pymongo")
     from kind_support import delete_namespace, kind_namespace, kubectl
 
     if not os.environ.get("SOVA_TEST_KUBE_CONTEXT"):
         pytest.skip("SOVA_TEST_KUBE_CONTEXT is required for the MongoDB tests")
+    import base64
+    import json
+
+    from mysql_pair_business import tls_material
+
     context, namespace, _ = kind_namespace([], [server("source"), server("target")],
                                            prefix="mongo")
     forwards = []
     try:
+        material = tls_material(namespace)  # loopback and in-cluster names; Pods wait for it
+        bundle = {"ca.pem": material["ca.pem"],
+                  "server.pem": material["server-cert.pem"] + material["server-key.pem"]}
+        kubectl(context, "-n", namespace, "apply", "-f", "-", stdin=json.dumps({
+            "apiVersion": "v1", "kind": "Secret", "metadata": {"name": "mongo-tls"},
+            "data": {k: base64.b64encode(v).decode() for k, v in bundle.items()}}))
+        ca_file = tmp_path_factory.mktemp("mongo-tls") / "ca.pem"
+        ca_file.write_bytes(material["ca.pem"])
         ports, clients = {}, {}
         for side in ("source", "target"):
             kubectl(context, "-n", namespace, "rollout", "status", f"deployment/mongo-{side}",
@@ -82,7 +104,7 @@ def mongo_servers():
                     if time.monotonic() > deadline:
                         raise
                     time.sleep(1)
-        yield {"ports": ports, "admin": clients, "pymongo": pymongo}
+        yield {"ports": ports, "admin": clients, "pymongo": pymongo, "ca_file": str(ca_file)}
     finally:
         for process in forwards:
             process.terminate()
