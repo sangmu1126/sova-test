@@ -18,8 +18,9 @@ definitions and how many messages it holds.
   part of a queue's restore: the drill says so instead of reading them;
 * tenant isolation is an attempt: the application user logs in to another
   tenant's virtual host and must be refused;
-* transport encryption is this client's own connection: TLS with the broker's
-  certificate and host name verified;
+* transport encryption is this client's own connections, AMQP and the
+  management API: TLS with the broker's certificate and host name verified on
+  both;
 * placement comes from ``zone_of(side)``, the inventory's view, as read.
 
 Each probe returns ``(passed, observation)``.
@@ -55,7 +56,8 @@ class RabbitMqQueueProbes:
 
         b = self.broker(side)
         response = httpx.request(method, b["http"].rstrip("/") + "/api" + path, json=body,
-                                 auth=b["auth"], timeout=self.timeout)
+                                 auth=b["auth"], timeout=self.timeout,
+                                 verify=b.get("verify", True))
         if response.status_code == 404 and missing_ok:
             return None
         response.raise_for_status()
@@ -72,7 +74,8 @@ class RabbitMqQueueProbes:
         except pika.exceptions.ConnectionClosedByBroker as error:
             return False, "login_refused" if error.reply_code in (403, 530) else \
                 f"undecided:{error.reply_code}"
-        except pika.exceptions.AMQPConnectionError as error:
+        except (pika.exceptions.AMQPConnectionError, ssl.SSLError) as error:
+            # pika raises a failed TLS handshake as itself: it decides nothing
             return False, f"undecided:{type(error).__name__}"
         try:
             channel = connection.channel()
@@ -183,11 +186,21 @@ class RabbitMqQueueProbes:
             "probe": "cross_tenant_denied", "other_vhost": vhost, "attempt": attempt}
 
     def transport_encrypted(self, side):
-        options = getattr(self.broker(side)["amqp"](self.vhosts[side]), "ssl_options", None)
+        """Both channels that carry the administrator's credentials: AMQP and the
+        management API, each over TLS with certificate and host name verified."""
+        b = self.broker(side)
+        options = getattr(b["amqp"](self.vhosts[side]), "ssl_options", None)
         context = getattr(options, "context", None)
-        verified = bool(context and context.verify_mode == ssl.CERT_REQUIRED
-                        and context.check_hostname)
+        amqp = bool(context and context.verify_mode == ssl.CERT_REQUIRED
+                    and context.check_hostname)
+        verify = b.get("verify", True)
+        management = str(b["http"]).startswith("https://") and (
+            verify is True or isinstance(verify, ssl.SSLContext)
+            and verify.verify_mode == ssl.CERT_REQUIRED and verify.check_hostname)
+        verified = amqp and management
         return verified, {"probe": "transport_encrypted", "side": side, "tls": bool(options),
+                          "management": "https" if str(b["http"]).startswith("https://")
+                          else "http",
                           "client_verification": "verify-identity" if verified else "none"}
 
     def zone(self, side, allowed):

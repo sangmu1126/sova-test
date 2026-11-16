@@ -17,7 +17,9 @@ An execution-file entry (``engine: rabbitmq``)::
 
 A broker settings file is JSON: the management API ``http`` base, the AMQP
 ``host`` and ``port``, the administrative ``username`` and ``password``, and
-for TLS ``ssl_ca`` (the broker's certificate and host name are then verified).
+for TLS ``ssl_ca``. With ``ssl_ca`` both channels carrying the administrator's
+credentials use it: AMQP over TLS and the management API over ``https``
+(refused otherwise), the broker's certificate and host name verified on each.
 """
 
 import json
@@ -90,7 +92,11 @@ def rabbitmq_resolver(app, *, route_for):
         if type(found) is not dict or set(found) - _BROKER_KEYS or not {
                 "http", "host", "username", "password"} <= set(found):
             raise ContractError("RabbitMQ broker settings: http, host and credentials")
+        if found.get("ssl_ca") and not str(found["http"]).startswith("https://"):
+            raise ContractError("With ssl_ca the management API is reached over https")
         settings[side] = found
+    contexts = {side: ssl.create_default_context(cafile=s["ssl_ca"])
+                for side, s in settings.items() if s.get("ssl_ca")}
     passwords = entry.get("user_password_files") or {}
     zones = entry.get("zone_of") or {}
     if type(zones) is not dict or set(zones) - {"source", "target"}:
@@ -101,10 +107,7 @@ def rabbitmq_resolver(app, *, route_for):
 
     def parameters(side, vhost, credentials):
         s = settings[side]
-        options = None
-        if s.get("ssl_ca"):
-            context = ssl.create_default_context(cafile=s["ssl_ca"])
-            options = pika.SSLOptions(context, s["host"])
+        options = pika.SSLOptions(contexts[side], s["host"]) if side in contexts else None
         return pika.ConnectionParameters(s["host"], s.get("port", 5672), vhost,
                                          pika.PlainCredentials(*credentials),
                                          ssl_options=options, connection_attempts=1,
@@ -113,6 +116,7 @@ def rabbitmq_resolver(app, *, route_for):
     def broker(side):
         s = settings[side]
         return {"http": s["http"], "auth": (s["username"], s["password"]),
+                "verify": contexts.get(side, True),
                 "amqp": lambda vhost: parameters(side, vhost, (s["username"], s["password"]))}
 
     def connect_as(side, user, vhost):

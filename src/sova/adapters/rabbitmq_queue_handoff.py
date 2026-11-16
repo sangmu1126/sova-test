@@ -103,7 +103,8 @@ class RabbitMqQueueHandoffAdapter:
 
         b = self.broker(side)
         response = httpx.request(method, b["http"].rstrip("/") + "/api" + path, json=body,
-                                 auth=b["auth"], timeout=self.timeout)
+                                 auth=b["auth"], timeout=self.timeout,
+                                 verify=b.get("verify", True))
         if response.status_code == 404 and missing_ok:
             return None
         response.raise_for_status()

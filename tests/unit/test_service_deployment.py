@@ -461,6 +461,41 @@ def test_a_rabbitmq_queue_gets_the_queue_adapter(tmp_path):
     close()
 
 
+def test_a_rabbitmq_ca_file_verifies_both_channels_and_refuses_plain_management(tmp_path):
+    """AMQP and the management API both carry the administrator's credentials:
+    with ``ssl_ca`` each is verified with that CA, and plain http is refused."""
+    import ssl
+
+    pytest.importorskip("pika")
+    pytest.importorskip("cryptography")
+    from mysql_pair_business import tls_material
+
+    from sova.service.rabbitmq_execution import rabbitmq_resolver
+
+    ca = write(tmp_path, "rabbit-ca.pem", tls_material("unit")["ca.pem"].decode())
+
+    def resolved(http):
+        broker = write(tmp_path, "rabbit-tls.json", json.dumps({
+            "http": http, "host": "rabbit.internal", "port": 5671, "username": "sova-admin",
+            "password": "x", "ssl_ca": ca}))
+        app = {"tenant_id": "tenant-a", "application_id": "orders",
+               "rabbitmq": {"brokers": {"source": broker, "target": broker},
+                            "vhosts": {"source": "orders", "target": "orders-new"},
+                            "queue": "orders-work", "exchange": "orders",
+                            "routing_key": "order.created", "publishers": ["orders-app"],
+                            "app_publisher": "orders-app"},
+               "route": {}}
+        resolve, _ = rabbitmq_resolver(app, route_for=lambda spec: FakeRoute())
+        return resolve("tenant-a", "orders")
+
+    broker = resolved("https://rabbit.internal:15671")["broker"]("target")
+    context = broker["amqp"]("orders").ssl_options.context
+    assert broker["verify"] is context and context.verify_mode == ssl.CERT_REQUIRED and \
+        context.check_hostname
+    with pytest.raises(ContractError, match="https"):
+        resolved("http://rabbit.internal:15672")
+
+
 def test_a_mysql_ca_file_reaches_the_driver_with_verification(tmp_path, monkeypatch):
     """PyMySQL replaces an ``ssl`` dict by one built from its ``ssl_*`` arguments:
     the CA must go in as ``ssl_ca`` or it is dropped (and the system store used)."""
