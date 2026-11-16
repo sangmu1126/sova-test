@@ -15,6 +15,7 @@
 | Redpanda 26.2.5 (Kafka API) | `127.0.0.1:59092`(Kafka), `127.0.0.1:59644`(관리 API) | 스트림 인계 adapter. SASL/SCRAM과 ACL 강제 |
 | Kubernetes API | kind 기본 | 경로 전환·관리권 멈춤·Secret·플랫폼 탈출·볼륨·세션 시험의 namespace. 볼륨 시험은 기본 StorageClass(local-path)를 쓴다 |
 | Valkey 9.1.3 두 대 | 시험 모듈마다 namespace에 띄우고 `kubectl port-forward`로 접속 | Redis 계열 키 공간 adapter. default 사용자는 끄고 관리자 사용자만 켠다. 고정 포트가 없어 클러스터를 다시 만들 필요가 없다 |
+| MySQL 8.4.13 두 대, MongoDB 8.0.34 두 대 | 시험 모듈마다 namespace에 띄우고 `kubectl port-forward`로 접속 | MySQL 변경 캡처(서버 사이 복제)와 MongoDB adapter. 자체 CA의 TLS를 제공한다(강제하지 않음) |
 | Envoy Gateway v1.9.3 (선택) | 클러스터 안 | Gateway API 진입점 시험. `test-env.sh gateway`로 추가한다. 설치 파일 SHA-256과 컨트롤러 이미지 digest를 고정한다. 없으면 그 시험만 건너뛴다 |
 
 모든 주소는 `127.0.0.1`에만 열린다. 계정과 비밀번호는 이 일회용 저장소 전용의 고정 시험값이다. 상태는 모두 휘발성이라 Pod를 다시 시작하면 비워진다.
