@@ -167,6 +167,40 @@ class KubernetesVolumeControls(KubernetesHandoffControls):
         return self._patch(self._ns(base, plural, name), resource_version,
                            [{"op": "replace", "path": "/spec/replicas", "value": replicas}])
 
+    def annotate_workload(self, kind, name, resource_version, key, value):
+        if type(key) is not str or not key.startswith("sova.dev/") or type(value) is not str \
+                or len(value) > 1024:
+            raise ContractError("Sova workload annotation required")
+        kind, name = workload_ref((kind, name))
+        current = self.workload(kind, name) or {}
+        pointer = "/metadata/annotations/" + key.replace("~", "~0").replace("/", "~1")
+        operations = ([{"op": "add", "path": pointer, "value": value}]
+                      if current.get("metadata", {}).get("annotations") is not None
+                      else [{"op": "add", "path": "/metadata/annotations",
+                             "value": {key: value}}])
+        base, plural = _PLURAL[kind]
+        return self._patch(self._ns(base, plural, name), resource_version, operations)
+
+    def add_ephemeral_container(self, pod, resource_version, container, *, first):
+        """Attach ``container`` to a running Pod (it shares the Pod's network)."""
+        if type(container) is not dict or not str(container.get("name", "")).startswith(
+                "sova-"):
+            raise ContractError("A Sova ephemeral container required")
+        operation = ({"op": "add", "path": "/spec/ephemeralContainers", "value": [container]}
+                     if first else
+                     {"op": "add", "path": "/spec/ephemeralContainers/-", "value": container})
+        return self._patch(self._ns("/api/v1", "pods", pod) + "/ephemeralcontainers",
+                           resource_version, [operation])
+
+    def container_log(self, pod, container, *, tail=1):
+        """The last ``tail`` lines a container wrote, as text."""
+        if type(tail) is not int or not 1 <= tail <= 100:
+            raise ContractError("Bounded log tail required")
+        raw = self._request("GET", self._ns("/api/v1", "pods", pod) + "/log",
+                            {"container": _name(container), "tailLines": str(tail)},
+                            timeout=_TIMEOUT, limit=64 << 10, raw=True)
+        return raw.decode("utf-8", "replace")
+
     def set_suspended(self, name, resource_version):
         return self._patch(self._ns("/apis/batch/v1", "cronjobs", name), resource_version,
                            [{"op": "add", "path": "/spec/suspend", "value": True}])
