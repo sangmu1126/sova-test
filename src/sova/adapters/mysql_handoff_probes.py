@@ -104,8 +104,9 @@ class MySqlHandoffProbes:
         return target and source_denied, {"probe": "single_writer", "target": target_outcome,
                                           "source": source["outcomes"]}
 
-    def _digest(self, database, table):
-        conn = self.admin_connect(database)
+    def _digest(self, database, table, *, server=None):
+        """``server``: the database whose server holds ``database`` (default itself)."""
+        conn = self.admin_connect(server or database)
         try:
             with conn.cursor() as cur:
                 cur.execute("SET SESSION time_zone='+00:00'")
@@ -206,6 +207,8 @@ class MySqlHandoffProbes:
             conn.commit()
         finally:
             conn.close()
+        # The scratch database was made on the target's server: read it there.
         restored = {table: self._digest(self.target_db, table) ==
-                    self._digest(scratch_db, table) for table, _ in self.tables}
+                    self._digest(scratch_db, table, server=self.target_db)
+                    for table, _ in self.tables}
         return all(restored.values()), {"probe": "restore_drill", "tables": restored}

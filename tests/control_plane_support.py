@@ -41,10 +41,11 @@ def board_contract():
     return data
 
 
-def prepared(postgres_database, now, tmp_path, data, *, engine):
+def prepared(postgres_database, now, tmp_path, data, *, engine, strategy="offline-copy"):
     dsn, role = postgres_database  # the control plane's own database
     tenant = data["metadata"]["tenant_id"]
-    world = build_world(now, contract=ServiceContract.from_document(data), engine=engine)
+    world = build_world(now, contract=ServiceContract.from_document(data), engine=engine,
+                        strategy=strategy)
 
     def connect():
         return psycopg.connect(dsn, user=role)
