@@ -425,3 +425,28 @@ def test_client_settings_that_load_code_are_refused_whoever_wrote_them(tmp_path)
         catalog_from({"version": 1, "applications": [kafka_application(tmp_path, admin={
             "bootstrap.servers": "broker:9092",
             "plugin.library.paths": "/tmp/evil.so"})]}, route_for=lambda spec: FakeRoute())
+
+
+def test_a_rabbitmq_queue_gets_the_queue_adapter(tmp_path):
+    pytest.importorskip("pika")
+    broker = write(tmp_path, "rabbit.json", json.dumps({
+        "http": "https://rabbit.internal:15671", "host": "rabbit.internal", "port": 5671,
+        "username": "sova-admin", "password": "x"}))
+    app = {"tenant_id": "tenant-a", "application_id": "orders", "adapter_id": "rabbitmq-queue",
+           "engine": "rabbitmq", "mode": "offline_copy",
+           "rabbitmq": {"brokers": {"source": broker, "target": broker},
+                        "vhosts": {"source": "orders", "target": "orders-new"},
+                        "queue": "orders-work", "exchange": "orders",
+                        "routing_key": "order.created", "publishers": ["orders-app"],
+                        "app_publisher": "orders-app",
+                        "invariants": {"QUEUE-01": {"type": "same_count"}}},
+           "route": {"kind": "kubernetes_service", "registration_file": "unused",
+                     "service": "orders", "sides": {}}}
+    catalog, close = catalog_from({"version": 1, "applications": [app]},
+                                  route_for=lambda spec: FakeRoute())
+    execution = catalog.build("tenant-a", "orders", "rabbitmq-queue", None)
+    assert type(execution.adapter).__name__ == "RabbitMqQueueHandoffAdapter"
+    app["rabbitmq"]["unexpected"] = True
+    with pytest.raises(ContractError):
+        catalog_from({"version": 1, "applications": [app]}, route_for=lambda spec: FakeRoute())
+    close()
