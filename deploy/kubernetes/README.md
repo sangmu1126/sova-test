@@ -112,6 +112,24 @@ rules:
 - **NetworkPolicy.** API 서버의 Pod 프록시는 agent Pod의 8080 포트로 들어온다. 애플리케이션 namespace에 기본 거부 정책이 있다면, `app.kubernetes.io/managed-by: sova` Pod의 8080 수신을 허용해야 한다.
 - **API 서버 → agent 구간.** 이 구간은 클러스터 네트워크의 평문 HTTP다. 검증된 전송 암호화를 요구하는 계약에서 이 단위는 실패로 측정된다.
 
+### 저장소별 실행 설정 항목
+
+워커의 실행 설정 파일(`SOVA_EXECUTION_FILE`)은 애플리케이션마다 `engine`과 그 엔진의 항목을 둔다. 자격 증명은 모두 mount된 파일 경로로만 받는다. 실행 설정 파일 자체에는 비밀을 넣지 않는다. 항목의 정확한 형식은 각 모듈 설명에 있다.
+
+| engine | 모듈 | 비밀 파일 | 비고 |
+|---|---|---|---|
+| `postgresql` | `sova.service.catalog` | DB DSN, 역할 비밀번호 | `mode: offline_copy` 또는 `logical_replication` |
+| `mysql` | 같음 | 연결 설정(JSON), 계정 비밀번호, 복제 계정 비밀번호 | `mode: replication`은 서버 복제 변경 캡처. TLS는 `ssl_ca`(호스트 검증 기본 켬) |
+| `redis` | `sova.service.redis_execution` | 서버 설정(JSON), 사용자 비밀번호 | TLS는 `ssl_ca` |
+| `kafka` | `sova.service.kafka_execution` | 관리자·principal별 클라이언트 설정(JSON) | 연결 관련 키만 받는다. probe용 트랜잭션 ID 접두어(`probe_prefix`)를 각 producer에 허용해야 한다 |
+| `rabbitmq` | `sova.service.rabbitmq_execution` | 브로커 설정(JSON), 사용자 비밀번호 | TLS는 `ssl_ca` |
+| `mongodb` | `sova.service.mongodb_execution` | 서버 설정(JSON), 사용자 비밀번호 | TLS는 `tls_ca` |
+| `kubernetes-volume` | `sova.service.volume_execution` | agent 키(hex), 다른 클러스터의 token | 앱 namespace 권한은 위 절 참고 |
+| `kubernetes-session` | `sova.service.composite_execution` | 다른 클러스터의 token | 경로는 Service selector 또는 Gateway API HTTPRoute |
+| `composite` | 같음 | 구성 요소의 것 | 볼륨·세션 구성 요소를 한 단위로 묶는다 |
+
+경로 저장소(`route`)는 `kubernetes_service` 또는 `gateway_httproute`다(`sova.service.route_stores`). Gateway 경로의 표본 요청은 앱이 응답 헤더로 내는 쪽 표식을 HTTPS로 읽는다.
+
 ## 배포 순서
 
 1. Secret을 만든다.
