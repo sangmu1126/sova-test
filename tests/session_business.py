@@ -126,12 +126,19 @@ def receive(sock):
 def session(entry, out):
     time.sleep(entry.get("start", 0))
     result = {"id": entry["id"], "connected": False, "completed": False, "pod": None}
-    try:
-        sock = socket.create_connection((HOST, 80), timeout=5)
-    except OSError as error:
-        result["error"] = type(error).__name__
-        out.append(result)
-        return
+    # A new Service's rules reach every node a moment after its endpoints do:
+    # a session meant to connect retries for a while, one probing a refusal not.
+    deadline = time.monotonic() + entry.get("retry", 30)
+    while True:
+        try:
+            sock = socket.create_connection((HOST, 80), timeout=5)
+            break
+        except OSError as error:
+            if time.monotonic() >= deadline:
+                result["error"] = type(error).__name__
+                out.append(result)
+                return
+            time.sleep(0.5)
     try:
         key = base64.b64encode(os.urandom(16)).decode()
         sock.sendall((f"GET /match HTTP/1.1\r\nHost: {HOST}\r\nUpgrade: websocket\r\n"
@@ -144,6 +151,8 @@ def session(entry, out):
             raise ConnectionError("no upgrade")
         result["connected"] = True
         result["pod"] = json.loads(receive(sock)[1])["hello"]
+        print(json.dumps({"event": "connected", "id": entry["id"], "pod": result["pod"]}),
+              flush=True)
         deadline, moves = time.monotonic() + entry["seconds"], 0
         while time.monotonic() < deadline:
             send(sock, 1, f"move {moves}".encode())
@@ -220,8 +229,11 @@ def session_business():
     def run(*args, stdin=None):
         return kubectl(context, "-n", namespace, *args, stdin=stdin)
 
+    plans = {}
+
     def clients(name, plan):
         """Start a client Pod opening ``plan``'s sessions through the Service."""
+        plans[name] = plan
         run("apply", "-f", "-", stdin=json.dumps({
             "apiVersion": "v1", "kind": "Pod", "metadata": {"name": name},
             "spec": {"restartPolicy": "Never", "securityContext": security(),
@@ -232,15 +244,28 @@ def session_business():
                          "securityContext": {"allowPrivilegeEscalation": False,
                                              "capabilities": {"drop": ["ALL"]}}}]}}))
 
-    def results(name, timeout=300):
+    def results(name, timeout=170):
         run("wait", "--for=jsonpath={.status.phase}=Succeeded", f"pod/{name}",
             f"--timeout={timeout}s")
-        return {s["id"]: s for s in json.loads(run("logs", name).strip())["sessions"]}
+        return {s["id"]: s for s in
+                json.loads(run("logs", name).strip().splitlines()[-1])["sessions"]}
 
     def started(name):
-        """Wait until a client Pod runs (its sessions are being opened)."""
-        run("wait", "--for=jsonpath={.status.phase}=Running", f"pod/{name}", "--timeout=300s")
-        time.sleep(2)
+        """Wait until every session of a client Pod is connected."""
+        wanted = len(plans[name])
+        deadline = time.monotonic() + 150
+        while time.monotonic() < deadline:
+            try:
+                log = run("logs", name)
+            except AssertionError:  # not started yet
+                log = ""
+            connected = [line for line in log.splitlines() if '"event": "connected"' in line]
+            if len(connected) >= wanted:
+                return
+            if '"sessions"' in log:  # finished without connecting them all
+                raise AssertionError(f"client {name} did not connect: {log[-600:]}")
+            time.sleep(0.5)
+        raise AssertionError(f"client {name} did not connect in time")
 
     try:
         run("rollout", "status", "deployment/game-source", "--timeout=180s")

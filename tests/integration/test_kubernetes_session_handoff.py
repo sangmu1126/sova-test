@@ -46,7 +46,7 @@ def test_open_sessions_finish_on_the_source_and_new_ones_reach_the_target(sessio
     pausing.start()
     b["run"]("wait", "--for=jsonpath={.spec.selector.side}=paused", "service/game",
              "--timeout=60s")
-    b["clients"]("late", [{"id": "late", "seconds": 1}])
+    b["clients"]("late", [{"id": "late", "seconds": 1, "retry": 0}])
     mid = None
     while pausing.is_alive():
         seen = observe(adapter(b, drain_seconds=120), "pause_admission")
