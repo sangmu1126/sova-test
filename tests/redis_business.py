@@ -62,13 +62,14 @@ def server(side):
                                      {"name": "data", "emptyDir": {}}]}}}}
 
 
-def _forward(context, namespace, deployment, port=6379):
+def _forward(context, namespace, deployment, port=6379, local=""):
+    """``kubectl port-forward`` to ``port``, on ``local`` (default: any free port)."""
     from kind_support import _config
 
     config = _config(context)
     process = subprocess.Popen(
         ["kubectl", *(["--kubeconfig", config] if config else []), "--context", context,
-         "-n", namespace, "port-forward", f"deployment/{deployment}", f":{port}"],
+         "-n", namespace, "port-forward", f"deployment/{deployment}", f"{local}:{port}"],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     line = process.stdout.readline()
     found = re.search(r"127\.0\.0\.1:(\d+)", line)

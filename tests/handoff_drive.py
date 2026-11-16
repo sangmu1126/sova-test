@@ -240,11 +240,16 @@ def run_handoff(postgres_database, now, business, *, adjust=None, until=None,
                 business=business, observed=observed)
 
 
+def local_budgets(data):
+    """Budgets wide enough that a loaded test machine does not decide the outcome."""
+    data["spec"]["availability"]["max_write_admission_pause_ms"] = 60000
+    data["spec"]["availability"]["max_client_completion_wait_ms"] = 120000
+
+
 def without_transport_control(data):
-    """The local reference profile: no TLS on the disposable server, and budgets
-    wide enough that a loaded test machine does not decide the outcome."""
+    """The local reference profile: no TLS on the disposable server, and local
+    budgets."""
     controls = data["spec"]["security"]["required_controls"]
     data["spec"]["security"]["required_controls"] = [
         c for c in controls if c != "verified_transport_encryption"]
-    data["spec"]["availability"]["max_write_admission_pause_ms"] = 60000
-    data["spec"]["availability"]["max_client_completion_wait_ms"] = 120000
+    local_budgets(data)

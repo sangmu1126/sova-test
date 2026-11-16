@@ -19,8 +19,8 @@ Made apart from the adapter that moved the records, by other means:
   it, and deletes it;
 * tenant isolation is an attempt: the application principal produces to and
   reads from another tenant's topic, and must be refused both;
-* transport encryption is this client's own settings: TLS with the broker's
-  host name verified;
+* transport encryption is this client's own settings - TLS with the broker's
+  certificate and host name verified - and a connection made under them;
 * placement comes from ``zone_of(side)``, the inventory's view, as read.
 
 Each probe returns ``(passed, observation)``.
@@ -251,13 +251,25 @@ class KafkaTopicProbes:
             "probe": "cross_tenant_denied", "other_topic": topic, "write": write, "read": read}
 
     def transport_encrypted(self, side):
+        """The settings ask for TLS with the broker's certificate and host name
+        verified, and a metadata request made under them succeeds: the
+        verification the settings ask for is the one the connection passed."""
+        k = _kafka()
         settings = self.config(side)
         tls = settings.get("security.protocol", "PLAINTEXT").upper() in ("SSL", "SASL_SSL")
         verified = tls and settings.get("ssl.endpoint.identification.algorithm",
                                         "https") == "https" and \
             settings.get("enable.ssl.certificate.verification", True) not in (False, "false")
-        return verified, {"probe": "transport_encrypted", "side": side, "tls": tls,
-                          "client_verification": "verify-identity" if verified else "none"}
+        connected = None
+        if verified:
+            try:
+                k.admin.AdminClient(settings).list_topics(timeout=self.timeout)
+                connected = True
+            except k.KafkaException:
+                connected = False
+        return bool(verified and connected), {
+            "probe": "transport_encrypted", "side": side, "tls": tls, "connected": connected,
+            "client_verification": "verify-identity" if verified else "none"}
 
     def zone(self, side, allowed):
         label = self.zone_of(side) if self.zone_of else None

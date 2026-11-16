@@ -9,6 +9,7 @@ import json
 from urllib.parse import quote
 
 from control_plane_support import prepared, signed_results, worker_for
+from handoff_drive import local_budgets
 from mysql_pair_business import tls_material
 import pytest
 from rabbitmq_business import EXCHANGE, PASSWORD, QUEUE, ROUTING_KEY
@@ -77,6 +78,7 @@ def test_a_queue_is_handed_off_over_verified_tls(postgres_database, now, rabbitm
     data["metadata"]["tenant_id"] = "tenant-" + b["vhosts"]["src"][7:15] * 4
     data["spec"]["data"]["protected_sets"] = ["order-work"]
     data["spec"]["business"]["invariants"] = [QUEUE_01]
+    local_budgets(data)  # transport control kept
     h = prepared(postgres_database, now, tmp_path, data, engine="rabbitmq")
     route = Route(b["vhosts"]["src"])
     resolved = _resolve(_entry(tmp_path, b, other_vhost, ca=b["ca_file"]), h["tenant"],

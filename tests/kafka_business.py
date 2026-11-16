@@ -34,14 +34,20 @@ def broker():
     return address, (user, password), api
 
 
-def settings(address, user, password):
-    return {"bootstrap.servers": address, "security.protocol": "SASL_PLAINTEXT",
-            "sasl.mechanism": "SCRAM-SHA-256", "sasl.username": user,
-            "sasl.password": password}
+def settings(address, user, password, ca=None):
+    """Client settings for ``user``; with ``ca`` over TLS, the broker's
+    certificate and host name verified."""
+    found = {"bootstrap.servers": address, "security.protocol": "SASL_PLAINTEXT",
+             "sasl.mechanism": "SCRAM-SHA-256", "sasl.username": user,
+             "sasl.password": password}
+    if ca:
+        found |= {"security.protocol": "SASL_SSL", "ssl.ca.location": ca,
+                  "ssl.endpoint.identification.algorithm": "https"}
+    return found
 
 
-@pytest.fixture
-def kafka_business():
+def business(address, root, api, ca=None):
+    """The topic and its business on one broker (``ca``: reached over TLS)."""
     import httpx
     from confluent_kafka import Consumer, Producer, TopicPartition
     from confluent_kafka.admin import (
@@ -55,14 +61,13 @@ def kafka_business():
         ResourceType,
     )
 
-    address, root, api = broker()
     suffix = uuid4().hex[:8]
     names = {"src": f"orders-{suffix}-src", "tgt": f"orders-{suffix}-tgt"}
     users = {k: f"orders-{k}-{suffix}" for k in ("app", "batch", "reader")}
     principals = {k: f"User:{u}" for k, u in users.items()}
     group, prefix, probe = f"orders-consumers-{suffix}", f"orders-app-{suffix}-tx", \
         f"sova-probe-{suffix}-"
-    admin_settings = settings(address, *root)
+    admin_settings = settings(address, *root, ca)
     admin = AdminClient(admin_settings)
     for user in users.values():
         httpx.post(f"{api}/v1/security/users", json={
@@ -91,7 +96,7 @@ def kafka_business():
         future.result()
 
     def as_user(key):
-        return settings(address, users[key], PASSWORD)
+        return settings(address, users[key], PASSWORD, ca)
 
     producer = Producer({**as_user("app"), "enable.idempotence": True})
     for i in range(1, 31):  # business before the handoff
@@ -111,7 +116,8 @@ def kafka_business():
     consumer.close()
     yield {"names": names, "principals": principals, "users": users, "group": group,
            "prefix": prefix, "probe": probe, "admin": admin, "settings": admin_settings,
-           "as_user": as_user, "TopicPartition": TopicPartition}
+           "as_user": as_user, "TopicPartition": TopicPartition, "address": address,
+           "root": root, "ca": ca}
     admin.delete_topics([n for n in names.values()])
     for principal in principals.values():
         admin.delete_acls([AclBindingFilter(ResourceType.ANY, None, ResourcePatternType.ANY,
@@ -120,3 +126,134 @@ def kafka_business():
     admin.delete_consumer_groups([group])
     for user in users.values():
         httpx.delete(f"{api}/v1/security/users/{user}", timeout=10)
+
+
+@pytest.fixture
+def kafka_business():
+    yield from business(*broker())
+
+
+REDPANDA = ("docker.io/redpandadata/redpanda:v26.2.5@sha256:"
+            "badca2d958f81da675c3055a9ecb6ebb590325582bcf16936148ffd65e96e920")
+TLS_ROOT = ("sova-admin", "sova-kafka-tls-test-secret")
+
+
+def _tls_broker_objects(port):
+    """A Redpanda whose only Kafka listener is TLS, advertised as ``localhost:port``
+    (the test's port-forward; ``localhost`` is in the server certificate)."""
+    import json
+
+    node = {"redpanda": {"data_directory": "/var/lib/redpanda/data",
+                         "admin": [{"address": "0.0.0.0", "port": 9644}],  # the probes'
+                         "kafka_api_tls": [{
+        "name": "tls", "enabled": True, "cert_file": "/etc/redpanda-tls/server-cert.pem",
+        "key_file": "/etc/redpanda-tls/server-key.pem",
+        "truststore_file": "/etc/redpanda-tls/ca.pem", "require_client_auth": False}]}}
+    bootstrap = {"enable_sasl": True, "superusers": [TLS_ROOT[0]],
+                 "auto_create_topics_enabled": False}
+    labels = {"app": "redpanda-tls"}
+    return [
+        {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "redpanda-tls"},
+         "data": {"redpanda.yaml": json.dumps(node), ".bootstrap.yaml": json.dumps(bootstrap)}},
+        {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "redpanda"},
+         "spec": {"replicas": 1, "strategy": {"type": "Recreate"},
+                  "selector": {"matchLabels": labels},
+                  "template": {"metadata": {"labels": labels}, "spec": {
+                      "initContainers": [{  # rpk rewrites its configuration: a copy
+                          "name": "config", "image": REDPANDA, "imagePullPolicy": "IfNotPresent",
+                          "command": ["sh", "-c", "cp /config/redpanda.yaml "
+                                      "/config/.bootstrap.yaml /etc/redpanda/"],
+                          "volumeMounts": [{"name": "config", "mountPath": "/config"},
+                                           {"name": "etc", "mountPath": "/etc/redpanda"}]}],
+                      "containers": [{
+                          "name": "redpanda", "image": REDPANDA,
+                          "imagePullPolicy": "IfNotPresent",
+                          "args": ["redpanda", "start", "--mode", "dev-container", "--smp", "1",
+                                   "--memory", "512M", "--reserve-memory", "0M",
+                                   "--overprovisioned", "--default-log-level=warn",
+                                   "--kafka-addr", "tls://0.0.0.0:9093",
+                                   "--advertise-kafka-addr", f"tls://localhost:{port}",
+                                   "--rpc-addr", "0.0.0.0:33145",
+                                   "--advertise-rpc-addr", "127.0.0.1:33145"],
+                          "env": [{"name": "RP_BOOTSTRAP_USER",
+                                   "value": f"{TLS_ROOT[0]}:{TLS_ROOT[1]}:SCRAM-SHA-256"}],
+                          "ports": [{"containerPort": 9093}, {"containerPort": 9644}],
+                          "readinessProbe": {"httpGet": {"path": "/v1/status/ready",
+                                                         "port": 9644}, "periodSeconds": 2},
+                          "resources": {"requests": {"cpu": "100m", "memory": "256Mi"},
+                                        "limits": {"memory": "1Gi"}},
+                          "volumeMounts": [{"name": "etc", "mountPath": "/etc/redpanda"},
+                                           {"name": "tls", "mountPath": "/etc/redpanda-tls",
+                                            "readOnly": True}]}],
+                      "volumes": [{"name": "config", "configMap": {"name": "redpanda-tls"}},
+                                  {"name": "etc", "emptyDir": {}},
+                                  {"name": "tls", "secret": {"secretName": "redpanda-tls",
+                                                             "defaultMode": 0o444}}]}}}}]
+
+
+def _free_port():
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@pytest.fixture(scope="module")
+def kafka_tls_broker(tmp_path_factory):
+    """A Kafka-API broker of the test module's own whose clients speak only TLS
+    (SASL/SCRAM inside it), under a test CA; reached by port-forward."""
+    pytest.importorskip("confluent_kafka")
+    import base64
+    import json
+    import time
+
+    from confluent_kafka import KafkaException
+    from confluent_kafka.admin import AdminClient
+
+    from kind_support import delete_namespace, kind_namespace, kubectl
+    from mysql_pair_business import tls_material
+    from redis_business import _forward
+
+    if not os.environ.get("SOVA_TEST_KUBE_CONTEXT"):
+        pytest.skip("SOVA_TEST_KUBE_CONTEXT is required for the Kafka TLS tests")
+    port = _free_port()
+    context, namespace, _ = kind_namespace([], _tls_broker_objects(port), prefix="kafka-tls")
+    forwards = []
+    try:
+        material = tls_material(namespace)
+        kubectl(context, "-n", namespace, "apply", "-f", "-", stdin=json.dumps({
+            "apiVersion": "v1", "kind": "Secret", "metadata": {"name": "redpanda-tls"},
+            "data": {k: base64.b64encode(v).decode() for k, v in material.items()}}))
+        ca_file = tmp_path_factory.mktemp("kafka-tls") / "ca.pem"
+        ca_file.write_bytes(material["ca.pem"])
+        kubectl(context, "-n", namespace, "rollout", "status", "deployment/redpanda",
+                "--timeout=300s")
+        process, _ = _forward(context, namespace, "redpanda", 9093, local=str(port))
+        forwards.append(process)
+        process, api_port = _forward(context, namespace, "redpanda", 9644)
+        forwards.append(process)
+        address = f"localhost:{port}"
+        admin = AdminClient(settings(address, *TLS_ROOT, str(ca_file)))
+        deadline = time.monotonic() + 120
+        while True:  # the superuser exists once the broker has bootstrapped
+            try:
+                admin.list_topics(timeout=5)
+                break
+            except KafkaException:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(1)
+        yield {"address": address, "root": TLS_ROOT, "api": f"http://127.0.0.1:{api_port}",
+               "ca_file": str(ca_file)}
+    finally:
+        for process in forwards:
+            process.terminate()
+        delete_namespace(context, namespace)
+
+
+@pytest.fixture
+def kafka_tls_business(kafka_tls_broker):
+    b = kafka_tls_broker
+    for found in business(b["address"], b["root"], b["api"], b["ca_file"]):
+        yield {**found, "ca_file": b["ca_file"]}
