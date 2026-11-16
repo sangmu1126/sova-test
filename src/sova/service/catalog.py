@@ -61,7 +61,8 @@ _UNIT_ENGINES = {  # engines whose entries carry their own keys (see each module
     "composite": {"components", "data"},
     "redis": {"redis", "route"},
     "kafka": {"kafka", "route"},
-    "rabbitmq": {"rabbitmq", "route"}}
+    "rabbitmq": {"rabbitmq", "route"},
+    "mongodb": {"mongodb", "route"}}
 _UNIT_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode"}
 _MYSQL_SETTINGS = {"host", "port", "user", "password", "ssl_ca", "ssl_verify_identity",
                    "connect_timeout"}
@@ -233,6 +234,11 @@ def _unit_resolver(app, *, route_for, controls_for):
 
         resolve, close = rabbitmq_resolver(app, route_for=route_for)
         return rabbitmq_factory(app["adapter_id"], resolve), close
+    if engine == "mongodb":
+        from sova.service.mongodb_execution import mongodb_factory, mongodb_resolver
+
+        resolve, close = mongodb_resolver(app, route_for=route_for)
+        return mongodb_factory(app["adapter_id"], resolve), close
     controls_for = controls_for or controls_from
     if engine == "kubernetes-volume":
         resolve, close = volume_resolver(app, route_for=route_for, controls_for=controls_for)

@@ -478,3 +478,28 @@ def test_a_mysql_ca_file_reaches_the_driver_with_verification(tmp_path, monkeypa
     assert seen[-1]["ssl_ca"] == "/etc/sova/ca.pem" and "ssl" not in seen[-1]
     assert seen[-1]["ssl_verify_cert"] is True and seen[-1]["ssl_verify_identity"] is True
     close()
+
+
+def test_a_mongodb_database_gets_the_database_adapter(tmp_path):
+    pytest.importorskip("pymongo")
+    server = write(tmp_path, "mongo.json", json.dumps({
+        "host": "orders-db", "port": 27017, "username": "sova-admin", "password": "x",
+        "authSource": "admin", "tls_ca": "/etc/sova/mongo-ca.pem"}))
+    app = {"tenant_id": "tenant-a", "application_id": "orders", "adapter_id": "mongodb-db",
+           "engine": "mongodb", "mode": "offline_copy",
+           "mongodb": {"servers": {"source": server, "target": server},
+                       "databases": {"source": "orders", "target": "orders_new"},
+                       "collections": ["orders"], "writers": ["orders-app@admin"],
+                       "app_user": "orders-app@admin", "admin_user": "sova-admin@admin"},
+           "route": {"kind": "kubernetes_service", "registration_file": "unused",
+                     "service": "orders", "sides": {}}}
+    catalog, close = catalog_from({"version": 1, "applications": [app]},
+                                  route_for=lambda spec: FakeRoute())
+    execution = catalog.build("tenant-a", "orders", "mongodb-db", None)
+    assert type(execution.adapter).__name__ == "MongoDatabaseHandoffAdapter"
+    app["mongodb"]["collections"] = ["orders; drop"]
+    with pytest.raises(ContractError):
+        catalog_from({"version": 1, "applications": [app]},
+                     route_for=lambda spec: FakeRoute())[0].build(
+            "tenant-a", "orders", "mongodb-db", None)
+    close()
