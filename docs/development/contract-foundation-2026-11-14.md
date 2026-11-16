@@ -313,6 +313,15 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
   - 시험 환경에 Envoy Gateway v1.9.3을 선택 사항으로 추가했다. 2주 이상 지난 안정판이고, 설치 파일에 맞는 버전의 Gateway API CRD가 함께 들어 있다. 설치 파일은 적용 전에 내용을 확인했다(CRD 21, 컨트롤러, 인증서 생성 Job, envoy-gateway-system Pod binding에만 걸리고 실패 정책이 Ignore인 webhook 하나). SHA-256과 컨트롤러 이미지 digest를 고정했고, 프록시 자원 요청은 작게 했다. 노드 메모리 요청이 85%였기 때문이다.
   - kind 4 PASS, 판정 17 PASS. 모두 첫 실행에 통과해 결함 주입 2건(세대 무시, 응답 표본 무시)으로 시험이 잡는 것을 확인했다.
   - 실행 설정의 경로 저장소를 `route_stores`로 모았다. DB·볼륨 단위는 Gateway 경로를 쓸 수 있고, 세션 단위는 Service selector만 쓴다.
+- 클러스터 사이 볼륨 인계(같은 지시의 남은 작업). 볼륨 설계의 전제("등록된 API 서버 두 곳만 있으면 된다")를 확인하려고, 시험 환경에 두 번째 kind 클러스터를 추가했다(`test-env.sh second`, kubeconfig 별도, `~/.kube/config`는 건드리지 않음). 만들기 전에 Docker VM 메모리를 확인했다(7.75GiB 중 3.9GiB 사용).
+  - 인계 1 PASS, 클러스터에 걸친 probe 5종 1 PASS.
+  - 처리량(128MiB): 순차 17.5MiB/s였다. 병렬 청크로 바꿔 26.6~28.4MiB/s(2회)가 됐고, 8스트림·8MiB 청크는 개선이 없었다.
+  - 볼륨 관련 시험 26개를 다시 돌려 모두 통과했다.
+- probe 관측값 보존. E2E를 하며 확인한 빈틈이다. 서명 증거에는 관측값 digest만 있어서, 무엇을 측정했는지 볼 수 없었다.
+  - 마이그레이션 `postgres_evidence_observations_v1`: INSERT 전용, 테넌트 RLS, `digest = sha256(내용)` 제약.
+  - 워커가 서명 전에 관측값을 보존한다. API로 증거 목록과 관측값을 조회한다(없으면 404).
+  - 시험: 서비스 15 PASS(digest 대조, 다른 테넌트에 보이지 않음, 위조 digest INSERT 거부, UPDATE 권한 없음), 보안 경계 248 PASS, 단위 855 PASS.
+  - 볼륨 시험이 공유 DB에서 도는 동안에는 새 마이그레이션을 쓰는 시험을 돌리지 않았다. 돌고 있는 시험의 코드가 모르는 마이그레이션을 만나면 결과가 섞이기 때문이다.
 
 ## 이전 기록 정정
 

@@ -1379,8 +1379,22 @@ PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 ad
 - ReadWriteOncePod 볼륨은 start_sync를 쓸 수 없다.
 - API 서버와 agent Pod 사이는 평문이다. 그래서 검증된 전송 암호화를 요구하는 계약은 이 단위에서 실패로 측정된다.
 - 세션 drain은 kube-proxy가 맺어진 연결을 유지하는 동작에 기댄다(Ingress·서비스 메시에서는 따로 확인해야 함).
-- 시험은 한 kind 클러스터 안에서 했다. 관리형 클러스터와 클러스터 사이 복사는 실측하지 않았다.
+- 관리형 클러스터에서는 실측하지 않았다. 클러스터 사이 복사는 아래처럼 로컬 kind 두 대로 실측했다.
 - 진입점은 Service selector와 Gateway API(아래 절)다. Ingress는 다루지 않는다.
+
+### 클러스터 사이 볼륨 인계 (로컬 kind 두 대)
+
+볼륨 설계의 전제는 "두 클러스터 사이에 등록된 API 서버 두 곳 말고는 필요한 것이 없다"였다. 이를 확인하려고 시험 환경에 두 번째 kind 클러스터를 추가했다(`test-env.sh second`). 두 번째 클러스터는 API 서버와 kubeconfig를 따로 가진다.
+
+- **인계.** 원본 클러스터의 게시판을 두 번째 클러스터의 정지된 게시판으로 옮겼다. 원본 reader agent는 첫 클러스터에서, 목적지 writer agent는 두 번째 클러스터에서 돌았다. 바이트는 워커를 거쳐 갔다.
+- **결과.** 두 번째 클러스터에서 앱이 같은 행·무결성·업로드로 시작했고, 원본 writer는 둘 다 쓸 수 없었다.
+- **probe.** 두 클러스터에 걸쳐 다섯 가지가 통과했다: 양쪽 쓰기 거부, DB 논리 비교, 업로드 비교, 목적지 클러스터 안 복원 훈련.
+- **복사 처리량**(128MiB 파일 하나, opt-in perf 시험):
+  - 청크를 하나씩 보낼 때 17.5MiB/s였다.
+  - 청크를 병렬(기본 4개)로 보내도록 바꾸자 26.6~28.4MiB/s가 됐다. 각 파일의 첫 청크가 먼저 도착해야 하므로, 첫 청크 → 나머지 → 확인 커밋의 세 단계로 나눴다.
+  - 8스트림이나 8MiB 청크는 더 빠르지 않았다(27.3, 24.9MiB/s). 병목은 스트림 수가 아니라 API 서버 프록시 쪽이다.
+  - 양쪽 검증(전체 SHA-256)은 1.4~2.3초였다.
+- **오프라인 복사의 다운타임.** 대략 `볼륨 크기 / 처리량`이다. 이 환경에서 10GiB면 약 6분이다. 큰 볼륨은 snapshot-cdc 템플릿(`start_sync`로 미리 복사, 차단 안에서는 바뀐 파일만)으로 줄인다.
 
 ## Gateway API 진입점 전환 (2026-11-17)
 
@@ -1412,6 +1426,15 @@ Kubernetes 진입점의 표준은 Ingress에서 Gateway API로 옮겨 갔다(ing
 
 - Envoy Gateway 하나로만 시험했다. 다른 구현체(Istio, Cilium, NGINX Gateway Fabric 등)의 수락 보고 방식은 같은 표준이지만 실측하지 않았다.
 - Ingress(구 API)는 다루지 않는다.
+
+## probe 관측값 보존 (2026-11-17)
+
+워커의 서명 증거에는 관측값의 SHA-256만 들어간다. 그래서 지금까지는 "pass"가 무엇을 측정한 결과인지 볼 수 없었다. 이제 관측값을 보존한다.
+
+- **저장.** 워커가 서명하기 전에 관측값을 정규화 JSON 그대로 `evidence_observations`에 넣는다. 테넌트 RLS가 걸려 있고 INSERT만 된다.
+- **무결성.** DB 제약이 `digest = sha256(내용)`을 강제한다. 다른 내용을 같은 digest로 넣거나 바꾸는 시험이 거부됐다.
+- **조회.** 감사자는 API로 애플리케이션의 최신 서명 결과 목록을 받는다(의무, 결과, 관측 digest, 보존 여부). digest로 관측값을 받아 서명 기록과 직접 대조할 수 있다. 없는 관측값은 404이고, 다른 테넌트에게는 아무것도 보이지 않는다.
+- **크기.** 관측값은 60KB 안으로 줄여 보존한다(증거 한도와 같은 방식).
 
 ## 로컬 통합 시험 환경
 
@@ -1478,9 +1501,10 @@ Kubernetes 진입점의 표준은 Ingress에서 Gateway API로 옮겨 갔다(ing
 | MySQL 간 offline copy adapter·probe | 모의 시험 통과 | 로컬 MySQL 8.4.13. 적합성 키트와 control plane 전체 흐름. TLS probe는 미실측, CDC 없음 |
 | Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL), 한 클러스터의 두 토픽. control plane 미연결 |
 | RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8, 한 브로커의 두 vhost. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 미연결 |
-| Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름. 클러스터 사이·관리형 미실측 |
+| Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). 관리형 미실측 |
 | 메모리 세션 drain adapter | 모의 시험 통과 | 로컬 kind, WebSocket 시험 서버. 커널 TCP 테이블로 세션 계수, drain 상한 hold·terminate |
 | 애플리케이션 한 단위(볼륨 + 세션) | 모의 시험 통과 | 로컬 kind, 게시판 + 게임 서버를 control plane 전체 흐름으로. 쓰기 정지 32.5초 1회 |
+| probe 관측값 보존·조회 | 모의 시험 통과 | 서명 digest와 일치를 DB 제약으로 강제, 테넌트 격리, API 조회 |
 | MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
 | 후보 전략 탐색(`NO_FEASIBLE_PLAN`·`SEARCH_INCOMPLETE`) | 모의 시험 통과 | 등록된 두 템플릿, 합성 자격 |
 | 사고 보류·증거 기한·사고 복구 확장 | 지원하지 않음 | 명세가 스키마를 정하지 않음(S.9, ADR 전제). 있으면 `NEEDS_EVIDENCE` |
