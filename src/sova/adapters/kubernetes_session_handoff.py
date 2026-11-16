@@ -5,11 +5,13 @@ open connections and the state behind them, never anything durable. Under a
 single authority (PLANNED_SINGLE_AUTHORITY) the source and the target never
 serve at the same time, so the sessions are drained, not moved:
 
-* Pausing admission takes the source Pods out of the route (the Service
-  selector moves to a side that has no Pods, so a new connection is refused
-  at once) and then waits for the sessions already open to end. Connections
-  established before the change keep flowing (the kernel's connection
-  tracking still carries them), which is what a drain needs.
+* Pausing admission takes the source Pods out of the route and then waits for
+  the sessions already open to end. Behind a Service the selector moves to a
+  side that has no Pods (a new connection is refused at once; connections
+  already established keep flowing on the kernel's connection tracking).
+  Behind a Gateway API route the rule is left without a backend (the Gateway
+  answers new requests with an error; the proxy keeps the upstream of streams
+  already open). Either way, what a drain needs.
 * Open sessions are counted by the kernel, not by the application: an
   ephemeral container is attached to every live source Pod (it shares the
   Pod's network namespace, nothing else) and writes, every second, the TCP
@@ -110,9 +112,11 @@ class KubernetesSessionHandoffAdapter:
         (source, target, paused): the paused side's selector matches no Pod."""
         if not isinstance(source, SessionSide) or not isinstance(target, SessionSide):
             raise ContractError("A source and a target session side required")
-        if not all(callable(getattr(route, n, None)) for n in ("observe", "get", "set")) or \
+        if not all(callable(getattr(route, n, None))
+                   for n in ("get", "set", "pause", "paused", "left")) or \
                 type(routes) is not tuple or len(set(routes)) != 3:
-            raise ContractError("A Service route store and its three distinct sides required")
+            raise ContractError("A route store that can pause, and its source, target and "
+                                "paused values, required")
         if type(port) is not int or not 1 <= port <= 65535:
             raise ContractError("The serving port required")
         if type(image) is not str or not _IMAGE.fullmatch(image):
@@ -190,9 +194,7 @@ class KubernetesSessionHandoffAdapter:
                                     replicas)
 
     def _out_of_route(self):
-        seen = self.route.observe()
-        return (seen["selector_side"] == self.routes[2] and seen["ready_endpoints"] == 0
-                and not seen["foreign_endpoints"]), seen
+        return self.route.paused(self.routes[2])
 
     def _paused_at(self):
         found, _ = self._workload("source")
@@ -246,12 +248,7 @@ class KubernetesSessionHandoffAdapter:
         return self._stopped("target")
 
     def _pause_admission(self):
-        route = self.route
-        current = route.controls.service(route.service)
-        paused = route.sides[self.routes[2]]
-        if (current.get("spec") or {}).get("selector") != paused:
-            route.controls.set_service_selector(route.service,
-                                                current["metadata"]["resourceVersion"], paused)
+        self.route.pause(self.routes[2])
         self._wait(lambda: self._out_of_route()[0], self.settle_seconds, 0.25)
         if self._paused_at() is None:
             found, _ = self._workload("source")
@@ -299,7 +296,7 @@ class KubernetesSessionHandoffAdapter:
         out, _ = self._out_of_route()
         stopped, detail = self._stopped("source")
         # Once the route has moved on, the source being stopped is what still holds.
-        moved = self.route.observe()["selector_side"] in (self.routes[1], self.routes[2])
+        moved = self.route.left(self.routes[0])
         return stopped and (out or moved), {"source": detail, "out_of_route": out or moved}
 
     def _activate_target(self):

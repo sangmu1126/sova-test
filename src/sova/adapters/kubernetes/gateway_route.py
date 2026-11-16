@@ -128,23 +128,52 @@ class GatewayHttpRoute:
         route = self._route()
         rule = self._rule(route)
         current = self._configured(rule)
-        if current is None:
+        if current is None and rule.get("backendRefs"):
             raise ContractError("The rule is not a plain backend of a registered side; "
                                 "it is not overwritten")
         if current != ref:
             name, port = self.sides[ref]
-            backends = [{"name": name, "port": port}]
-            body = json.dumps([
-                {"op": "test", "path": "/metadata/resourceVersion",
-                 "value": route["metadata"]["resourceVersion"]},
-                {"op": "replace", "path": f"/spec/rules/{self.rule}/backendRefs",
-                 "value": backends}]).encode()
-            self.controls._request("PATCH", self._path(), {}, timeout=5, body=body)
+            self._patch_backends(route, [{"name": name, "port": port}])
         # The implementation programs its proxies asynchronously: wait, bounded,
         # until configuration, acceptance and traffic agree.
         deadline = time.monotonic() + self.converge_seconds
         while self.get() != ref and time.monotonic() < deadline:
             time.sleep(0.5)
+
+
+    # -- pausing: new requests reach no side, open connections keep flowing --------------
+    def _patch_backends(self, route, backends):
+        body = json.dumps([
+            {"op": "test", "path": "/metadata/resourceVersion",
+             "value": route["metadata"]["resourceVersion"]},
+            {"op": "replace", "path": f"/spec/rules/{self.rule}/backendRefs",
+             "value": backends}]).encode()
+        self.controls._request("PATCH", self._path(), {}, timeout=5, body=body)
+
+    def pause(self, ref=None):
+        """Leave the rule without a backend: the Gateway answers new requests with
+        an error and sends nothing on; streams already open keep their upstream."""
+        route = self._route()
+        rule = self._rule(route)
+        if not rule.get("backendRefs"):
+            return
+        if self._configured(rule) is None:
+            raise ContractError("The rule is not a plain backend of a registered side; "
+                                "it is not overwritten")
+        self._patch_backends(route, [])
+
+    def paused(self, ref=None):
+        """(paused, observation): no backend configured, the Gateway has accepted
+        that, and no sample request was answered by a side."""
+        route = self._route()
+        empty = not self._rule(route).get("backendRefs")
+        seen = self.observe()
+        answered = [a for a in seen["answers"] if a in self.sides]
+        return empty and all(seen["accepted"].values()) and not answered, {
+            **seen, "backends": "none" if empty else "configured"}
+
+    def left(self, ref):
+        return self._configured(self._rule(self._route())) != ref
 
 
 def http_side_observer(url, *, header, sides, ca_file=None, timeout=5.0):

@@ -197,6 +197,26 @@ class KubernetesServiceRoute:
         while self.get() != ref and time.monotonic() < deadline:
             time.sleep(0.25)
 
+    # -- pausing: new traffic reaches no side, open connections keep flowing -------------
+    def pause(self, ref):
+        """Point the Service at ``ref``, a side whose selector matches no Pod."""
+        if ref not in self.sides:
+            raise ContractError("Unknown route side")
+        current = self.controls.service(self.service)
+        if (current.get("spec") or {}).get("selector") != self.sides[ref]:
+            self.controls.set_service_selector(
+                self.service, current["metadata"]["resourceVersion"], self.sides[ref])
+
+    def paused(self, ref):
+        """(paused, what traffic reaches): the paused side's selector, no endpoint."""
+        seen = self.observe()
+        return (seen["selector_side"] == ref and seen["ready_endpoints"] == 0
+                and not seen["foreign_endpoints"]), seen
+
+    def left(self, ref):
+        """The route no longer selects side ``ref`` (paused or moved on)."""
+        return self.observe()["selector_side"] not in (ref, None)
+
 
 def controller_paused(controls, cronjob):
     """``controller.<id>.paused`` for a CronJob: suspended, and none of its Jobs

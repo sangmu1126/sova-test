@@ -263,6 +263,15 @@ class FakeServiceRoute(FakeRoute):
         return {"selector_side": "game_src", "ready_endpoints": 1, "foreign_endpoints": [],
                 "route": "game_src"}
 
+    def pause(self, ref):
+        pass
+
+    def paused(self, ref):
+        return False, self.observe()
+
+    def left(self, ref):
+        return False
+
 
 def test_a_whole_application_is_one_unit_of_a_volume_and_a_session_server(tmp_path):
     board = volume_application(tmp_path)
@@ -320,11 +329,11 @@ def test_a_database_unit_may_switch_its_traffic_at_a_gateway(tmp_path):
     close()
 
 
-def test_sessions_drain_only_behind_a_service_selector(tmp_path):
+def test_sessions_drain_only_behind_a_route_store_that_can_pause(tmp_path):
     entry = {"tenant_id": "tenant-a", "application_id": "game", **session_entry(),
              "mode": "offline_copy"}
-    entry["route"] = {"kind": "gateway_httproute"}
-    with pytest.raises(ContractError, match="Service selector"):
+    entry["route"] = {"kind": "dns_record"}
+    with pytest.raises(ContractError, match="Service selector or a Gateway API route"):
         catalog_from({"version": 1, "applications": [entry]},
                      route_for=lambda spec: FakeServiceRoute(),
                      controls_for=fake_volume_controls)[0].build(

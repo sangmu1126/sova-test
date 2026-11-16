@@ -150,3 +150,23 @@ def test_a_gateway_route_entry_that_does_not_add_up_is_refused(changes):
 
     with pytest.raises(ContractError):
         route_from(gateway_spec(**changes), controls_for=lambda spec: Controls({}))
+
+
+def test_a_pause_leaves_the_rule_without_a_backend_and_reads_back_only_when_served_by_none():
+    route = route_object([{"name": "web-source", "port": 80}])
+    s = store(route, answers=("error:503",))
+    s.pause()
+    patch = s.controls.patches[-1].decode()
+    assert '"path": "/spec/rules/0/backendRefs", "value": []' in patch
+    paused = store(route_object([]), answers=("error:503",))
+    assert paused.paused()[0] and paused.left("web_src")
+    still = store(route_object([]), answers=("web_src", "error:503"))  # an old proxy
+    assert not still.paused()[0]
+    split = store(route_object([{"name": "web-target", "port": 80, "weight": 50},
+                                {"name": "web-source", "port": 80, "weight": 50}]))
+    with pytest.raises(ContractError, match="not overwritten"):
+        split.pause()
+    resumed = store(route_object([]))
+    resumed.set("web_tgt")  # from a paused rule straight to the target
+    assert '"value": [{"name": "web-target", "port": 80}]' in \
+        resumed.controls.patches[-1].decode()

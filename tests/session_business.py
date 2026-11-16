@@ -9,6 +9,7 @@ session (which Pod served it, whether it ended normally) and a summary.
 """
 
 import json
+import os
 import time
 
 import pytest
@@ -22,6 +23,7 @@ SERVER = r'''
 import base64, hashlib, json, os, socketserver, struct
 
 POD = os.environ.get("POD_NAME", "unknown")
+SIDE = os.environ.get("SIDE", "")
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
@@ -67,9 +69,11 @@ class Handler(socketserver.BaseRequestHandler):
         lines = request.split(b"\r\n\r\n")[0].decode().split("\r\n")
         headers = {k.strip().lower(): v.strip()
                    for k, v in (l.split(":", 1) for l in lines[1:] if ":" in l)}
-        if lines[0].split()[1] == "/healthz":
-            self.request.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n"
-                                 b"Connection: close\r\n\r\nok")
+        if lines[0].split()[1] == "/healthz":  # the side marker a route probe reads
+            body = json.dumps({"side": SIDE}).encode()
+            self.request.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                                 b"Content-Length: " + str(len(body)).encode() +
+                                 b"\r\nConnection: close\r\n\r\n" + body)
             return
         accept = base64.b64encode(hashlib.sha1(
             (headers["sec-websocket-key"] + GUID).encode()).digest()).decode()
@@ -200,7 +204,8 @@ def server(name, side, *, replicas):
                              "name": "server", "image": PYTHON, "imagePullPolicy": "IfNotPresent",
                              "command": ["python3", "-I", "-c", SERVER],
                              "env": [{"name": "POD_NAME", "valueFrom": {
-                                 "fieldRef": {"fieldPath": "metadata.name"}}}],
+                                 "fieldRef": {"fieldPath": "metadata.name"}}},
+                                     {"name": "SIDE", "value": side}],
                              "ports": [{"containerPort": 8080}],
                              "readinessProbe": {"httpGet": {"path": "/healthz", "port": 8080},
                                                 "periodSeconds": 1},
@@ -217,22 +222,12 @@ def objects():
                       "ports": [{"port": 80, "targetPort": 8080}]}}]
 
 
-@pytest.fixture
-def session_business():
-    from kind_support import delete_namespace, kind_namespace, kubectl
-
-    from sova.adapters.kubernetes.volume_controls import KubernetesVolumeControls
-
-    context, namespace, controls = kind_namespace(
-        RULES, objects(), prefix="session", controls_class=KubernetesVolumeControls)
-
-    def run(*args, stdin=None):
-        return kubectl(context, "-n", namespace, *args, stdin=stdin)
-
+def client_tools(run, host):
+    """(clients, results, started) for client Pods connecting to ``host``:80."""
     plans = {}
 
     def clients(name, plan):
-        """Start a client Pod opening ``plan``'s sessions through the Service."""
+        """Start a client Pod opening ``plan``'s sessions through the entry point."""
         plans[name] = plan
         run("apply", "-f", "-", stdin=json.dumps({
             "apiVersion": "v1", "kind": "Pod", "metadata": {"name": name},
@@ -240,7 +235,7 @@ def session_business():
                      "containers": [{
                          "name": "client", "image": PYTHON, "imagePullPolicy": "IfNotPresent",
                          "command": ["python3", "-I", "-c", CLIENT,
-                                     f"game.{namespace}.svc.cluster.local", json.dumps(plan)],
+                                     host, json.dumps(plan)],
                          "securityContext": {"allowPrivilegeEscalation": False,
                                              "capabilities": {"drop": ["ALL"]}}}]}}))
 
@@ -266,6 +261,22 @@ def session_business():
                 raise AssertionError(f"client {name} did not connect: {log[-600:]}")
             time.sleep(0.5)
         raise AssertionError(f"client {name} did not connect in time")
+    return clients, results, started
+
+
+@pytest.fixture
+def session_business():
+    from kind_support import delete_namespace, kind_namespace, kubectl
+
+    from sova.adapters.kubernetes.volume_controls import KubernetesVolumeControls
+
+    context, namespace, controls = kind_namespace(
+        RULES, objects(), prefix="session", controls_class=KubernetesVolumeControls)
+
+    def run(*args, stdin=None):
+        return kubectl(context, "-n", namespace, *args, stdin=stdin)
+
+    clients, results, started = client_tools(run, f"game.{namespace}.svc.cluster.local")
 
     try:
         run("rollout", "status", "deployment/game-source", "--timeout=180s")
@@ -274,6 +285,89 @@ def session_business():
     finally:
         delete_namespace(context, namespace)
         deadline = time.monotonic() + 120  # the next test starts on a settled node
+        while time.monotonic() < deadline and namespace in kubectl(
+                context, "get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}"):
+            time.sleep(1)
+
+
+GATEWAY_RULES = [
+    {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]},
+    {"apiGroups": [""], "resources": ["pods/ephemeralcontainers"], "verbs": ["patch"]},
+    {"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]},
+    {"apiGroups": ["gateway.networking.k8s.io"], "resources": ["httproutes"],
+     "verbs": ["get", "patch"]},
+    {"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get", "patch"]},
+]
+
+
+def gateway_objects():
+    services = [{"apiVersion": "v1", "kind": "Service", "metadata": {"name": f"game-{side}"},
+                 "spec": {"selector": {"app": "game", "side": side},
+                          "ports": [{"port": 80, "targetPort": 8080}]}}
+                for side in ("source", "target")]
+    return [server("game-source", "source", replicas=2),
+            server("game-target", "target", replicas=0), *services,
+            {"apiVersion": "gateway.networking.k8s.io/v1", "kind": "Gateway",
+             "metadata": {"name": "play"},
+             "spec": {"gatewayClassName": "sova-envoy", "listeners": [{
+                 "name": "http", "protocol": "HTTP", "port": 80,
+                 "allowedRoutes": {"namespaces": {"from": "Same"}}}]}},
+            {"apiVersion": "gateway.networking.k8s.io/v1", "kind": "HTTPRoute",
+             "metadata": {"name": "play"},
+             "spec": {"parentRefs": [{"name": "play"}], "rules": [{
+                 "matches": [{"path": {"type": "PathPrefix", "value": "/"}}],
+                 "backendRefs": [{"name": "game-source", "port": 80}]}]}}]
+
+
+@pytest.fixture
+def gateway_session_business():
+    """The same game server behind a Gateway API entry point (Envoy Gateway)."""
+    from kind_support import delete_namespace, kind_namespace, kubectl
+
+    from sova.adapters.kubernetes.volume_controls import KubernetesVolumeControls
+
+    context = os.environ.get("SOVA_TEST_KUBE_CONTEXT")
+    if context:
+        try:
+            kubectl(context, "get", "gatewayclass", "sova-envoy")
+        except AssertionError:
+            pytest.skip("Envoy Gateway is not installed: run infra/test-env/test-env.sh gateway")
+    context, namespace, controls = kind_namespace(
+        GATEWAY_RULES, gateway_objects(), prefix="gwsession",
+        controls_class=KubernetesVolumeControls)
+
+    def run(*args, stdin=None):
+        return kubectl(context, "-n", namespace, *args, stdin=stdin)
+
+    try:
+        run("rollout", "status", "deployment/game-source", "--timeout=180s")
+        run("wait", "--for=condition=Programmed", "gateway/play", "--timeout=180s")
+        selector = ("gateway.envoyproxy.io/owning-gateway-name=play,"
+                    f"gateway.envoyproxy.io/owning-gateway-namespace={namespace}")
+        envoy = kubectl(context, "-n", "envoy-gateway-system", "get", "service", "-l", selector,
+                        "-o", "jsonpath={.items[0].metadata.name}").strip()
+
+        def observe():
+            """One request through the Envoy proxy: the side that answered it."""
+            raw = kubectl(context, "get", "--raw", "/api/v1/namespaces/envoy-gateway-system/"
+                                                   f"services/{envoy}:80/proxy/healthz")
+            return {"source": "game_src", "target": "game_tgt"}[json.loads(raw)["side"]]
+
+        deadline = time.monotonic() + 120  # Envoy is programmed asynchronously
+        while time.monotonic() < deadline:
+            try:
+                if observe() == "game_src":
+                    break
+            except (AssertionError, ValueError, KeyError):
+                pass
+            time.sleep(1)
+        clients, results, started = client_tools(
+            run, f"{envoy}.envoy-gateway-system.svc.cluster.local")
+        yield {"context": context, "namespace": namespace, "controls": controls, "run": run,
+               "observe": observe, "clients": clients, "results": results, "started": started}
+    finally:
+        delete_namespace(context, namespace)
+        deadline = time.monotonic() + 120
         while time.monotonic() < deadline and namespace in kubectl(
                 context, "get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}"):
             time.sleep(1)
