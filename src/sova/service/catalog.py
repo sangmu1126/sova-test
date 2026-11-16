@@ -64,6 +64,7 @@ _UNIT_ENGINES = {  # engines whose entries carry their own keys (see each module
     "rabbitmq": {"rabbitmq", "route"},
     "mongodb": {"mongodb", "route"}}
 _UNIT_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode"}
+_UNIT_MODES = {"mongodb": {"offline_copy", "change_stream"}}  # others: offline_copy
 _MYSQL_SETTINGS = {"host", "port", "user", "password", "ssl_ca", "ssl_verify_identity",
                    "connect_timeout"}
 
@@ -208,7 +209,8 @@ def _unit_resolver(app, *, route_for, controls_for):
 
     Their mode is offline_copy: a file system, in-memory sessions and a
     Redis-protocol keyspace have no change log to follow while the source
-    still serves (a snapshot-cdc plan still runs: its sync copies again)."""
+    still serves (a snapshot-cdc plan still runs: its sync copies again).
+    MongoDB has one: its ``change_stream`` mode follows the source's."""
     from sova.service.composite_execution import (
         composite_resolver,
         session_execution,
@@ -217,8 +219,9 @@ def _unit_resolver(app, *, route_for, controls_for):
     from sova.service.volume_execution import controls_from, volume_factory, volume_resolver
 
     engine = app["engine"]
-    if set(app) - _UNIT_KEYS - _UNIT_ENGINES[engine] or app.get("mode") != "offline_copy":
-        raise ContractError(f"{engine} entry: known keys and mode offline_copy only")
+    modes = _UNIT_MODES.get(engine, {"offline_copy"})
+    if set(app) - _UNIT_KEYS - _UNIT_ENGINES[engine] or app.get("mode") not in modes:
+        raise ContractError(f"{engine} entry: known keys and mode {' or '.join(sorted(modes))}")
     if engine == "redis":
         from sova.service.redis_execution import redis_factory, redis_resolver
 
@@ -238,7 +241,8 @@ def _unit_resolver(app, *, route_for, controls_for):
         from sova.service.mongodb_execution import mongodb_factory, mongodb_resolver
 
         resolve, close = mongodb_resolver(app, route_for=route_for)
-        return mongodb_factory(app["adapter_id"], resolve), close
+        return mongodb_factory(app["adapter_id"], resolve,
+                               change_stream=app["mode"] == "change_stream"), close
     controls_for = controls_for or controls_from
     if engine == "kubernetes-volume":
         resolve, close = volume_resolver(app, route_for=route_for, controls_for=controls_for)

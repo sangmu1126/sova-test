@@ -1,4 +1,5 @@
-"""Two disposable MongoDB deployments on the kind cluster (authentication on),
+"""Two disposable MongoDB deployments on the kind cluster (authentication on,
+each a single-member replica set: change streams need one),
 and an application database on the source for each test: orders with a unique
 index on customer and idempotency key, their recorded results, an application
 user and a batch job's user (both ``readWrite``), and a reader. The users
@@ -26,16 +27,28 @@ def server(side):
     return {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": f"mongo-{side}"},
             "spec": {"replicas": 1, "strategy": {"type": "Recreate"},
                      "selector": {"matchLabels": labels},
-                     "template": {"metadata": {"labels": labels}, "spec": {"containers": [{
+                     "template": {"metadata": {"labels": labels}, "spec": {
+                         "initContainers": [{  # mongod accepts only a key file of its own
+                             "name": "key", "image": MONGO, "imagePullPolicy": "IfNotPresent",
+                             "securityContext": {"runAsUser": 999, "runAsGroup": 999},
+                             "command": ["sh", "-c", "cp /key-secret/keyfile /key/keyfile && "
+                                         "chmod 400 /key/keyfile"],
+                             "volumeMounts": [{"name": "key-secret", "mountPath": "/key-secret",
+                                               "readOnly": True},
+                                              {"name": "key", "mountPath": "/key"}]}],
+                         "containers": [{
                          "name": "mongo", "image": MONGO, "imagePullPolicy": "IfNotPresent",
                          "args": ["--wiredTigerCacheSizeGB", "0.25", "--quiet",
+                                  "--replSet", f"rs-{side}", "--oplogSize", "128",
+                                  "--keyFile", "/key/keyfile",
                                   # TLS offered (not required): a CA of the test's own
                                   "--tlsMode", "preferTLS",
                                   "--tlsCertificateKeyFile", "/etc/mongo-tls/server.pem",
                                   "--tlsCAFile", "/etc/mongo-tls/ca.pem",
                                   "--tlsAllowConnectionsWithoutCertificates"],
                          "volumeMounts": [{"name": "tls", "mountPath": "/etc/mongo-tls",
-                                           "readOnly": True}],
+                                           "readOnly": True},
+                                          {"name": "key", "mountPath": "/key", "readOnly": True}],
                          "env": [{"name": "MONGO_INITDB_ROOT_USERNAME", "value": ADMIN[0]},
                                  {"name": "MONGO_INITDB_ROOT_PASSWORD", "value": ADMIN[1]}],
                          "ports": [{"containerPort": 27017}],
@@ -43,7 +56,25 @@ def server(side):
                          "resources": {"requests": {"cpu": "50m", "memory": "128Mi"},
                                        "limits": {"memory": "768Mi"}}}],
                          "volumes": [{"name": "tls", "secret": {"secretName": "mongo-tls",
-                                                                "defaultMode": 0o444}}]}}}}
+                                                                "defaultMode": 0o444}},
+                                     {"name": "key-secret", "secret": {
+                                         "secretName": "mongo-key", "defaultMode": 0o444}},
+                                     {"name": "key", "emptyDir": {}}]}}}}
+
+
+def _initiate(pymongo, client, name):
+    """Make the server a one-member replica set and wait until it is primary."""
+    try:
+        client.admin.command("replSetInitiate", {"_id": name, "members": [
+            {"_id": 0, "host": "localhost:27017"}]})
+    except pymongo.errors.OperationFailure as error:
+        if error.code != 23:  # AlreadyInitialized
+            raise
+    deadline = time.monotonic() + 60
+    while not client.admin.command("hello").get("isWritablePrimary"):
+        if time.monotonic() > deadline:
+            raise AssertionError(f"{name} did not become primary")
+        time.sleep(0.5)
 
 
 def _forward(context, namespace, deployment):
@@ -83,6 +114,10 @@ def mongo_servers(tmp_path_factory):
         kubectl(context, "-n", namespace, "apply", "-f", "-", stdin=json.dumps({
             "apiVersion": "v1", "kind": "Secret", "metadata": {"name": "mongo-tls"},
             "data": {k: base64.b64encode(v).decode() for k, v in bundle.items()}}))
+        key = base64.b64encode(os.urandom(512))  # the members' shared key (one member each)
+        kubectl(context, "-n", namespace, "apply", "-f", "-", stdin=json.dumps({
+            "apiVersion": "v1", "kind": "Secret", "metadata": {"name": "mongo-key"},
+            "data": {"keyfile": base64.b64encode(key).decode()}}))
         ca_file = tmp_path_factory.mktemp("mongo-tls") / "ca.pem"
         ca_file.write_bytes(material["ca.pem"])
         ports, clients = {}, {}
@@ -104,6 +139,7 @@ def mongo_servers(tmp_path_factory):
                     if time.monotonic() > deadline:
                         raise
                     time.sleep(1)
+            _initiate(pymongo, clients[side], f"rs-{side}")
         yield {"ports": ports, "admin": clients, "pymongo": pymongo, "ca_file": str(ca_file)}
     finally:
         for process in forwards:

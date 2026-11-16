@@ -5,7 +5,7 @@ a business invariant being a registered check of the target's documents.
 An execution-file entry (``engine: mongodb``)::
 
     {"tenant_id": "...", "application_id": "...", "adapter_id": "...",
-     "engine": "mongodb", "mode": "offline_copy",
+     "engine": "mongodb", "mode": "offline_copy",     # or change_stream
      "mongodb": {"servers": {"source": "<settings file>", "target": "<settings file>"},
                  "databases": {"source": "orders", "target": "orders"},
                  "collections": ["orders", "idempotency_results"],
@@ -15,8 +15,14 @@ An execution-file entry (``engine: mongodb``)::
                  "invariants": {"ORDER-01": {"collection": "orders",
                                              "unique": ["customer", "idempotency_key"]}},
                  "scratch_db": "sova_restore", "other_db": "shop",
-                 "zone_of": {"target": "<zone>"}},
+                 "zone_of": {"target": "<zone>"},
+                 "catch_up_seconds": 120},                    # change_stream only
      "route": {...}}
+
+``change_stream`` moves the documents by snapshot and the source's change
+stream (the source a replica set): the write stop no longer grows with the
+data. ``catch_up_seconds`` bounds the wait for the last changes once the
+source is fenced.
 
 A settings file is JSON: ``host``, ``port``, ``username``, ``password``,
 ``authSource``, and for TLS ``tls_ca`` (the server's certificate and host name
@@ -26,6 +32,7 @@ are then verified).
 import json
 from pathlib import Path
 
+from sova.adapters.mongodb_change_stream import MongoChangeStreamHandoffAdapter
 from sova.adapters.mongodb_handoff import MongoDatabaseHandoffAdapter, account
 from sova.adapters.mongodb_probes import MongoDatabaseProbes
 from sova.domain.contracts import ContractError
@@ -33,7 +40,9 @@ from sova.service.postgres_execution import data_measure
 from sova.service.worker import Execution
 
 _KEYS = {"servers", "databases", "collections", "writers", "app_user", "admin_user",
-         "user_password_files", "invariants", "scratch_db", "other_db", "zone_of"}
+         "user_password_files", "invariants", "scratch_db", "other_db", "zone_of",
+         "catch_up_seconds"}
+MODES = frozenset({"offline_copy", "change_stream"})
 _SERVER_KEYS = {"host", "port", "username", "password", "authSource", "tls_ca"}
 
 
@@ -47,14 +56,16 @@ def mongodb_measure(probes, *, scratch, other_db):
     return measure
 
 
-def mongodb_factory(adapter_id, resolve):
+def mongodb_factory(adapter_id, resolve, *, change_stream=False):
     def factory(tenant_id, application_id, revision):
         d = resolve(tenant_id, application_id)
-        adapter = MongoDatabaseHandoffAdapter(
-            adapter_id, connect=d["connect"], source_db=d["databases"]["source"],
-            target_db=d["databases"]["target"], collections=d["collections"],
-            writers=d["writers"], app_user=d["app_user"], admin_user=d["admin_user"],
-            route=d["route"])
+        common = dict(connect=d["connect"], source_db=d["databases"]["source"],
+                      target_db=d["databases"]["target"], collections=d["collections"],
+                      writers=d["writers"], app_user=d["app_user"],
+                      admin_user=d["admin_user"], route=d["route"])
+        adapter = MongoChangeStreamHandoffAdapter(
+            adapter_id, catch_up_seconds=d.get("catch_up_seconds", 120), **common) \
+            if change_stream else MongoDatabaseHandoffAdapter(adapter_id, **common)
         probes = MongoDatabaseProbes(
             connect=d["connect"], connect_as=d["connect_as"], databases=d["databases"],
             collections=d["collections"], writers=d["writers"], app_user=d["app_user"],
@@ -121,6 +132,7 @@ def mongodb_resolver(app, *, route_for):
         "route": route_for(app["route"]), "invariants": entry.get("invariants"),
         "scratch_db": entry.get("scratch_db", "sova_restore"),
         "other_db": entry.get("other_db"),
+        "catch_up_seconds": entry.get("catch_up_seconds", 120),
         "zone_of": (lambda side: zones.get(side)) if zones else None}
 
     def resolve(tenant_id, application_id):

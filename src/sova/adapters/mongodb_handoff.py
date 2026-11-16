@@ -275,6 +275,9 @@ class MongoDatabaseHandoffAdapter:
     def _check_verify_return_target(self):
         return self._fenced("target")
 
+    def _source_read_concern(self):
+        return None  # the database's own; the source is fenced when this copy counts
+
     def _copy(self):
         from bson.raw_bson import RawBSONDocument
 
@@ -285,7 +288,9 @@ class MongoDatabaseHandoffAdapter:
         for collection in self.collections:
             target[collection].delete_many({})
             batch = []
-            for document in source.get_collection(collection, codec_options=raw).find(
+            for document in source.get_collection(
+                    collection, codec_options=raw,
+                    read_concern=self._source_read_concern()).find(
                     {}, sort=[("_id", 1)], batch_size=_BATCH):
                 batch.append(document)
                 if len(batch) >= _BATCH:

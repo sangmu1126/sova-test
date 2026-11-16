@@ -538,3 +538,45 @@ def test_a_mongodb_database_gets_the_database_adapter(tmp_path):
                      route_for=lambda spec: FakeRoute())[0].build(
             "tenant-a", "orders", "mongodb-db", None)
     close()
+
+
+def test_a_mongodb_change_stream_mode_gets_the_change_capture_adapter(tmp_path):
+    pytest.importorskip("pymongo")
+    server = write(tmp_path, "mongo.json", json.dumps({
+        "host": "orders-db", "port": 27017, "username": "sova-admin", "password": "x"}))
+    app = {"tenant_id": "tenant-a", "application_id": "orders", "adapter_id": "mongodb-cdc",
+           "engine": "mongodb", "mode": "change_stream",
+           "mongodb": {"servers": {"source": server, "target": server},
+                       "databases": {"source": "orders", "target": "orders_new"},
+                       "collections": ["orders"], "writers": ["orders-app@admin"],
+                       "app_user": "orders-app@admin", "admin_user": "sova-admin@admin",
+                       "catch_up_seconds": 30},
+           "route": {}}
+    catalog, close = catalog_from({"version": 1, "applications": [app]},
+                                  route_for=lambda spec: FakeRoute())
+    adapter = catalog.build("tenant-a", "orders", "mongodb-cdc", None).adapter
+    assert type(adapter).__name__ == "MongoChangeStreamHandoffAdapter"
+    assert adapter.catch_up_seconds == 30
+    close()
+    app["mongodb"]["catch_up_seconds"] = 0
+    with pytest.raises(ContractError, match="catch_up_seconds"):
+        catalog_from({"version": 1, "applications": [app]},
+                     route_for=lambda spec: FakeRoute())[0].build(
+            "tenant-a", "orders", "mongodb-cdc", None)
+    for engine, entry in (("redis", "redis"), ("rabbitmq", "rabbitmq")):  # no change log
+        with pytest.raises(ContractError, match="mode offline_copy"):
+            catalog_from({"version": 1, "applications": [{
+                "tenant_id": "tenant-a", "application_id": "orders", "adapter_id": "x",
+                "engine": engine, "mode": "change_stream", entry: {}, "route": {}}]},
+                route_for=lambda spec: FakeRoute())
+
+
+def test_a_resume_token_is_read_for_its_cluster_time():
+    from sova.adapters.mongodb_change_stream import token_time
+
+    # 0x82, then seconds 0x6578a1b2 and increment 3 big-endian, then the rest
+    token = {"_data": "826578A1B2000000032B022C0100296E5A1004"}
+    assert token_time(token) == (0x6578A1B2, 3)
+    for bad in ({"_data": "8265"}, {"_data": "C3" + "0" * 30}, {"_data": "82zz" + "0" * 30},
+                {"_data": 7}, {}, None, "826578A1B200000003"):
+        assert token_time(bad) is None, bad
