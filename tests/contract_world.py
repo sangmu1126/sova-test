@@ -52,7 +52,8 @@ class Store:
         return found[0]
 
 
-ENGINE_VERSIONS = {"postgresql": "18.4", "mysql": "8.4.13", "kubernetes-volume": "1.33"}
+ENGINE_VERSIONS = {"postgresql": "18.4", "mysql": "8.4.13", "kubernetes-volume": "1.33",
+                   "redis": "9.1.3"}
 
 
 def profiles(engine="postgresql"):
@@ -79,7 +80,8 @@ def build_world(now, *, contract=None, strategy="offline-copy", operations=None,
         source, target = target, source
     operations = operations or required_operations(strategy) or ("copy_content",)
     manifest = CapabilityManifest(
-        {"postgresql": "pg-", "mysql": "mysql-", "kubernetes-volume": "volume-"}[engine] + strategy, "1.0.0", "a" * 64,
+        {"postgresql": "pg-", "mysql": "mysql-", "kubernetes-volume": "volume-",
+         "redis": "redis-"}[engine] + strategy, "1.0.0", "a" * 64,
         strategy, "1.0.0",
         tuple(operations), (MigrationProfile.SINGLE_AUTHORITY,), properties,
     )

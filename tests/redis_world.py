@@ -85,19 +85,20 @@ class RedisWorld:
         redis = self.b["redis"]
         client = as_user(self.b, self._side(side), self.writers[writer])
         try:
-            client.execute_command("MULTI")
+            try:  # the first command logs in: no other command is assumed allowed
+                client.execute_command("MULTI")
+            except redis.exceptions.AuthenticationError:
+                return False  # the user is off or does not exist on that server
+            except redis.exceptions.NoPermissionError:  # no transactions: try a write that
+                client.set(self.prefix + "sova-probe-short", "1", nx=True, px=1000)  # expires
+                return True
             try:
                 client.execute_command("SET", self.prefix + "sova-probe", "1")
                 return True
-            except redis.exceptions.NoPermissionError:
-                return False
             finally:
                 client.execute_command("DISCARD")  # the write is checked; nothing stays
-        except (redis.exceptions.AuthenticationError, redis.exceptions.ResponseError) as error:
-            if "WRONGPASS" in str(error) or "invalid username-password" in str(error) or \
-                    isinstance(error, redis.exceptions.AuthenticationError):
-                return False  # the user is off or does not exist on that server
-            raise
+        except redis.exceptions.NoPermissionError:
+            return False
         finally:
             client.close()
 

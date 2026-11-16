@@ -329,3 +329,44 @@ def test_sessions_drain_only_behind_a_service_selector(tmp_path):
                      route_for=lambda spec: FakeServiceRoute(),
                      controls_for=fake_volume_controls)[0].build(
             "tenant-a", "game", "game-sessions", None)
+
+
+def redis_application(tmp_path, **changes):
+    server = write(tmp_path, "redis.json", json.dumps({"host": "127.0.0.1", "port": 6379,
+                                                       "username": "sova-admin",
+                                                       "password": "x"}))
+    entry = {"servers": {"source": server, "target": server}, "prefixes": ["board:"],
+             "writers": ["board-app", "board-batch"], "app_user": "board-app",
+             "admin_user": "sova-admin", "sets": {"sessions": "board:session:"},
+             "routes": ["src", "tgt"]}
+    app = {"tenant_id": "tenant-a", "application_id": "board", "adapter_id": "redis-keyspace",
+           "engine": "redis", "mode": "offline_copy", "redis": entry,
+           "route": {"kind": "kubernetes_service", "registration_file": "unused",
+                     "service": "board", "sides": {}}}
+    for key, value in changes.items():
+        (entry if key.startswith("redis.") else app)[key.removeprefix("redis.")] = value
+    return app
+
+
+def test_a_redis_keyspace_gets_the_keyspace_adapter(tmp_path):
+    pytest.importorskip("redis")
+    catalog, close = catalog_from({"version": 1, "applications": [redis_application(tmp_path)]},
+                                  route_for=lambda spec: FakeRoute())
+    execution = catalog.build("tenant-a", "board", "redis-keyspace", None)
+    assert type(execution.adapter).__name__ == "RedisKeyspaceHandoffAdapter"
+    close()
+
+
+@pytest.mark.parametrize("changes", [
+    {"redis.prefixes": ["board:*:sessions"]},  # a glob, not a prefix
+    {"redis.app_user": "someone-else"},
+    {"redis.routes": ["src"]},
+    {"redis.unexpected": True},
+    {"mode": "logical_replication"},
+])
+def test_a_redis_entry_that_does_not_add_up_is_refused(tmp_path, changes):
+    pytest.importorskip("redis")
+    with pytest.raises(ContractError):
+        catalog = catalog_from({"version": 1, "applications": [
+            redis_application(tmp_path, **changes)]}, route_for=lambda spec: FakeRoute())[0]
+        catalog.build("tenant-a", "board", "redis-keyspace", None)

@@ -52,10 +52,11 @@ _APP_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode", "dat
              "app_role", "writer_roles", "tables", "schema_sql_file", "probe_insert",
              "source_conninfo_file", "route", "zone_of"}
 _REQUIRED = _APP_KEYS - {"role_password_files", "source_conninfo_file", "engine", "zone_of"}
-_KUBERNETES_ENGINES = {
+_UNIT_ENGINES = {  # engines whose entries carry their own keys (see each module)
     "kubernetes-volume": {"volume", "route"},
     "kubernetes-session": {"session", "route"},
-    "composite": {"components", "data"}}
+    "composite": {"components", "data"},
+    "redis": {"redis", "route"}}
 _UNIT_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode"}
 _MYSQL_SETTINGS = {"host", "port", "user", "password", "ssl_ca", "ssl_verify_identity",
                    "connect_timeout"}
@@ -177,11 +178,12 @@ def _mysql_connections(databases, passwords):
     return admin, lambda: None, connect_as
 
 
-def _kubernetes_resolver(app, *, route_for, controls_for):
-    """A unit run by Kubernetes adapters: (factory of its Execution, close).
+def _unit_resolver(app, *, route_for, controls_for):
+    """A unit whose entry carries its own keys: (factory of its Execution, close).
 
-    Only the offline-copy template applies: a file system and in-memory
-    sessions have no change log to follow while the source still serves."""
+    Their mode is offline_copy: a file system, in-memory sessions and a
+    Redis-protocol keyspace have no change log to follow while the source
+    still serves (a snapshot-cdc plan still runs: its sync copies again)."""
     from sova.service.composite_execution import (
         composite_resolver,
         session_execution,
@@ -190,8 +192,13 @@ def _kubernetes_resolver(app, *, route_for, controls_for):
     from sova.service.volume_execution import controls_from, volume_factory, volume_resolver
 
     engine = app["engine"]
-    if set(app) - _UNIT_KEYS - _KUBERNETES_ENGINES[engine] or app.get("mode") != "offline_copy":
+    if set(app) - _UNIT_KEYS - _UNIT_ENGINES[engine] or app.get("mode") != "offline_copy":
         raise ContractError(f"{engine} entry: known keys and mode offline_copy only")
+    if engine == "redis":
+        from sova.service.redis_execution import redis_factory, redis_resolver
+
+        resolve, close = redis_resolver(app, route_for=route_for)
+        return redis_factory(app["adapter_id"], resolve), close
     controls_for = controls_for or controls_from
     if engine == "kubernetes-volume":
         resolve, close = volume_resolver(app, route_for=route_for, controls_for=controls_for)
@@ -214,8 +221,8 @@ def catalog_from(document, *, route_for=kubernetes_route, controls_for=None):
     by_adapter, kept = {}, []
     for app in apps:
         engine = app.get("engine") if type(app) is dict else None
-        if engine in _KUBERNETES_ENGINES:
-            resolve, close = _kubernetes_resolver(app, route_for=route_for,
+        if engine in _UNIT_ENGINES:
+            resolve, close = _unit_resolver(app, route_for=route_for,
                                                   controls_for=controls_for)
         else:
             resolve, close = application_resolver(app, route_for=route_for)
@@ -230,7 +237,7 @@ def catalog_from(document, *, route_for=kubernetes_route, controls_for=None):
         entry["apps"][key] = resolve
 
     def factory_of(adapter_id, entry):
-        if entry["kind"][0] in _KUBERNETES_ENGINES:  # each application's own factory
+        if entry["kind"][0] in _UNIT_ENGINES:  # each application's own factory
             def build(tenant_id, application_id, revision):
                 found = entry["apps"].get((tenant_id, application_id))
                 if found is None:
