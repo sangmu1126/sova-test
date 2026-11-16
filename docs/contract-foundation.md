@@ -1278,7 +1278,7 @@ PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 ad
 
 - MySQL TLS probe는 구현했지만, 로컬 서버에 TLS가 없어 실측하지 않았다.
 - MySQL 위치(zone)는 DB에 붙일 표식이 없어, 제공자나 운영 인벤토리에서 읽는다.
-- MySQL 변경 데이터 캡처(binlog) adapter는 없다. offline copy만 있다.
+- MySQL 변경 데이터 캡처는 뒤에 서버 복제 기반으로 추가했다([아래](#mysql-변경-캡처-서버-복제-기반-snapshot-cdc-2026-11-17)).
 - Kafka 복사는 삭제 정책 토픽만 받는다. 압축 전용 토픽은 DeleteRecords를 쓸 수 없어서, 준비 단계에서 아무것도 바꾸기 전에 거부한다(시험함).
 - Kafka와 RabbitMQ는 한 클러스터·한 브로커 안의 두 토픽·두 vhost로만 시험했다.
 - Kafka와 RabbitMQ는 아직 워커 카탈로그와 control plane 전체 흐름에 연결하지 않았다. 메시지 단위용 계약 템플릿과 의무 probe가 필요하다.
@@ -1468,6 +1468,31 @@ Kubernetes 진입점의 표준은 Ingress에서 Gateway API로 옮겨 갔다(ing
 - `DUMP` 형식은 같은 계열·호환 버전 사이에서만 복원된다. 예를 들어 Redis 7.4 이후 형식을 Valkey가 읽는지는 버전마다 다르다.
 - 해시 필드 단위 만료(HEXPIRE)는 복사되지만 비교에는 넣지 않았다.
 
+## MySQL 변경 캡처: 서버 복제 기반 snapshot-cdc (2026-11-17)
+
+MySQL은 지금까지 offline copy만 있어서, 쓰기 정지가 데이터 크기에 비례했다. `MySqlReplicationAdapter`는 서버 자신의 복제로 그 비례를 없앤다. writer, 차단, 활성화, 비교는 offline copy adapter와 같고, 데이터가 언제 움직이는지만 다르다.
+
+- **`start_sync`.** 원본의 일관 스냅샷과 binlog 위치를 함께 잡는다. mysqldump처럼 전역 읽기 잠금을 스냅샷을 열고 위치를 읽는 순간만 건다. 원본이 계속 서비스하는 동안 그 스냅샷으로 복사한다. 그다음 목적지 서버가 바로 그 위치부터 단위 전용 복제 채널로 받는다. 채널은 원본 DB만 받고, 이름을 목적지 DB로 바꾼다. 행 이벤트로 받으므로 트리거가 두 번 돌지 않는다.
+- **`apply_final_changes`(차단 뒤).** 원본의 현재 위치를 읽고, 채널이 거기까지 적용하기를 기다린다(상한 있음). 그다음 채널을 지우고 `AUTO_INCREMENT` 카운터를 맞춘다. 채널이 없어지고 내용·카운터가 같아야 완료로 읽는다. sync를 하지 않은 계획이면 여기서 전체를 복사한다.
+- **중단.** `release_replication`이 채널을 지운다. 잊힌 채널은 원본의 binlog를 붙잡고, 목적지에 계속 쓰기 때문이다.
+- **실측(서버 두 대, 2만 행 + 업무 쓰기).** 쓰기 정지 동안 목적지 서버가 쓴 행 수는 복제 방식에서 **0**이었다(바뀐 행은 정지 전에 이미 복제로 도착). offline copy는 **20,158**이었다. control plane 전체 흐름(snapshot-cdc 템플릿)에서 쓰기 정지는 1.69초였고, 모든 의무가 pass였다. 복원 훈련은 데이터가 정지 전에 목적지에 있으므로 정지 전에 측정됐다(ADR-0003).
+- **시험이 잡은 것.**
+  - 복제 필터가 바꾸기 전 이름을 가리키는 결함을 넣자 2건이 실패했다.
+  - 마지막 카운터 복사를 빼는 결함은 처음에는 잡지 못했다. 커밋된 삽입은 복제가 카운터를 올리기 때문이다. 카운터 복사가 실제로 필요한 경우는 원본에서 **롤백된** 삽입이다(번호는 소비되지만 binlog에는 남지 않음). 그래서 시험을 그 경우로 바꿨고, 이제 잡는다.
+  - 서버 두 대에서 기존 MySQL 복원 훈련 probe의 결함이 드러났다. scratch DB를 목적지 서버에 만들고, 읽을 때는 scratch DB 이름이 매핑된 서버로 접속했다. 서버가 하나일 때는 보이지 않았다. 만든 서버에서 읽게 고쳤다.
+- **실행 설정.** `engine: mysql`, `mode: replication`. 다음을 함께 준다: 목적지 서버가 보는 원본 주소, 운영자가 원본에 만든 복제 계정(`REPLICATION SLAVE`), 그 비밀번호 파일, 선택적 TLS.
+
+| 시험 | 결과 |
+|---|---|
+| 적합성 키트(서버 두 대, 두 템플릿) + 고유 4 | 13 PASS |
+| control plane 전체 흐름(snapshot-cdc) | 1 PASS, 기존 단일 서버 MySQL E2E도 PASS |
+
+**한계.**
+
+- 시험 서버에 TLS가 없어, 복제 채널의 TLS(`replication_tls`)는 실측하지 않았다.
+- 원본 쪽 스냅샷은 순간적인 전역 읽기 잠금이 필요하다(`RELOAD`). 관리형 서비스에서 이 권한이 없으면 대안(`performance_schema.log_status`, `BACKUP_ADMIN`)을 써야 한다.
+- 복제 중 원본의 DDL은 받는다. 다만 계획은 구조가 같다는 확인 뒤에만 활성화한다.
+
 ## 로컬 통합 시험 환경
 
 통합 시험에 필요한 서비스를 kind 클러스터 하나에 모아 `infra/test-env/test-env.sh up`·`down`으로 올리고 내린다. 들어 있는 것은 다음과 같다.
@@ -1530,7 +1555,8 @@ Kubernetes 진입점의 표준은 Ingress에서 Gateway API로 옮겨 갔다(ing
 | GCP 전체 탈출 | 실환경 시험 통과 | 데이터·객체·비밀·계정·compute를 한 계약으로 |
 | 운영 서비스: 등록 API·승인·수용·워커 | 모의 시험 통과 | 실 PostgreSQL·Keycloak·Object Lock witness. 역할 여섯, 계획자 자기 승인 금지, revision 비교 후 쓰기 |
 | control plane 이중화(API ×2, 워커 ×2)·워커 장애 복구 | 모의 시험 통과 | 로컬 kind에 실제 배포. 경로 전환 중 워커 Pod 삭제 뒤 증명·readback으로 완료. 관리형 클러스터 배포는 미시험 |
-| MySQL 간 offline copy adapter·probe | 모의 시험 통과 | 로컬 MySQL 8.4.13. 적합성 키트와 control plane 전체 흐름. TLS probe는 미실측, CDC 없음 |
+| MySQL 간 offline copy adapter·probe | 모의 시험 통과 | 로컬 MySQL 8.4.13. 적합성 키트와 control plane 전체 흐름. TLS probe는 미실측 |
+| MySQL 변경 캡처(서버 복제, snapshot-cdc) | 모의 시험 통과 | 시험용 MySQL 8.4.13 두 대. 적합성 키트, 정지 구간 쓰기 0행(offline 20,158행), control plane 전체 흐름 |
 | Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL), 한 클러스터의 두 토픽. control plane 미연결 |
 | RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8, 한 브로커의 두 vhost. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 미연결 |
 | Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). 관리형 미실측 |
