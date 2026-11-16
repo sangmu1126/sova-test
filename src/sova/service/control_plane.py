@@ -23,6 +23,7 @@ import json
 from sova.adapters.ed25519_evidence import Ed25519EvidenceVerifier
 from sova.adapters.postgres_change_feed import PostgresChangeFeed
 from sova.adapters.postgres_compiled_plans import PostgresCompiledPlans
+from sova.adapters.postgres_evidence_observations import PostgresEvidenceObservations
 from sova.adapters.postgres_handoff_authority import PostgresHandoffAuthority
 from sova.adapters.postgres_handoff_claims import PostgresHandoffClaims
 from sova.adapters.postgres_operations import PostgresOperationRepository
@@ -54,6 +55,10 @@ class Role(StrEnum):
 
 
 class Forbidden(ContractError):
+    pass
+
+
+class NotFound(ContractError):
     pass
 
 
@@ -293,6 +298,39 @@ class ControlPlane:
                              "state": str(rec.state)}
                             for rev, action, actor, rec in store.history(application_id,
                                                                          unit_digest)]}
+
+    def evidence(self, principal, application_id):
+        """The latest signed result of each obligation the worker measured, with
+        the digest of the observation it judged and whether that is kept."""
+        tenant = self._require(principal, *Role)
+        identifier(application_id, "application_id")
+        with self._lifecycle(tenant).transaction() as conn:
+            rows = conn.execute(
+                """SELECT DISTINCT ON (document #>> '{evidence,obligation_id}')
+                       document #>> '{evidence,obligation_id}', document #>> '{evidence,result}',
+                       document #>> '{evidence,observed_at}',
+                       document #>> '{evidence,artifact_digest}', evidence_id,
+                       EXISTS (SELECT 1 FROM sova_control.evidence_observations o
+                               WHERE o.tenant_id=e.tenant_id
+                               AND o.application_id=e.application_id
+                               AND o.artifact_digest=e.document #>> '{evidence,artifact_digest}')
+                FROM sova_control.signed_security_evidence e
+                WHERE tenant_id=%s AND application_id=%s AND issuer_id=%s
+                ORDER BY document #>> '{evidence,obligation_id}', stored_at DESC""",
+                (tenant, application_id, self.settings.evidence_issuer)).fetchall()
+        return {"evidence": [
+            {"obligation_id": r[0], "result": r[1], "observed_at": r[2],
+             "artifact_digest": r[3], "evidence_id": r[4], "observation_kept": r[5]}
+            for r in rows]}
+
+    def observation(self, principal, application_id, digest):
+        """What a probe observed, by the digest its signed evidence names."""
+        tenant = self._require(principal, *Role)
+        found = PostgresEvidenceObservations(self.connect, tenant_id=tenant).get(
+            application_id, digest)
+        if found is None:
+            raise NotFound("No observation with this digest")
+        return found
 
     def abort(self, principal, application_id, plan_id, *, target_inactive_verified):
         tenant = self._require(principal, Role.OPERATOR)

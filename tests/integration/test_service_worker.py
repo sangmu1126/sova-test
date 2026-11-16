@@ -123,6 +123,39 @@ def test_a_worker_takes_an_admitted_handoff_to_completion(postgres_database, now
     assert (h["app"], h["unit"]) not in w.open_units(h["tenant"])  # done: nothing to take
 
 
+def test_what_each_probe_observed_is_kept_under_its_signed_digest(postgres_database, now,
+                                                                  business, tmp_path):
+    import hashlib
+
+    h = admitted(postgres_database, now, business, witness_dir=tmp_path)
+    worker(h, "worker-a").drive(h["tenant"], h["app"], h["unit"])
+    auditor = Principal("auditor-person", h["tenant"], frozenset({Role.AUDITOR}))
+    listed = h["plane"].evidence(auditor, h["app"])["evidence"]
+    assert {e["obligation_id"] for e in listed} >= {o.obligation_id
+                                                    for o in h["plan"].obligations}
+    assert all(e["result"] == "pass" and e["observation_kept"] for e in listed), listed
+    fence = next(e for e in listed if e["obligation_id"] == "fence.source_writes_denied")
+    seen = h["plane"].observation(auditor, h["app"], fence["artifact_digest"])
+    assert seen["observation"]["probe"] == "write_denied"
+    text = json.dumps(seen["observation"], sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False)
+    assert hashlib.sha256(text.encode()).hexdigest() == fence["artifact_digest"]
+    # Another tenant sees none of it.
+    stranger = Principal("auditor-person", "tenant-" + "0" * 32, frozenset({Role.AUDITOR}))
+    assert h["plane"].evidence(stranger, h["app"]) == {"evidence": []}
+    # The runtime role cannot store a text under another digest, nor change one.
+    with psycopg.connect(h["dsn"], user=h["role"]) as conn:
+        conn.execute("SELECT set_config('sova.tenant_id', %s, false)", (h["tenant"],))
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute("""INSERT INTO sova_control.evidence_observations
+                (tenant_id,application_id,artifact_digest,obligation_id,document)
+                VALUES(%s,%s,%s,'forged','{"probe":"forged"}')""",
+                         (h["tenant"], h["app"], fence["artifact_digest"][::-1]))
+        conn.rollback()
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute("UPDATE sova_control.evidence_observations SET document='{}'")
+
+
 def test_a_handoff_another_worker_holds_is_left_alone(postgres_database, now, business,
                                                       tmp_path):
     h = admitted(postgres_database, now, business, witness_dir=tmp_path)

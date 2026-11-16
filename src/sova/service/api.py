@@ -24,7 +24,7 @@ from sova.adapters.postgres_registrations import RegistrationConflict
 from sova.adapters.registration import registry_codec as codecs
 from sova.domain.contracts import ContractError
 from sova.service.auth import Unauthenticated
-from sova.service.control_plane import Forbidden, PlanRequest
+from sova.service.control_plane import Forbidden, NotFound, PlanRequest
 
 log = logging.getLogger("sova.api")
 MAX_BODY = 1_048_576
@@ -56,6 +56,10 @@ def create_app(plane, authenticate, *, ready=lambda: True):
     async def conflict(request, error):
         return JSONResponse({"error": "revision moved",
                              "current_revision": error.current_revision}, status_code=409)
+
+    @app.exception_handler(NotFound)
+    async def not_found(request, error):
+        return JSONResponse({"error": str(error)[:300]}, status_code=404)
 
     @app.exception_handler(ContractError)
     async def refused(request, error):
@@ -133,6 +137,14 @@ def create_app(plane, authenticate, *, ready=lambda: True):
     @app.get("/v1/tenants/{tenant}/applications/{application}/units/{unit}")
     def status(application: str, unit: str, who=Depends(principal)):
         return plane.status(who, application, unit)
+
+    @app.get("/v1/tenants/{tenant}/applications/{application}/evidence")
+    def evidence(application: str, who=Depends(principal)):
+        return plane.evidence(who, application)
+
+    @app.get("/v1/tenants/{tenant}/applications/{application}/observations/{digest}")
+    def observation(application: str, digest: str, who=Depends(principal)):
+        return plane.observation(who, application, digest)
 
     @app.post("/v1/tenants/{tenant}/applications/{application}/plans/{plan}/abort")
     def abort(application: str, plan: str, body: dict = Body(...), who=Depends(principal)):

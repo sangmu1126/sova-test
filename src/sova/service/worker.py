@@ -32,9 +32,10 @@ import time
 from uuid import uuid4
 
 from sova.adapters.postgres_compiled_plans import PostgresCompiledPlans
+from sova.adapters.evidence_bounds import bounded
 from sova.adapters.postgres_effects import PostgresEffectJournal
+from sova.adapters.postgres_evidence_observations import PostgresEvidenceObservations
 from sova.adapters.postgres_execution import PostgresExecutionOwnership
-from sova.adapters.postgres_handoff_probes import artifact_digest
 from sova.adapters.postgres_plans import PostgresLifecycleRepository
 from sova.adapters.postgres_signed_evidence import PostgresSignedEvidence
 from sova.adapters.postgres_verifier_registry import PostgresVerifierRegistry
@@ -166,11 +167,15 @@ class HandoffWorker:
     def _prove(self, tenant, application_id, plan, obligation_id, passed, observation):
         o = next(x for x in plan.obligations if x.obligation_id == obligation_id)
         observed = utc(self.clock()) - timedelta(milliseconds=1)
+        # The observation is kept, under the digest the signed record names, so
+        # what was measured can be read and checked against the signature.
+        digest = PostgresEvidenceObservations(self.connect, tenant_id=tenant).record(
+            application_id, o.obligation_id, bounded(observation, limit=60000))
         record = EvidenceRecord(
             f"ev-{uuid4().hex[:16]}", o.obligation_id, o.scope, plan.revisions,
             self.settings.evidence_verifier, observed, observed + EVIDENCE_LIFETIME,
             VerificationResult.PASS if passed else VerificationResult.FAIL, "observation",
-            artifact_digest(observation))
+            digest)
         registry = PostgresVerifierRegistry(self.connect, tenant_id=tenant,
                                             application_id=application_id)
         SignedEvidenceAuthority(PostgresSignedEvidence(self.connect, tenant_id=tenant),

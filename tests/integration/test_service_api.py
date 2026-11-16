@@ -93,6 +93,14 @@ def test_a_handoff_is_registered_planned_approved_and_admitted_over_http(api):
     r = c.get(f"{app_base}/units/{unit}", headers=i.token(t, "auditor"))
     assert r.status_code == 200 and r.json()["state"] == "SOURCE_ACTIVE"
     assert r.headers["x-request-id"]
+    # Nothing measured yet; an observation that does not exist is refused, and a
+    # digest that is not one never reaches the database.
+    r = c.get(f"{app_base}/evidence", headers=i.token(t, "auditor"))
+    assert r.status_code == 200 and r.json() == {"evidence": []}
+    r = c.get(f"{app_base}/observations/{'a' * 64}", headers=i.token(t, "auditor"))
+    assert r.status_code == 404
+    r = c.get(f"{app_base}/observations/not-a-digest", headers=i.token(t, "auditor"))
+    assert r.status_code == 422
 
 
 def test_tokens_are_checked_before_anything_else(api):

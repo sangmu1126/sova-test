@@ -47,6 +47,7 @@ MIGRATIONS = (
     "postgres_migration_programs_v1.sql",
     "postgres_registrations_v1.sql",
     "postgres_plan_requests_v1.sql",
+    "postgres_evidence_observations_v1.sql",
 )
 # (table, columns) the runtime role may UPDATE; None means the whole row.
 RUNTIME_UPDATES = (
