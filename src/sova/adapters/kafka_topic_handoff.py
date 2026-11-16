@@ -46,6 +46,7 @@ import hashlib
 import json
 from uuid import uuid4
 
+from sova.adapters.evidence_bounds import bounded
 from sova.domain.contracts import ContractError, EffectObservation, EffectStatus, canonical_json
 
 ACTIONS = frozenset({"stage_target", "verify_return_target", "start_sync", "pause_admission",
@@ -107,7 +108,7 @@ class KafkaTopicHandoffAdapter:
         return EffectObservation(
             command.scope, command.fingerprint,
             EffectStatus.APPLIED if holds else EffectStatus.UNKNOWN, now,
-            canonical_json({"action": command.action, **detail}, limit=65536))
+            canonical_json({"action": command.action, **bounded(detail)}, limit=8192))
 
     # -- clusters ----------------------------------------------------------------
     def _topic(self, side):

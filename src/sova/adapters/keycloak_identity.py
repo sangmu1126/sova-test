@@ -32,6 +32,7 @@ and keeps the readback unconfirmed, for a federation plan to handle.
 
 import httpx
 
+from sova.adapters.evidence_bounds import bounded
 from sova.domain.contracts import ContractError, EffectObservation, EffectStatus, canonical_json
 
 ACTIONS = frozenset({"migrate_identities"})
@@ -165,7 +166,7 @@ class KeycloakIdentityMigration:
         return EffectObservation(
             command.scope, command.fingerprint,
             EffectStatus.APPLIED if holds else EffectStatus.UNKNOWN, now,
-            canonical_json({"action": command.action, **detail}, limit=65536))
+            canonical_json({"action": command.action, **bounded(detail)}, limit=8192))
 
     # -- reading ---------------------------------------------------------------
     def _wanted(self, user, groups):

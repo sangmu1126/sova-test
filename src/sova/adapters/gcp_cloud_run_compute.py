@@ -22,6 +22,7 @@ service, its revisions and images is retirement, a separate approved step.
 import re
 import time
 
+from sova.adapters.evidence_bounds import bounded
 from sova.adapters.gcp_rest import GcpRest
 from sova.domain.contracts import ContractError, EffectObservation, EffectStatus, canonical_json
 
@@ -97,4 +98,4 @@ class CloudRunServiceCompute:
         return EffectObservation(
             command.scope, command.fingerprint,
             EffectStatus.APPLIED if stopped else EffectStatus.UNKNOWN, now,
-            canonical_json({"action": command.action, **detail}, limit=65536))
+            canonical_json({"action": command.action, **bounded(detail)}, limit=8192))

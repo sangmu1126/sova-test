@@ -17,7 +17,8 @@ checked here once, against any adapter, through a provider-specific *world*:
 * records removed on the source before the final copy are gone on the target;
 * only the application writer is activated on the target, every other
   registered writer stays denied, and the source never reopens;
-* evidence names the action and stays bounded.
+* evidence names the action and fits an observation (8 KiB), however much
+  the readback saw.
 
 A provider test module subclasses ``HandoffAdapterConformance`` and supplies a
 ``world`` fixture with:
@@ -91,7 +92,7 @@ def readback(adapter, action):
     assert observation.scope == cmd.scope
     assert observation.command_digest == cmd.fingerprint
     assert evidence["action"] == action
-    assert len(observation.evidence_json) <= 65536
+    assert len(observation.evidence_json.encode()) <= 8192  # what an observation accepts
     return observation.status
 
 

@@ -41,6 +41,7 @@ Credentials never move: migrated accounts set a new password at the target.
 
 import json
 
+from sova.adapters.evidence_bounds import bounded
 from sova.adapters.keycloak_identity import (
     SUBJECT,
     AccountBoundExceeded,
@@ -182,7 +183,7 @@ class KeycloakIdentityHandoff:
         return EffectObservation(
             command.scope, command.fingerprint,
             EffectStatus.APPLIED if holds else EffectStatus.UNKNOWN, now,
-            canonical_json({"action": command.action, **detail}, limit=65536))
+            canonical_json({"action": command.action, **bounded(detail)}, limit=8192))
 
     # -- shared readings -------------------------------------------------------
     def _locked(self, side, *, enabled):

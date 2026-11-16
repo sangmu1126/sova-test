@@ -49,6 +49,7 @@ message's ``expiration`` starts again on the target; the broker-added
 import time
 from urllib.parse import quote, unquote, urlsplit
 
+from sova.adapters.evidence_bounds import bounded
 from sova.domain.contracts import ContractError, EffectObservation, EffectStatus, canonical_json
 
 ACTIONS = frozenset({"stage_target", "verify_return_target", "start_sync", "pause_admission",
@@ -91,7 +92,7 @@ class RabbitMqQueueHandoffAdapter:
         return EffectObservation(
             command.scope, command.fingerprint,
             EffectStatus.APPLIED if holds else EffectStatus.UNKNOWN, now,
-            canonical_json({"action": command.action, **detail}, limit=65536))
+            canonical_json({"action": command.action, **bounded(detail)}, limit=8192))
 
     # -- brokers -----------------------------------------------------------------
     def _vhost(self, side):

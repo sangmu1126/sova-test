@@ -31,6 +31,7 @@ import re
 
 from botocore.exceptions import ClientError
 
+from sova.adapters.evidence_bounds import bounded
 from sova.adapters.kubernetes.handoff_controls import KubernetesHandoffControls
 from sova.domain.contracts import ContractError, EffectObservation, EffectStatus, canonical_json
 
@@ -111,7 +112,8 @@ class SecretsToKubernetes:
         return EffectObservation(
             command.scope, command.fingerprint,
             EffectStatus.APPLIED if holds else EffectStatus.UNKNOWN, now,
-            canonical_json({"action": command.action, "secrets": results}, limit=65536))
+            canonical_json(bounded({"action": command.action, "secrets": results}),
+                           limit=8192))
 
 
 class SecretsManagerToKubernetes(SecretsToKubernetes):

@@ -54,6 +54,7 @@ import hashlib
 import json
 import time
 
+from sova.adapters.evidence_bounds import bounded
 from sova.adapters.kubernetes.volume_agents import (
     AGENT_DIGEST,
     VolumeAgents,
@@ -151,7 +152,7 @@ class KubernetesVolumeHandoffAdapter:
         return EffectObservation(
             command.scope, command.fingerprint,
             EffectStatus.APPLIED if holds else EffectStatus.UNKNOWN, now,
-            canonical_json({"action": command.action, **detail}, limit=65536))
+            canonical_json({"action": command.action, **bounded(detail)}, limit=8192))
 
     # -- observation -------------------------------------------------------------
     @staticmethod
