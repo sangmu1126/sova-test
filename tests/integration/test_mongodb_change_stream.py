@@ -224,3 +224,21 @@ def test_a_database_is_handed_off_with_change_capture_by_the_control_plane(
     seen = h["observations"]
     print("measured:", json.dumps({k: seen[k] for k in sorted(seen)
                                    if k.startswith("availability.")}))
+
+
+def test_an_update_too_large_for_one_event_arrives_whole(world):
+    """A 9 MiB document updated: the event carries the document as it is now
+    and the change, over the 16 MiB BSON limit, so it comes in fragments."""
+    source = world.b["admin"]["source"][world.names["src"]]
+    source.orders.insert_one({"_id": 900001, "customer": "large", "idempotency_key": "large-1",
+                              "blob": "x" * (9 * 1024 * 1024)})
+    for action in ("stage_target", "start_sync"):
+        apply(world.adapter(), action)
+    source.orders.update_one({"_id": 900001}, {"$set": {"blob": "y" * (9 * 1024 * 1024)}})
+    window(world, ("apply_final_changes",))
+    observation = world.adapter().readback(
+        command("mongodb-handoff", "apply_final_changes"), datetime.now(UTC))
+    assert observation.status == EffectStatus.APPLIED, observation.evidence
+    assert observation.evidence["brought_level_by"] == "change_stream"
+    target = world.b["admin"]["target"][world.names["tgt"]].orders.find_one({"_id": 900001})
+    assert target["blob"][:1] == "y" and len(target["blob"]) == 9 * 1024 * 1024

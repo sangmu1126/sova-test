@@ -33,6 +33,10 @@ the data:
 * Dropping or renaming a collection of the unit, or dropping the database,
   while the stream runs ends the sync with an error. That is not a change to
   carry.
+* An event over the BSON size limit (an update of a large document carries
+  the whole document and the change) arrives split in fragments
+  (``$changeStreamSplitLargeEvent``); the fragments are joined and applied
+  as one event, and a rerun resumes only from a whole event.
 
 The source must be a replica set; a standalone server has no change stream.
 The stream only reads the oplog and keeps nothing on the source, so an abort
@@ -117,8 +121,18 @@ class MongoChangeStreamHandoffAdapter(MongoDatabaseHandoffAdapter):
         pipeline = [{"$match": {"$or": [{"ns.coll": {"$in": unit}}, {"to.coll": {"$in": unit}},
                                         {"operationType": {"$in": ["dropDatabase",
                                                                    "invalidate"]}}]}}]
+        pipeline.append({"$changeStreamSplitLargeEvent": {}})  # must be the last stage
         return raw.watch(pipeline, full_document="updateLookup", start_after=token,
                          start_at_operation_time=at, max_await_time_ms=100)
+
+    @staticmethod
+    def _joined(fragments):
+        """One event from its fragments: their top-level fields together (a
+        field is never split; each fragment holds whole fields)."""
+        event = {}
+        for fragment in fragments:
+            event.update({k: fragment[k] for k in fragment if k not in ("_id", "splitEvent")})
+        return event
 
     def _apply(self, target, event):
         kind = event["operationType"]
@@ -143,12 +157,21 @@ class MongoChangeStreamHandoffAdapter(MongoDatabaseHandoffAdapter):
         that keeps serving never gives an empty batch: waiting for one would
         chase its writes forever."""
         target = self.connect("target")[self.target_db]
-        deadline, applied = time.monotonic() + self.catch_up_seconds, 0
+        deadline, applied, fragments = time.monotonic() + self.catch_up_seconds, 0, []
         with self._stream(token, at) as stream:
             while True:
                 event = stream.try_next()
                 reached = token_time(stream.resume_token)
-                if event is not None:
+                if event is not None and event.get("splitEvent") is not None:
+                    fragments.append(event)
+                    split = event["splitEvent"]
+                    if split["fragment"] < split["of"]:
+                        event = None  # not whole yet: nothing applied, nothing kept
+                    else:
+                        event, fragments = self._joined(fragments), []
+                if fragments:  # inside a split event: neither stop nor keep here
+                    pass
+                elif event is not None:
                     self._apply(target, event)
                     applied += 1
                     if applied % _KEEP_EVERY == 0:  # a rerun resumes from here

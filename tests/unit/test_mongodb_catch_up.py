@@ -106,3 +106,47 @@ def test_a_structural_change_ends_the_sync():
     adapter = Scripted(Stream([(100, 0, "drop")]))
     with pytest.raises(ContractError, match="drop"):
         adapter._drain(token(1), (105, 0))
+
+
+class Split(Scripted):
+    def _apply(self, target, event):
+        self.applied.append(event)
+
+
+class Paired(Stream):
+    """``items``: (event or None, the resume token's time after it)."""
+
+    def __init__(self, items):
+        super().__init__([])
+        self.items = iter(items)
+
+    def try_next(self):
+        event, at = next(self.items)
+        self.resume_token = token(*at)
+        return event
+
+
+def fragment(n, of, **fields):
+    return {"operationType": "update", "splitEvent": {"fragment": n, "of": of}, **fields}
+
+
+def test_a_split_event_is_joined_and_applied_once():
+    adapter = Split(Paired([
+        (fragment(1, 2, documentKey={"_id": 1}, fullDocument={"_id": 1, "blob": "y"}), (100, 0)),
+        (fragment(2, 2, updateDescription={"updatedFields": {"blob": "y"}}), (100, 0)),
+        (None, (101, 0))]), catch_up_seconds=1)
+    _, applied = adapter._drain(token(1), (100, 0))
+    assert applied == 1 and len(adapter.applied) == 1
+    joined = adapter.applied[0]
+    assert joined["fullDocument"] == {"_id": 1, "blob": "y"} and "splitEvent" not in joined
+    assert joined["updateDescription"] == {"updatedFields": {"blob": "y"}}
+
+
+def test_the_catch_up_does_not_stop_inside_a_split_event():
+    adapter = Split(Paired([
+        (fragment(1, 2, documentKey={"_id": 1}, fullDocument={"_id": 1}), (100, 0)),
+        (None, (105, 0)),  # an empty batch past the point, between the fragments
+        (fragment(2, 2, updateDescription={}), (100, 0)),
+        (None, (105, 0))]), catch_up_seconds=1)
+    _, applied = adapter._drain(token(1), (101, 0))
+    assert applied == 1  # both fragments taken before it stopped
