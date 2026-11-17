@@ -1614,6 +1614,28 @@ MySQL은 지금까지 offline copy만 있어서, 쓰기 정지가 데이터 크�
   - **찾은 것.** 처음 구현은 sync가 끝나지 않았다. 적용 위치를 보이게 하고 재현하니, 다중 스레드 적용기가 이미 적용된 트랜잭션마다 약 1초씩 걸렸다(60건에 69초, 단일 스레드는 0.4초). 그래서 그 구간은 단일 스레드로 적용한다.
   - **목적지 설정의 보존.** 두 설정(`replica_exec_mode`, `replica_parallel_workers`)은 목적지 서버 전역 값이라 그동안 다른 채널에도 적용된다. 바꾸기 전 값을 목적지 DB에 저장했다가 sync, 최종 단계, 중단 때 거기서 되돌린다. 워커가 중간에 죽어도 운영자 설정이 남지 않는다.
   - **실측.** `RELOAD`·`FLUSH_TABLES`가 없는 원본 계정에서 기본 스냅샷은 거부됐다(1227). 잠금 없는 sync는 진행 중 쓰인 1,944건을 옮겼고, 운영자 설정도 되돌렸다. 기본 키 없는 테이블은 거부됐다. 결함 주입(멱등 구간 없음, 설정 미복원)은 모두 시험이 잡았다. 두 서버 MySQL 시험 20 PASS.
+- **GTID 모드가 다른 두 서버(추가, 2026-11-18).** 시험 환경의 두 서버는 모두 GTID를 켜 두었다. 그래서 MySQL 기본값인 GTID를 끈 원본이 시험되지 않았다. 실제로 돌려 보니 이런 결과가 나왔다.
+  - GTID를 켠 목적지는 익명 트랜잭션을 거부한다. 그래서 변경이 하나도 적용되지 않았다.
+  - `start_sync`는 이벤트가 오기 전이라 통과했다. 마지막 단계는 원인 없이 시간 초과로 끝났다.
+
+  이제 채널을 만들 때 두 서버의 `gtid_mode`를 읽어 다음과 같이 한다.
+
+  | 원본 \ 목적지 | OFF | OFF_PERMISSIVE · ON_PERMISSIVE | ON |
+  |---|---|---|---|
+  | OFF · OFF_PERMISSIVE | 그대로 | 그대로 | 채널이 GTID를 붙임 |
+  | ON_PERMISSIVE | **거부** | 그대로 | 채널이 GTID를 붙임(GTID가 있는 트랜잭션은 원래 GTID 유지) |
+  | ON | **거부** | 그대로 | 그대로 |
+
+  - **GTID를 붙이는 방법.** `ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS`에 채널 이름에서 유도한 UUID를 쓴다. `LOCAL`(목적지 자신의 UUID)을 쓰면 목적지의 `gtid_executed`에서 인계로 들어온 트랜잭션과 목적지 자신의 트랜잭션을 가를 수 없다.
+  - **거부.** 목적지가 GTID를 끄면 GTID가 있는 트랜잭션을 받지 못한다. 이 경우 스냅샷 전에 거부하고, 받을 수 있는 목적지 모드(두 PERMISSIVE 모드, 온라인으로 바꿀 수 있음)를 알린다.
+  - **readback.** `start_sync`의 readback은 두 모드와, 목적지가 보고하는 채널 설정(`performance_schema.replication_applier_configuration`)을 증거로 남긴다. 둘이 맞을 때만 통과한다.
+  - **시간 초과 메시지.** 두 따라잡기 시간 초과는 채널이 어디까지 읽고 적용했는지와 마지막 IO·SQL 오류를 담는다.
+  - **실측.** 원본만 GTID를 끈 서버 쌍을 세우고, 원본 모드를 온라인으로 OFF → OFF_PERMISSIVE → ON_PERMISSIVE로 올리며 각각 인계했다. 모두 통과했다.
+    - OFF·OFF_PERMISSIVE: 목적지의 `gtid_executed`에 채널 UUID가 보였다.
+    - ON_PERMISSIVE: 원본 UUID가 보였다.
+    - 목적지를 OFF로 내리자 거부됐고, 채널은 만들어지지 않았다.
+    - 결함 주입: GTID를 붙이지 않으면 시작 단계 readback이 UNKNOWN으로 막았다(2건). 거부를 빼면 1건이 실패했다.
+    - 기존 MySQL 두 서버 시험 77 PASS.
 - 복제 중 원본의 DDL은 받는다. 다만 계획은 구조가 같다는 확인 뒤에만 활성화한다.
 
 ## Kafka API·RabbitMQ의 control plane 연결 (2026-11-17)
@@ -1877,7 +1899,7 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 | 운영 서비스: 등록 API·승인·수용·워커 | 모의 시험 통과 | 실 PostgreSQL·Keycloak·Object Lock witness. 역할 여섯, 계획자 자기 승인 금지, revision 비교 후 쓰기 |
 | control plane 이중화(API ×2, 워커 ×2)·워커 장애 복구 | 모의 시험 통과 | 로컬 kind에 실제 배포. 경로 전환 중 워커 Pod 삭제 뒤 증명·readback으로 완료. 관리형 클러스터 배포는 미시험 |
 | MySQL 간 offline copy adapter·probe | 모의 시험 통과 | 로컬 MySQL 8.4.13. 적합성 키트와 control plane 전체 흐름. TLS probe는 시험용 서버 두 대에서 실측 |
-| MySQL 변경 캡처(서버 복제, snapshot-cdc) | 모의 시험 통과 | 시험용 MySQL 8.4.13 두 대. 적합성 키트, 정지 구간 쓰기 0행(offline 20,158행), control plane 전체 흐름 |
+| MySQL 변경 캡처(서버 복제, snapshot-cdc) | 모의 시험 통과 | 시험용 MySQL 8.4.13 두 대. 적합성 키트, 정지 구간 쓰기 0행(offline 20,158행), control plane 전체 흐름. 잠금 없는 스냅샷, GTID 모드가 다른 두 서버 |
 | Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL). 한 브로커의 두 토픽과, 서로 다른 kind 클러스터의 두 브로커 사이. control plane 전체 흐름 연결(2026-11-17). TLS 리스너만 연 Redpanda에서 검증된 TLS로 전체 흐름. snapshot-cdc 최종 단계는 sync 이후 레코드만 씀(정지 중 오프셋 11, offline 636). 압축 토픽은 키별 최신 값으로 비교 |
 | RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8. 한 브로커의 두 vhost와, 서로 다른 kind 클러스터의 두 브로커 사이. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 전체 흐름 연결(2026-11-17). TLS만 받는 브로커에서 AMQP·관리 API 모두 검증된 TLS로 전체 흐름 |
 | Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). agent 전송 port-forward 선택 가능(처리량 프록시와 같음). 관리형 미실측 |
