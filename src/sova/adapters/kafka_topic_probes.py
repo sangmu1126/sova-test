@@ -136,14 +136,25 @@ class KafkaTopicProbes:
         described = admin.list_topics(topic, timeout=self.timeout).topics.get(topic)
         if described is None or described.error is not None:
             return None
+        # Where each partition's committed records start and end, asked first:
+        # an empty partition is not read at all, and one is done at its last
+        # stable offset instead of after a fetch that waits for more.
+        parts = [k.TopicPartition(topic, p) for p in described.partitions]
+        starts = {tp.partition: f.result().offset for tp, f in admin.list_offsets(
+            {tp: k.admin.OffsetSpec.earliest() for tp in parts},
+            request_timeout=self.timeout).items()}
+        stable = {tp.partition: f.result().offset for tp, f in admin.list_offsets(
+            {tp: k.admin.OffsetSpec.latest() for tp in parts},
+            isolation_level=k.IsolationLevel.READ_COMMITTED,
+            request_timeout=self.timeout).items()}
         consumer = k.Consumer({**settings, "group.id": f"sova-probe-{uuid4().hex}",
                                "enable.auto.commit": False, "isolation.level": "read_committed",
-                               "enable.partition.eof": True})
+                               "enable.partition.eof": True, "fetch.wait.max.ms": 50})
         out = {p: [] for p in described.partitions}
         try:
-            consumer.assign([k.TopicPartition(topic, p, k.OFFSET_BEGINNING)
-                             for p in described.partitions])
-            todo, idle = set(described.partitions), 0
+            todo = {p for p in described.partitions if starts[p] < stable[p]}
+            consumer.assign([k.TopicPartition(topic, p, k.OFFSET_BEGINNING) for p in todo])
+            idle = 0
             while todo and idle < 20:
                 m = consumer.poll(0.5)
                 if m is None:
@@ -156,6 +167,8 @@ class KafkaTopicProbes:
                 kind, stamp = m.timestamp()
                 out[m.partition()].append((m.offset(), m.key(), m.value(),
                                            tuple(m.headers() or ()), stamp if kind == 1 else 0))
+                if m.offset() + 1 >= stable[m.partition()]:
+                    todo.discard(m.partition())
             if todo:
                 raise ContractError(f"Partitions not read to their end: {sorted(todo)}")
         finally:
