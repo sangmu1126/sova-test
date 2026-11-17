@@ -1279,8 +1279,8 @@ PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 ad
 - MySQL TLS probe는 뒤에 시험용 MySQL 두 대(자체 CA)에서 실측했다([아래 변경 캡처 절](#mysql-변경-캡처-서버-복제-기반-snapshot-cdc-2026-11-17)).
 - MySQL 위치(zone)는 DB에 붙일 표식이 없어, 제공자나 운영 인벤토리에서 읽는다.
 - MySQL 변경 데이터 캡처는 뒤에 서버 복제 기반으로 추가했다([아래](#mysql-변경-캡처-서버-복제-기반-snapshot-cdc-2026-11-17)).
-- Kafka 복사는 삭제 정책 토픽만 받는다. 압축 전용 토픽은 DeleteRecords를 쓸 수 없어서, 준비 단계에서 아무것도 바꾸기 전에 거부한다(시험함).
-- Kafka와 RabbitMQ는 한 클러스터·한 브로커 안의 두 토픽·두 vhost로만 시험했다.
+- ~~Kafka 복사는 삭제 정책 토픽만 받는다. 압축 전용 토픽은 준비 단계에서 거부한다~~ → 해결(2026-11-18, [아래 압축 토픽](#kafka-apirabbitmq의-control-plane-연결-2026-11-17)). 키별 최신 값으로 비교한다.
+- ~~Kafka와 RabbitMQ는 한 클러스터·한 브로커 안의 두 토픽·두 vhost로만 시험했다~~ → 서로 다른 kind 클러스터의 두 브로커 사이도 시험했다(2026-11-18, 아래).
 - Kafka와 RabbitMQ의 control plane 연결은 뒤에 추가했다([아래](#kafka-apirabbitmq의-control-plane-연결-2026-11-17)).
 
 ## 운영 서비스 (API·워커·배포, 2026-11-16)
@@ -1330,9 +1330,9 @@ PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 ad
 
 | 단위 | 구현 | 결과 |
 |---|---|---|
-| 볼륨(SQLite·업로드) | `KubernetesVolumeHandoffAdapter`, `volume_agent`, `KubernetesVolumeProbes` | 적합성 9 + 고유 3 + probe 실패 시험 3, **15 PASS**. 결함 주입 2건 검출 |
+| 볼륨(SQLite·업로드) | `KubernetesVolumeHandoffAdapter`, `volume_agent`, `KubernetesVolumeProbes` | 적합성 9 + 고유 3 + probe 실패 시험 3, **15 PASS**. 결함 주입 2건 검출. 이후 복원 훈련 충실도 시험 추가(2026-11-18) |
 | 메모리 세션(WebSocket) | `KubernetesSessionHandoffAdapter`, `KubernetesSessionProbes` | **3 PASS**. 결함 주입 1건 검출 |
-| 애플리케이션 한 단위 | `CompositeHandoffAdapter`, `composite_execution` | control plane 전체 흐름 **2 PASS**(볼륨 단독, 게시판 + 게임 서버) |
+| 애플리케이션 한 단위 | `CompositeHandoffAdapter`, `composite_execution` | control plane 전체 흐름 **2 PASS**(볼륨 단독, 게시판 + 게임 서버). 이후 snapshot-cdc 템플릿과 바쁜 게시판 시험 추가(2026-11-18) |
 
 **볼륨.**
 
@@ -1377,7 +1377,7 @@ PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 ad
 - 볼륨 비교는 매번 양쪽의 모든 바이트를 읽는다.
 - 블록 볼륨, 하드 링크, 특수 파일은 다루지 않는다.
 - ReadWriteOncePod 볼륨은 start_sync를 쓸 수 없다.
-- API 서버와 agent Pod 사이는 평문이다. 그래서 검증된 전송 암호화를 요구하는 계약은 이 단위에서 실패로 측정된다.
+- ~~API 서버와 agent Pod 사이는 평문이다~~ → 기본 전송(Pod 프록시)은 여전히 평문이다. `agent_transport: port-forward`를 쓰면 데이터가 TLS 안에서만 흐른다(2026-11-18, 아래).
 - 세션 drain은 이미 맺어진 연결이 유지되는 것에 기댄다. kube-proxy(iptables)와 Envoy Gateway에서 확인했고, 다른 Gateway 구현체·서비스 메시에서는 따로 확인해야 한다.
 - 관리형 클러스터에서는 실측하지 않았다. 클러스터 사이 복사는 아래처럼 로컬 kind 두 대로 실측했다.
 - 진입점은 Service selector와 Gateway API(아래 절)다. Ingress는 다루지 않는다.
@@ -1395,6 +1395,41 @@ probe끼리 agent를 공유하면 줄일 수 있지만, probe의 독립성과 �
 - 쓰기 agent는 `fsGroupChangePolicy: OnRootMismatch`를 쓴다. 볼륨 최상위의 소유권이 맞으면 마운트마다 파일 전체의 소유권을 바꾸지 않는다.
 - 결과: 복사 agent 준비 1.86초 → 0.83초. 쓰기 정지는 볼륨 단위 27.5초 → 20.4초, 애플리케이션 단위 32.5초 → 27.7초.
 - 남은 시간은 앱 자신의 종료와, 복원 훈련이 새 볼륨을 프로비저닝하는 시간이다. 새 볼륨을 실제로 만들어 채워 보는 것이 그 훈련의 의미라 그대로 두었다.
+
+**snapshot-cdc 템플릿(2026-11-18).** 볼륨 adapter에는 `start_sync`(서비스 중 사전 복사)가 처음부터 있었다. 하지만 control plane 전체 흐름은 offline-copy로만 시험했다. 계약의 전략을 snapshot-cdc로 두면 두 가지가 정지 구간 밖으로 나간다.
+
+- 파일 대부분이 정지 전에 목적지로 간다. 정지 구간 안의 복사는 그 뒤 바뀐 것만 옮긴다.
+- 복원 훈련이 정지 전에 측정된다(ADR-0003). offline-copy에서는 이것이 정지 구간 안의 가장 큰 항목이었다.
+
+| 단위 | offline-copy 쓰기 정지 | snapshot-cdc 쓰기 정지 | 클라이언트 완료 대기 |
+|---|---|---|---|
+| 볼륨(게시판) | 21.6~22.3초 | **14.2~15.0초** | 25.6초 → 17.4~18.4초 |
+| 애플리케이션(게시판 + 게임) | 27.8~29.2초 | **19.1~20.0초** | 31.2~33.5초 → 22.4~24.0초 |
+
+같은 환경에서 두 템플릿을 연달아 잰 값이다(각 2회). 볼륨 단위의 남은 약 14초는 다음과 같다.
+
+| 항목 | 시간 |
+|---|---|
+| 앱 정지 | 2.7초 |
+| 다른 writer 정지 | 2.7초 |
+| 쓰기 거부 probe | 3.0초 |
+| 변경분 복사 | 0.9초 |
+| 독립 비교 다섯 번 | 각 0.9~1.0초 |
+
+- **쓰기 거부 probe.** 3.0초 중 2초는 매니페스트를 2초 간격으로 두 번 읽는 관찰 창이다. 아무도 쓰지 않는다는 두 번째 관점(ADR-0007)이라 줄이지 않았다.
+- **비교.** 각 비교가 자기 agent를 띄운다. probe의 독립성 때문에 공유하지 않는다.
+
+**찾은 결함: 서비스 중인 게시판에서 정지 전 복원 훈련이 인계를 막음.** 사전 복사 내내 글을 쓰는 시험을 더하자, 계획이 정지 구간에 들어가기도 전에 SAFE_HOLD(CONTRACT_BREACH)로 멈췄다.
+
+- **원인.** 시험 앱은 요청마다 연결을 닫는다. SQLite는 마지막 연결이 닫힐 때 WAL을 checkpoint하고 지우므로, `board.db` 자체가 글마다 바뀐다. 서비스 중 복사는 복사 도중 바뀐 파일을 쓰지 않으므로, 목적지에 DB가 아직 없었다. 복원 훈련은 목적지 DB의 무결성이 `ok`이기를 요구했고, DB가 없으니 실패했다. 운영에서는 바쁜 앱일수록 인계가 시작조차 못 하게 된다.
+- **고친 것.** 세 가지를 고쳤다(cc559f2).
+  - 복원 훈련의 질문을 명세 FR-10(목적지 구성·보안 기능 검증)대로 바로잡았다. "복원이 목적지가 가진 것을 그대로 재현하는가"를 본다. 모든 항목의 매니페스트와 SQLite가 읽는 내용(무결성 결과·스키마·행)이 목적지와 복원본에서 같아야 한다. 목적지 DB의 상태(없음, 찢김, `ok`)는 증거에 그대로 남는다. DB가 온전한지는 정지 구간 안의 내용 비교가 양쪽 무결성 `ok`로 따로 요구한다. 계획을 지키는 것은 그쪽이다.
+  - 사전 복사가 복사 도중 바뀐 파일을 최대 세 번까지 다시 복사한다(`sync_passes`). 매번 바뀐 것만 옮긴다. 이 시험에서는 세 번 모두 정지 전에 DB가 무결성 `ok`로 자리 잡았고, 복원 훈련이 실제 SQLite 복원까지 확인했다.
+  - agent는 SQLite가 읽지 못하는 파일을 만나면 응답 없이 끊겼다(API 서버가 503을 냄). 이제 무결성 결과로 `unreadable: ...`를 돌려준다. Kubernetes 요청 거부 오류도 HTTP 상태와 사유 토큰(`missing`, `Forbidden` 같은 영문 토큰만, 자유 텍스트는 싣지 않음)을 담는다. 이번 원인도 이것으로 찾았다(`HTTP 409 missing`).
+- **검증.**
+  - 바쁜 게시판 시험 3회 연속 통과. 확인 응답을 받은 글이 모두 목적지에 무결성 `ok`로 도착했다.
+  - 복원 훈련 probe 시험: 온전함, 찢김(복원본도 같은 판정, 내용 비교는 실패), 없음.
+  - 결함 주입 2건(훈련이 `ok`를 요구, agent가 오류를 삼키지 않음)을 시험이 잡았다.
 
 **agent 구간의 전송 암호화(2026-11-18).** 기본 전송(`agent_transport: proxy`)은 API 서버의 Pod 프록시다. 이 경우 API 서버에서 agent Pod까지는 클러스터 네트워크의 평문 HTTP다. agent에 TLS를 붙여 `https:` Pod 프록시를 써도 API 서버는 Pod 인증서를 검증하지 않는다(Kubernetes의 Pod 프록시 동작). 그래서 "검증된" 전송은 되지 않는다.
 
@@ -1902,9 +1937,9 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 | MySQL 변경 캡처(서버 복제, snapshot-cdc) | 모의 시험 통과 | 시험용 MySQL 8.4.13 두 대. 적합성 키트, 정지 구간 쓰기 0행(offline 20,158행), control plane 전체 흐름. 잠금 없는 스냅샷, GTID 모드가 다른 두 서버 |
 | Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL). 한 브로커의 두 토픽과, 서로 다른 kind 클러스터의 두 브로커 사이. control plane 전체 흐름 연결(2026-11-17). TLS 리스너만 연 Redpanda에서 검증된 TLS로 전체 흐름. snapshot-cdc 최종 단계는 sync 이후 레코드만 씀(정지 중 오프셋 11, offline 636). 압축 토픽은 키별 최신 값으로 비교 |
 | RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8. 한 브로커의 두 vhost와, 서로 다른 kind 클러스터의 두 브로커 사이. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 전체 흐름 연결(2026-11-17). TLS만 받는 브로커에서 AMQP·관리 API 모두 검증된 TLS로 전체 흐름 |
-| Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). agent 전송 port-forward 선택 가능(처리량 프록시와 같음). 관리형 미실측 |
+| Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). agent 전송 port-forward 선택 가능(처리량 프록시와 같음). snapshot-cdc 템플릿으로 쓰기 정지 14.2~15.0초. 관리형 미실측 |
 | 메모리 세션 drain adapter | 모의 시험 통과 | 로컬 kind, WebSocket 시험 서버. 커널 TCP 테이블로 세션 계수, drain 상한 hold·terminate |
-| 애플리케이션 한 단위(볼륨 + 세션) | 모의 시험 통과 | 로컬 kind, 게시판 + 게임 서버를 control plane 전체 흐름으로. 쓰기 정지 32.5초 1회 |
+| 애플리케이션 한 단위(볼륨 + 세션) | 모의 시험 통과 | 로컬 kind, 게시판 + 게임 서버를 control plane 전체 흐름으로. 쓰기 정지 offline-copy 27.8~29.2초, snapshot-cdc 19.1~20.0초(각 2회) |
 | Redis 계열(Valkey) 키 공간 adapter·probe | 모의 시험 통과 | 로컬 kind의 Valkey 9.1.3 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 등록된 replica까지 차단(승격 뒤에도 유지 실측), Sentinel 시각 대조, Redis 8 → Valkey 9(내용 복사), 클러스터(primary 셋) |
 | MongoDB 데이터베이스 adapter·probe | 모의 시험 통과 | 시험용 MongoDB 8.0.34 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 단일 구성원 레플리카셋. 샤딩 클러스터 원본(복사·변경 캡처)과 목적지(복사) |
 | MongoDB 변경 캡처(change stream, snapshot-cdc) | 모의 시험 통과 | 시험용 MongoDB 8.0.34 레플리카셋 두 대, 샤딩 클러스터 원본(샤드 둘 + mongos). 적합성 키트, 정지 구간 쓰기 3건(offline 20,080건), 복사 중 동시 쓰기, 재개 거부 시 전체 복사, control plane 전체 흐름 |
