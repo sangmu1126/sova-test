@@ -65,7 +65,7 @@ def test_a_default_user_that_writes_everything_keeps_the_fence_unconfirmed(world
         observation = world.adapter().readback(
             command("redis-keyspace-handoff", "fence_source_writes"), datetime.now(UTC))
         assert observation.status == EffectStatus.UNKNOWN
-        assert "default" in observation.evidence["other_users_that_may_write"]
+        assert "default" in observation.evidence["nodes"]["primary"]["other_users_that_may_write"]
     finally:
         b["admin"]["source"].execute_command("ACL", "SETUSER", "default", "off", "resetkeys",
                                              "-@all")

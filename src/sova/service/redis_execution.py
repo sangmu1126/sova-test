@@ -14,8 +14,14 @@ An execution-file entry (``engine: redis``)::
                "invariants": {"CART-01": {"from": "board:session:", "field": "cart",
                                           "to": "board:cart:"}},
                "scratch_db": 15, "other_prefix": "shop:", "routes": ["src", "tgt"],
-               "zone_of": {"source": "<zone>", "target": "<zone>"}},
+               "zone_of": {"source": "<zone>", "target": "<zone>"},
+               "replicas": {"source": ["<settings file>"], "target": []}},
      "route": {...}}
+
+``replicas`` registers each side's replicas (a settings file each, reached
+directly): ACL users are kept per node, so the fence and activation go to
+every node, and a primary that reports a replica not registered here keeps
+the handoff from confirming them.
 
 A server settings file is JSON: ``host``, ``port``, ``username``, ``password``,
 ``db``, and for TLS ``ssl_ca`` (the server certificate and host name are then
@@ -32,7 +38,7 @@ from sova.service.postgres_execution import data_measure
 from sova.service.worker import Execution
 
 _KEYS = {"servers", "prefixes", "writers", "app_user", "admin_user", "user_password_files",
-         "sets", "invariants", "scratch_db", "other_prefix", "routes", "zone_of"}
+         "sets", "invariants", "scratch_db", "other_prefix", "routes", "zone_of", "replicas"}
 _SERVER_KEYS = {"host", "port", "username", "password", "db", "ssl_ca", "socket_timeout"}
 
 
@@ -52,12 +58,12 @@ def redis_factory(adapter_id, resolve):
         adapter = RedisKeyspaceHandoffAdapter(
             adapter_id, connect=d["connect"], prefixes=d["prefixes"], writers=d["writers"],
             app_user=d["app_user"], admin_user=d["admin_user"], route=d["route"],
-            routes=d["routes"])
+            routes=d["routes"], replicas=d.get("replicas"))
         probes = RedisKeyspaceProbes(
             connect=d["connect"], connect_as=d["connect_as"], writers=d["writers"],
             app_user=d["app_user"], sets=d["sets"], invariants=d.get("invariants"),
             scratch_db=d.get("scratch_db", 15), other_prefix=d.get("other_prefix"),
-            zone_of=d.get("zone_of"))
+            zone_of=d.get("zone_of"), replicas=d.get("replicas"))
         return Execution(adapter, redis_measure(probes, scratch_db=d.get("scratch_db", 15),
                                                 other_prefix=d.get("other_prefix")))
     return factory
@@ -93,6 +99,12 @@ def redis_resolver(app, *, route_for):
     if type(servers) is not dict or set(servers) != {"source", "target"}:
         raise ContractError("servers: a settings file for source and target")
     settings = {side: _server(path) for side, path in servers.items()}
+    listed = entry.get("replicas") or {}
+    if type(listed) is not dict or set(listed) - {"source", "target"} or not all(
+            type(v) is list for v in listed.values()):
+        raise ContractError("replicas: a list of settings files per side")
+    replica_settings = {side: [_server(path) for path in listed.get(side, [])]
+                        for side in ("source", "target")}
     passwords = entry.get("user_password_files") or {}
     routes = entry["routes"]
     if type(routes) is not list or len(routes) != 2:
@@ -100,12 +112,17 @@ def redis_resolver(app, *, route_for):
     zones = entry.get("zone_of") or {}
     if type(zones) is not dict or set(zones) - {"source", "target"}:
         raise ContractError("zone_of: source and target labels")
-    clients = {}
+    clients, replica_clients = {}, {}
 
     def connect(side):
         if side not in clients:
             clients[side] = redis.Redis(**settings[side])
         return clients[side]
+
+    def replicas(side):
+        if side not in replica_clients:
+            replica_clients[side] = [redis.Redis(**s) for s in replica_settings[side]]
+        return replica_clients[side]
 
     def connect_as(side, name):
         login = {k: v for k, v in settings[side].items() if k not in ("username", "password")}
@@ -118,6 +135,7 @@ def redis_resolver(app, *, route_for):
         "admin_user": entry["admin_user"], "route": route_for(app["route"]),
         "routes": tuple(routes), "sets": entry["sets"], "invariants": entry.get("invariants"),
         "scratch_db": entry.get("scratch_db", 15), "other_prefix": entry.get("other_prefix"),
+        "replicas": replicas,
         "zone_of": (lambda side: zones.get(side)) if zones else None}
 
     def resolve(tenant_id, application_id):
@@ -126,6 +144,6 @@ def redis_resolver(app, *, route_for):
         return resolved
 
     def close():
-        for client in clients.values():
+        for client in [*clients.values(), *(c for cs in replica_clients.values() for c in cs)]:
             client.close()
     return resolve, close

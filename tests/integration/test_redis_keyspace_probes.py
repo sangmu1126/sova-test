@@ -28,9 +28,9 @@ def test_each_probe_fails_on_what_it_measures(redis_business):
     world = RedisWorld(redis_business)
     p, b = probes(world), redis_business
     passed, live = p.write_denied("source")
-    assert not passed and live["outcomes"] == {world.users["app"]: "write_accepted",
-                                               # no transactions, but it can SET
-                                               world.users["batch"]: "write_accepted"}
+    assert not passed and {w: o["attempt"] for w, o in live["outcomes"].items()} == {
+        world.users["app"]: "write_accepted",
+        world.users["batch"]: "write_accepted"}  # no transactions, but it can SET
     for action in ("stage_target", "pause_admission", "fence_source_writes", "copy_content",
                    "verify_final_state", "activate_target"):
         apply(world.adapter(), action)
@@ -59,6 +59,21 @@ def test_each_probe_fails_on_what_it_measures(redis_business):
         b["redis"].Redis(connection_pool=type(target.connection_pool)(
             connection_class=target.connection_pool.connection_class,
             **{**target.connection_pool.connection_kwargs, "db": 15})).flushdb()
+
+
+def test_a_writer_that_cannot_log_in_but_keeps_its_keys_is_not_denied(redis_business):
+    """Paused, the application user cannot open a connection; the ones it has
+    open still write, and the server still permits it: the two views disagree,
+    so the probe does not count it as denied (ADR-0007)."""
+    world = RedisWorld(redis_business)
+    open_ = as_user(redis_business, "source", world.users["app"])
+    open_.ping()
+    apply(world.adapter(), "pause_admission")
+    passed, observation = probes(world).write_denied("source")
+    outcome = observation["outcomes"][world.users["app"]]
+    assert not passed and outcome == {"attempt": "login_refused", "permitted_on": ["primary"]}
+    open_.set(world.prefix + "still-open", "1")  # what the server's view warned of
+    open_.close()
 
 
 def test_unencrypted_transport_is_reported_as_such(redis_business):

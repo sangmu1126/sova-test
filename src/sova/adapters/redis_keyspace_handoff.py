@@ -25,6 +25,14 @@ postconditions as the other data adapters, read back from the servers:
   hashes, streams with their consumer groups) with each key's expiry time:
   two servers' encodings of the same value may differ, its content may not.
 
+Replicas: a Redis-protocol server keeps its ACL users per node; replication
+carries data, not ACLs. A replica the fence did not reach would, promoted
+by a failover, take the writer's writes again. So every ACL change goes to
+the primary and to each registered replica (``replicas(side)``), and every
+access postcondition holds on all of them. Besides, the primary must report
+exactly the registered replicas, each following it (same replication ID):
+an unregistered replica reads back UNKNOWN.
+
 Key prefixes are plain (``board:`` or ``board:*``); a glob with classes or
 escapes is refused rather than guessed at. Every action is idempotent; a
 postcondition that does not hold reads back UNKNOWN.
@@ -101,12 +109,16 @@ def _value(v):
 
 class RedisKeyspaceHandoffAdapter:
     def __init__(self, adapter_id, *, connect, prefixes, writers, app_user, admin_user, route,
-                 routes, db=0, kill_wait_seconds=5.0):
+                 routes, db=0, kill_wait_seconds=5.0, replicas=None):
         """``connect(side)`` gives an administrative client (redis-py, bytes
-        responses) on that side's server, ``db`` selected."""
+        responses) on that side's primary, ``db`` selected; ``replicas(side)``
+        administrative clients on each of its registered replicas."""
         if not callable(connect) or not all(callable(getattr(route, n, None))
                                             for n in ("get", "set")):
             raise ContractError("Administrative connect and a route store required")
+        if replicas is not None and not callable(replicas):
+            raise ContractError("replicas(side) must give the side's replica clients")
+        self.replicas = replicas or (lambda side: ())
         if type(prefixes) is not tuple or not prefixes:
             raise ContractError("Key prefixes required")
         if type(writers) is not tuple or app_user not in writers:
@@ -141,18 +153,48 @@ class RedisKeyspaceHandoffAdapter:
     def _client(self, side):
         return self.connect(side)
 
-    def _acl(self, side):
+    def _nodes(self, side):
+        """The side's primary, then each registered replica: (name, client)."""
+        return [("primary", self._client(side))] + [
+            (f"replica-{i}", client) for i, client in enumerate(self.replicas(side))]
+
+    def _all(self, side, *command):
+        for _, client in self._nodes(side):
+            client.execute_command(*command)
+
+    def _acl(self, side, client=None):
         """user -> rules, from the server's own ACL LIST."""
-        lines = self._client(side).execute_command("ACL", "LIST")
+        lines = (client or self._client(side)).execute_command("ACL", "LIST")
         return dict(acl_rules(_text(line)) for line in lines)
+
+    @staticmethod
+    def _replication(client):
+        """The node's ``INFO replication`` (parsed by the client)."""
+        return client.info("replication")
+
+    def _topology(self, side):
+        """Whether the primary reports exactly the registered replicas, each
+        following it; (holds, detail)."""
+        nodes = self._nodes(side)
+        primary = self._replication(nodes[0][1])
+        replid = primary.get("master_replid")
+        followers = {name: self._replication(client) for name, client in nodes[1:]}
+        reported = int(primary.get("connected_slaves", 0))
+        following = {name: info.get("role") == "slave" and info.get("master_replid") == replid
+                     and info.get("master_link_status") == "up"
+                     for name, info in followers.items()}
+        holds = primary.get("role") == "master" and reported == len(followers) and all(
+            following.values())
+        return holds, {"role": primary.get("role"), "replicas_reported": reported,
+                       "replicas_registered": len(followers), "following": following}
 
     @staticmethod
     def _on(rules):
         return "on" in rules
 
-    def _may_write(self, side, name):
+    def _may_write(self, side, name, client=None):
         """Each prefix: whether ``name`` may SET a key under it (the server decides)."""
-        client = self._client(side)
+        client = client or self._client(side)
         out = {}
         for p in self.prefixes:
             answer = _text(client.execute_command("ACL", "DRYRUN", name, "SET",
@@ -160,8 +202,8 @@ class RedisKeyspaceHandoffAdapter:
             out[p] = answer == "OK"
         return out
 
-    def _connected(self, side, names):
-        listed = _text(self._client(side).execute_command("CLIENT", "LIST"))
+    def _connected(self, side, names, client=None):
+        listed = _text((client or self._client(side)).execute_command("CLIENT", "LIST"))
         found = []
         for line in listed.splitlines():
             fields = dict(f.split("=", 1) for f in line.split(" ") if "=" in f)
@@ -170,16 +212,13 @@ class RedisKeyspaceHandoffAdapter:
                               "addr": fields.get("addr"), "flags": fields.get("flags")})
         return found
 
-    def _role(self, side):
-        return _text(self._client(side).execute_command("ROLE")[0])
-
-    def _writer_state(self, side, acl=None):
-        acl = self._acl(side) if acl is None else acl
+    def _writer_state(self, side, acl=None, client=None):
+        acl = self._acl(side, client) if acl is None else acl
         state = {}
         for name in self.writers:
             rules = acl.get(name)
             state[name] = None if rules is None else {
-                "on": self._on(rules), "may_write": self._may_write(side, name)}
+                "on": self._on(rules), "may_write": self._may_write(side, name, client)}
         return state
 
     def _denied(self, state):
@@ -228,62 +267,76 @@ class RedisKeyspaceHandoffAdapter:
 
     # -- actions ---------------------------------------------------------------
     def _stage_target(self):
-        source, target = self._acl("source"), self._client("target")
+        source = self._acl("source")
         for name in self.writers:
             rules = source.get(name)
             if rules is None:
                 raise ContractError(f"Writer {name} is not an ACL user on the source")
             kept = [r for r in rules if r not in ("on", "off")]
-            target.execute_command("ACL", "SETUSER", name, "reset", *kept, "off")
-            target.execute_command("CLIENT", "KILL", "USER", name)  # none may linger
+            self._all("target", "ACL", "SETUSER", name, "reset", *kept, "off")
+            self._all("target", "CLIENT", "KILL", "USER", name)  # none may linger
 
     def _check_stage_target(self):
         return self._prepared("target")
 
     def _prepared(self, side):
-        acl = self._acl(side)
-        state = {name: None if acl.get(name) is None else {"on": self._on(acl[name])}
-                 for name in self.writers}
-        connected = self._connected(side, set(self.writers))
-        holds = all(s is not None and not s["on"] for s in state.values()) and not connected
-        return holds, {"writers": state, "writer_connections": connected[:20]}
+        nodes, holds = {}, True
+        for node, client in self._nodes(side):
+            acl = self._acl(side, client)
+            state = {name: None if acl.get(name) is None else {"on": self._on(acl[name])}
+                     for name in self.writers}
+            connected = self._connected(side, set(self.writers), client)
+            holds &= all(s is not None and not s["on"] for s in state.values()) and \
+                not connected
+            nodes[node] = {"writers": state, "writer_connections": connected[:20]}
+        complete, topology = self._topology(side)
+        return holds and complete, {"nodes": nodes, "topology": topology}
 
     def _pause_admission(self):
-        self._client("source").execute_command("ACL", "SETUSER", self.app_user, "off")
+        self._all("source", "ACL", "SETUSER", self.app_user, "off")
 
     def _check_pause_admission(self):
-        rules = self._acl("source").get(self.app_user)
-        off = rules is not None and not self._on(rules)
-        return off, {"application_user_off": off}
+        off = {}
+        for node, client in self._nodes("source"):
+            rules = self._acl("source", client).get(self.app_user)
+            off[node] = rules is not None and not self._on(rules)
+        return all(off.values()), {"application_user_off": off}
 
     def _fence_source_writes(self):
-        client = self._client("source")
         for name in self.writers:
-            client.execute_command("ACL", "SETUSER", name, "off", "resetkeys")
+            self._all("source", "ACL", "SETUSER", name, "off", "resetkeys")
         for name in self.writers:
-            client.execute_command("CLIENT", "KILL", "USER", name)
+            self._all("source", "CLIENT", "KILL", "USER", name)
         deadline = time.monotonic() + self.kill_wait_seconds
-        while self._connected("source", set(self.writers)) and time.monotonic() < deadline:
+        while time.monotonic() < deadline and any(
+                self._connected("source", set(self.writers), client)
+                for _, client in self._nodes("source")):
             time.sleep(0.05)
 
     def _check_fence_source_writes(self):
         return self._fenced("source")
 
     def _fenced(self, side):
-        acl = self._acl(side)
-        writers = self._writer_state(side, acl)
-        others = {}
-        for name, rules in acl.items():
-            if name in self.writers or name == self.admin_user or not self._on(rules):
-                continue
-            may = self._may_write(side, name)
-            if any(may.values()):
-                others[name] = may
-        connected = self._connected(side, set(self.writers))
-        role = self._role(side)
-        holds = self._denied(writers) and not others and not connected and role == "master"
-        return holds, {"writers": writers, "other_users_that_may_write": others,
-                       "writer_connections": connected[:20], "role": role}
+        """Every node of the side: the writers off with no key access, no other
+        user that may write the unit, no writer connection; and the side's
+        replicas exactly the registered ones."""
+        nodes, holds = {}, True
+        for node, client in self._nodes(side):
+            acl = self._acl(side, client)
+            writers = self._writer_state(side, acl, client)
+            others = {}
+            for name, rules in acl.items():
+                if name in self.writers or name == self.admin_user or not self._on(rules):
+                    continue
+                may = self._may_write(side, name, client)
+                if any(may.values()):
+                    others[name] = may
+            connected = self._connected(side, set(self.writers), client)
+            holds &= self._denied(writers) and not others and not connected
+            nodes[node] = {"writers": writers, "other_users_that_may_write": others,
+                           "writer_connections": connected[:20]}
+        complete, topology = self._topology(side)
+        return holds and complete, {"nodes": nodes, "topology": topology}
 
     def _verify_return_target(self):
         return None  # verification only: the readback is the check
@@ -348,19 +401,25 @@ class RedisKeyspaceHandoffAdapter:
         return self._compare()
 
     def _activate_target(self):
-        self._client("target").execute_command("ACL", "SETUSER", self.app_user, "on")
+        self._all("target", "ACL", "SETUSER", self.app_user, "on")
 
     def _check_activate_target(self):
-        acl = self._acl("target")
-        app = acl.get(self.app_user)
-        enabled = app is not None and self._on(app) and all(
-            self._may_write("target", self.app_user).values())
-        others = {name: self._on(acl[name]) if name in acl else None
-                  for name in self.writers if name != self.app_user}
+        """On every node of the target (a promoted replica serves the
+        application too): only the application user enabled."""
+        enabled, others = {}, {}
+        for node, client in self._nodes("target"):
+            acl = self._acl("target", client)
+            app = acl.get(self.app_user)
+            enabled[node] = app is not None and self._on(app) and all(
+                self._may_write("target", self.app_user, client).values())
+            others[node] = {name: self._on(acl[name]) if name in acl else None
+                            for name in self.writers if name != self.app_user}
+        complete, topology = self._topology("target")
         fenced, source = self._fenced("source")
-        holds = enabled and not any(others.values()) and fenced
+        holds = all(enabled.values()) and not any(
+            v for found in others.values() for v in found.values()) and complete and fenced
         return holds, {"application_user_enabled": enabled, "other_writers_on": others,
-                       "source": source}
+                       "topology": topology, "source": source}
 
     def _commit_route(self):
         self.route.set(self.routes[1])

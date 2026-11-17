@@ -2,10 +2,14 @@
 
 Made apart from the adapter that moved the keys:
 
-* write denial is an attempt: a new connection as each registered writer, a
-  real ``SET`` queued in a transaction that is always discarded (the server
-  checks the permission when it queues the command); a refused login or a
-  refused command is a denial;
+* write denial needs two views to agree (ADR-0007): an attempt - a new
+  connection as each registered writer, a real ``SET`` queued in a
+  transaction that is always discarded (the server checks the permission
+  when it queues the command) - and the server's own permission check
+  (``ACL DRYRUN`` of a ``SET`` under each protected prefix) on the primary
+  and on every registered replica, which keeps ACL users of its own and,
+  promoted, would take the writer's writes. A refused login or command that
+  no node would permit is a denial;
 * each protected set is a key prefix of the unit, compared value by value
   with its expiry time;
 * a business invariant is a registered reference: every hash under one prefix
@@ -36,12 +40,14 @@ def _text(value):
 
 class RedisKeyspaceProbes:
     def __init__(self, *, connect, connect_as, writers, app_user, sets, invariants=None,
-                 scratch_db=15, other_prefix=None, zone_of=None):
+                 scratch_db=15, other_prefix=None, zone_of=None, replicas=None):
         """``connect(side)`` is an administrative client, ``connect_as(side, user)``
         a client logged in as ``user``; ``sets`` maps each protected set to its
-        key prefix."""
+        key prefix; ``replicas(side)`` administrative clients on the side's
+        registered replicas."""
         if not callable(connect) or not callable(connect_as):
             raise ContractError("Administrative and per-user connections required")
+        self.replicas = replicas or (lambda side: ())
         if type(sets) is not dict or not sets:
             raise ContractError("A key prefix for each protected set required")
         self.connect, self.connect_as = connect, connect_as
@@ -80,11 +86,38 @@ class RedisKeyspaceProbes:
         finally:
             client.close()
 
+    def _permitted(self, side, name):
+        """The nodes whose own ACL check lets ``name`` SET a key of a protected set."""
+        import redis
+
+        found = []
+        clients = [("primary", self.connect(side))] + [
+            (f"replica-{i}", c) for i, c in enumerate(self.replicas(side))]
+        for node, client in clients:
+            for p in self.sets.values():
+                try:
+                    answer = _text(client.execute_command("ACL", "DRYRUN", name, "SET",
+                                                          p + "sova-dryrun", "1"))
+                except redis.exceptions.ResponseError as error:
+                    if "not found" in str(error).lower():
+                        break  # no such user on this node: it cannot write here
+                    raise
+                if answer == "OK":
+                    found.append(node)
+                    break
+        return found
+
+    def _denied(self, side, name):
+        wrote, attempt = self._try_write(side, name)
+        permitted = self._permitted(side, name)
+        denied = not wrote and attempt in ("login_refused", "write_refused") and not permitted
+        return denied, {"attempt": attempt, "permitted_on": permitted}
+
     def write_denied(self, side):
-        outcomes = {w: self._try_write(side, w) for w in self.writers}
-        return not any(wrote for wrote, _ in outcomes.values()), {
+        outcomes = {w: self._denied(side, w) for w in self.writers}
+        return all(d for d, _ in outcomes.values()), {
             "probe": "write_denied", "side": side,
-            "outcomes": {w: outcome for w, (_, outcome) in outcomes.items()}}
+            "outcomes": {w: detail for w, (_, detail) in outcomes.items()}}
 
     def single_writer(self):
         wrote, target = self._try_write("target", self.app_user)

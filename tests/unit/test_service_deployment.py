@@ -366,11 +366,28 @@ def test_a_redis_keyspace_gets_the_keyspace_adapter(tmp_path):
     close()
 
 
+def test_a_redis_entry_registers_each_sides_replicas(tmp_path):
+    pytest.importorskip("redis")
+    replica = write(tmp_path, "redis-replica.json", json.dumps({
+        "host": "10.0.0.7", "port": 6379, "username": "sova-admin", "password": "x"}))
+    app = redis_application(tmp_path, **{"redis.replicas": {"source": [replica, replica]}})
+    catalog, close = catalog_from({"version": 1, "applications": [app]},
+                                  route_for=lambda spec: FakeRoute())
+    adapter = catalog.build("tenant-a", "board", "redis-keyspace", None).adapter
+    nodes = adapter._nodes("source")
+    assert [name for name, _ in nodes] == ["primary", "replica-0", "replica-1"]
+    assert nodes[1][1].connection_pool.connection_kwargs["host"] == "10.0.0.7"
+    assert [name for name, _ in adapter._nodes("target")] == ["primary"]
+    close()
+
+
 @pytest.mark.parametrize("changes", [
     {"redis.prefixes": ["board:*:sessions"]},  # a glob, not a prefix
     {"redis.app_user": "someone-else"},
     {"redis.routes": ["src"]},
     {"redis.unexpected": True},
+    {"redis.replicas": {"source": "one.json"}},  # a list per side
+    {"redis.replicas": {"elsewhere": []}},
     {"mode": "logical_replication"},
 ])
 def test_a_redis_entry_that_does_not_add_up_is_refused(tmp_path, changes):
