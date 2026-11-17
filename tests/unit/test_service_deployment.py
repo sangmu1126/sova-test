@@ -411,6 +411,24 @@ def test_a_redis_entry_that_does_not_add_up_is_refused(tmp_path, changes):
         catalog.build("tenant-a", "board", "redis-keyspace", None)
 
 
+def test_a_mysql_replication_may_take_its_snapshot_without_the_global_lock(tmp_path):
+    secret = write(tmp_path, "repl", "replication-secret")
+    spec = {"source_endpoint": ["orders-db.internal", 3306], "account": "sova_repl@%",
+            "password_file": secret, "snapshot": "lockless"}
+    catalog, close = catalog_from(
+        {"version": 1, "applications": [mysql_application(tmp_path, mode="replication",
+                                                          replication=spec)]},
+        route_for=lambda spec: FakeRoute())
+    adapter = catalog.build("tenant-a", "orders", "mysql-offline-copy", None).adapter
+    assert adapter.snapshot_mode == "lockless"
+    close()
+    spec["snapshot"] = "whenever"
+    with pytest.raises(ContractError, match="locked .* or lockless"):
+        catalog_from({"version": 1, "applications": [
+            mysql_application(tmp_path, mode="replication", replication=spec)]},
+            route_for=lambda spec: FakeRoute())
+
+
 def test_a_mysql_application_may_capture_changes_by_replication(tmp_path):
     secret = write(tmp_path, "repl", "replication-secret")
     app = mysql_application(tmp_path, mode="replication", replication={

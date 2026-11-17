@@ -6,7 +6,7 @@ its independent probes, measured like any data store (``data_measure``).
 ``connect_as(database, account)``, the database names, the writer accounts
 (``user@host``), tables, schema, probe insert, route, and ``zone_of``; for
 change capture also ``replication`` (``source_endpoint``, ``account``,
-``password``, ``tls``).
+``password``, ``tls``, and ``snapshot``: ``locked`` or ``lockless``).
 """
 
 from sova.adapters.mysql_handoff_probes import MySqlHandoffProbes
@@ -34,6 +34,7 @@ def mysql_factory(adapter_id, resolve, *, replication=False):
                 adapter_id, source_endpoint=r["source_endpoint"],
                 replication_account=r["account"], replication_password=r["password"],
                 replication_tls=r.get("tls", False), replication_ca_path=r.get("ca_path"),
+                snapshot=r.get("snapshot", "locked"),
                 **common)
         else:
             adapter = MySqlOfflineCopyAdapter(adapter_id, **common)

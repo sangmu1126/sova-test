@@ -29,6 +29,28 @@ sees it) with a replication account the operator created on the source
 ``replication_tls`` the channel requires TLS and verifies the source's
 certificate and host name against ``replication_ca_path``, a CA file on the
 target server.
+
+``snapshot="lockless"`` is for sources that grant no global read lock, as
+managed services (RDS, Cloud SQL) do not. The binary-log position is read
+first, a short settle lets every transaction whose log was already written
+finish its engine commit, and only then the snapshot opens. Changes between
+that position and the snapshot are in the copy and come again from the
+channel, so the target server applies them idempotently
+(``replica_exec_mode=IDEMPOTENT``: an insert of a row it has, or a change of
+a row it lacks, is not an error; row events carry whole rows, so applying
+them in order ends where the source is). Once the channel has passed the
+position read right after the snapshot opened, everything it applies is
+after the snapshot and the mode goes back to ``STRICT``; the readback
+confirms that. It needs a primary key on every table (a duplicate row of a
+table without one would be kept), and ``replica_exec_mode`` is global on
+the target server: it should serve no other channel meanwhile. The window
+is also applied by one thread: the multi-threaded applier took about a
+second per transaction it found already applied (measured: 69 s against
+0.4 s for 60). Both settings are saved in the target database before they
+change and put back from there, so a worker lost in between does not leave
+the operator's settings behind. A transaction the settle did not cover
+would be missing from the target, and the final comparison would hold the
+handoff.
 """
 
 import hashlib
@@ -44,13 +66,19 @@ _HOST = re.compile(r"[A-Za-z0-9.-]{1,253}")
 # host (2002, 2003), cannot resolve it yet (2005), connection lost (2013).
 _TRANSIENT = frozenset({2002, 2003, 2005, 2013})
 _CONNECT_RETRY_SECONDS = 5  # the server's default is 60
+_APPLIER = "sova_handoff_applier"  # the target's own applier settings, while changed
 
 
 class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
     def __init__(self, adapter_id, *, source_endpoint, replication_account,
                  replication_password, replication_tls=False, replication_ca_path=None,
-                 catch_up_seconds=120, **common):
+                 catch_up_seconds=120, snapshot="locked", settle_seconds=1.0, **common):
         super().__init__(adapter_id, **common)
+        if snapshot not in ("locked", "lockless"):
+            raise ContractError("snapshot: locked or lockless")
+        if type(settle_seconds) not in (int, float) or not 0 <= settle_seconds <= 30:
+            raise ContractError("settle_seconds: 0 to 30")
+        self.snapshot_mode, self.settle_seconds = snapshot, settle_seconds
         host, port = source_endpoint if type(source_endpoint) is tuple else (None, None)
         if type(host) is not str or not _HOST.fullmatch(host) or type(port) is not int:
             raise ContractError("The source as the target server reaches it: (host, port)")
@@ -113,6 +141,106 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
             snapshot.close()
         return file, int(position)
 
+    def _snapshot_lockless(self):
+        """Copy the source without a global read lock; returns the position the
+        channel starts from and the one after which nothing is in the copy."""
+        with self._session("source") as cur:
+            cur.execute("SELECT TABLE_NAME FROM information_schema.TABLE_CONSTRAINTS "
+                        "WHERE TABLE_SCHEMA=%s AND CONSTRAINT_TYPE='PRIMARY KEY'",
+                        (self.source_db,))
+            keyed = {r[0] for r in cur.fetchall()}
+        lacking = sorted(t for t, _ in self.tables if t not in keyed)
+        if lacking:
+            raise ContractError(f"A lockless snapshot needs a primary key on {lacking}")
+        snapshot = self.connect(self.source_db)
+        try:
+            snapshot.autocommit(False)
+            with snapshot.cursor() as read:
+                read.execute("SET SESSION time_zone='+00:00'")
+                read.execute("SHOW BINARY LOG STATUS")
+                start = tuple(read.fetchone()[:2])
+                time.sleep(self.settle_seconds)  # logged commits finish in the engine
+                read.execute("START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY")
+                read.execute("SHOW BINARY LOG STATUS")
+                after = tuple(read.fetchone()[:2])
+                self._copy_rows(read)
+            snapshot.commit()
+        finally:
+            snapshot.close()
+        return (start[0], int(start[1])), (after[0], int(after[1]))
+
+    def _applier_table(self, cur):
+        cur.execute(f"CREATE TABLE IF NOT EXISTS {name(self.target_db)}.{_APPLIER} "
+                    "(setting VARCHAR(64) PRIMARY KEY, value VARCHAR(64) NOT NULL)")
+        return f"{name(self.target_db)}.{_APPLIER}"
+
+    def _open_window(self):
+        """Idempotent, single-threaded application of the copy's window; the
+        target's own settings saved first (a rerun keeps the first ones)."""
+        with self._session("target") as cur:
+            table = self._applier_table(cur)
+            cur.execute("SELECT @@GLOBAL.replica_parallel_workers, @@GLOBAL.replica_exec_mode")
+            workers, mode = cur.fetchone()
+            cur.execute(f"INSERT IGNORE INTO {table} VALUES ('replica_parallel_workers', %s), "
+                        "('replica_exec_mode', %s)", (str(workers), mode))
+            cur.execute("SET GLOBAL replica_parallel_workers = 1")
+            cur.execute("SET GLOBAL replica_exec_mode = 'IDEMPOTENT'")
+
+    def _saved(self, cur):
+        """The target's own applier settings as the window saved them ({} when
+        no window is open); reads only."""
+        cur.execute("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=%s "
+                    "AND TABLE_NAME=%s", (self.target_db, _APPLIER))
+        if not cur.fetchone():
+            return {}
+        cur.execute(f"SELECT setting, value FROM {name(self.target_db)}.{_APPLIER}")
+        return dict(cur.fetchall())
+
+    def _close_window(self):
+        """Put the target's own applier settings back, as saved."""
+        with self._session("target") as cur:
+            saved = self._saved(cur)
+            if not saved:
+                return
+            table = f"{name(self.target_db)}.{_APPLIER}"
+            if "replica_parallel_workers" in saved:
+                cur.execute("SET GLOBAL replica_parallel_workers = %s",
+                            (int(saved["replica_parallel_workers"]),))
+            if saved.get("replica_exec_mode") in ("STRICT", "IDEMPOTENT"):
+                cur.execute(f"SET GLOBAL replica_exec_mode = '{saved['replica_exec_mode']}'")
+            cur.execute(f"DELETE FROM {table}")
+
+    def _window(self):
+        """(open, the target's exec mode, its applier threads) as they are."""
+        with self._session("target") as cur:
+            open_ = bool(self._saved(cur))
+            cur.execute("SELECT @@GLOBAL.replica_exec_mode, @@GLOBAL.replica_parallel_workers")
+            mode, workers = cur.fetchone()
+        return open_, mode, workers
+
+    def _strict_after(self, file, position):
+        """Wait (bounded) until the channel has applied everything up to the
+        position after which nothing is in the copy, then put the target's own
+        applier settings back."""
+        with self._session("target") as cur:
+            cur.execute("SELECT SOURCE_POS_WAIT(%s, %s, %s, %s)",
+                        (file, position, self.catch_up_seconds, self.channel))
+            reached = cur.fetchone()[0]
+        if reached is None or reached < 0:
+            status = self._status() or {}
+            raise ContractError(
+                f"The replica did not pass the snapshot's position {file}:{position} in "
+                f"time: read {status.get('Source_Log_File')}:"
+                f"{status.get('Read_Source_Log_Pos')}, executed "
+                f"{status.get('Relay_Source_Log_File')}:{status.get('Exec_Source_Log_Pos')}, "
+                f"io={status.get('Last_IO_Error') or None!r} "
+                f"sql={status.get('Last_SQL_Error') or None!r}")
+        with self._session("target") as cur:
+            cur.execute("STOP REPLICA SQL_THREAD FOR CHANNEL %s", (self.channel,))
+        self._close_window()  # the applier threads are read when it starts again
+        with self._session("target") as cur:
+            cur.execute("START REPLICA SQL_THREAD FOR CHANNEL %s", (self.channel,))
+
     def _start_channel(self, file, position):
         user, _ = account(self.replication_account)
         host, port = self.source_endpoint
@@ -151,10 +279,18 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
     # -- actions ---------------------------------------------------------------
     def _start_sync(self):
         self._drop_channel()  # a second run starts over from a new snapshot
-        file, position = self._snapshot()
-        self._copy_counters()
-        self._start_channel(file, position)
-        self._await_channel()
+        if self.snapshot_mode == "lockless":
+            (file, position), after = self._snapshot_lockless()
+            self._copy_counters()
+            self._open_window()  # the copy's changes come again
+            self._start_channel(file, position)
+            self._await_channel()
+            self._strict_after(*after)
+        else:
+            file, position = self._snapshot()
+            self._copy_counters()
+            self._start_channel(file, position)
+            self._await_channel()
         with self._session("target") as cur:
             cur.execute(f"CREATE TABLE IF NOT EXISTS {name(self.target_db)}.{name(MARKS)} "
                         "(table_name VARCHAR(64) PRIMARY KEY, copied_at DATETIME(6) NOT NULL)")
@@ -171,8 +307,12 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
         tls = status is not None and status.get("Source_SSL_Allowed") == "Yes" and \
             status.get("Source_SSL_Verify_Server_Cert") == "Yes"
         running = running and (tls or not self.replication_tls)
-        return holds and running, {**detail, "channel": self.channel, "running": running,
-                                   "tls_verified": tls,
+        open_, mode, workers = self._window() if self.snapshot_mode == "lockless" else (
+            False, None, None)
+        return holds and running and not open_, {  # past the copy's changes
+            **detail, "channel": self.channel, "running": running, "tls_verified": tls,
+            "snapshot": self.snapshot_mode, "replay_window_open": open_, "exec_mode": mode,
+            "applier_threads": workers,
                                    "errors": None if status is None else {
                                        "io": status.get("Last_IO_Error") or None,
                                        "sql": status.get("Last_SQL_Error") or None}}
@@ -191,16 +331,22 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
         if reached is None or reached < 0:
             raise ContractError("The replica did not reach the source's position in time")
         self._drop_channel()
+        if self.snapshot_mode == "lockless":
+            self._close_window()  # if the sync's own close never ran
         self._copy_counters()
 
     def _check_apply_final_changes(self):
         status = self._status()
         equal, detail = self._check_copy_content()
-        return status is None and equal, {**detail, "channel_removed": status is None}
+        open_ = self._window()[0] if self.snapshot_mode == "lockless" else False
+        return status is None and equal and not open_, {
+            **detail, "channel_removed": status is None, "replay_window_open": open_}
 
     def release_replication(self):
         """Abort: remove the channel; the source no longer keeps logs for it."""
         self._drop_channel()
+        if self.snapshot_mode == "lockless":
+            self._close_window()  # an abort inside the copy's window
 
     def replication_released(self):
         return self._status() is None

@@ -218,6 +218,8 @@ def mysql_pair_business(mysql_pair):
     for side in ("target", "source"):
         with pymysql.connect(**admin[side]) as conn, conn.cursor() as cur:
             if side == "target":
+                cur.execute("SET GLOBAL replica_exec_mode = 'STRICT'")  # a lockless sync's
+                cur.execute("SET GLOBAL replica_parallel_workers = DEFAULT")
                 cur.execute("SHOW REPLICA STATUS")
                 columns = [d[0] for d in cur.description or ()]
                 for row in cur.fetchall():

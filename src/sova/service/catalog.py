@@ -54,7 +54,8 @@ _APP_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode", "dat
              "source_conninfo_file", "route", "zone_of", "replication"}
 _REQUIRED = _APP_KEYS - {"role_password_files", "source_conninfo_file", "engine", "zone_of",
                          "replication"}
-_REPLICATION_KEYS = {"source_endpoint", "account", "password_file", "tls", "ca_path"}
+_REPLICATION_KEYS = {"source_endpoint", "account", "password_file", "tls", "ca_path",
+                     "snapshot"}
 _UNIT_ENGINES = {  # engines whose entries carry their own keys (see each module)
     "kubernetes-volume": {"volume", "route"},
     "kubernetes-session": {"session", "route"},
@@ -155,9 +156,13 @@ def _replication(spec):
     endpoint = spec["source_endpoint"]
     if type(endpoint) is not list or len(endpoint) != 2:
         raise ContractError("replication.source_endpoint: [host, port]")
+    snapshot = spec.get("snapshot", "locked")
+    if snapshot not in ("locked", "lockless"):
+        raise ContractError("replication.snapshot: locked (a global read lock for an "
+                            "instant) or lockless (managed services)")
     return {"source_endpoint": (endpoint[0], endpoint[1]), "account": spec["account"],
             "password": _read(spec["password_file"]), "tls": bool(spec.get("tls", False)),
-            "ca_path": spec.get("ca_path")}
+            "ca_path": spec.get("ca_path"), "snapshot": snapshot}
 
 
 def _postgres_connections(databases, passwords):
