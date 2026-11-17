@@ -385,4 +385,5 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 - 여섯 번째 전체 회귀(새 DB, 67e8613 기준): 평문 1837 PASS / **4 FAIL** / 302 SKIP, TLS 55 PASS / 2 SKIP.
   - MySQL TLS 복제(1건). 4차 뒤의 대기로는 부족했다. 실패 시 readback 증거를 보이게 하고 단독으로 반복하자 4회 중 2회 재현됐다. 원인은 첫 연결 거부 뒤 MySQL의 기본 60초 재연결이었다. 5초 재연결과 일시적 오류를 견디는 대기로 고쳤고, 6회 연속 통과했다.
   - S3 control plane·권한 witness(3건). "watermark가 DB 시계보다 앞섬". 시험 도우미가 watermark를 호스트 시각보다 5ms 앞으로만 잡는데, DB 컨테이너 시계는 호스트보다 수 ms 뒤처지고(측정 시 2.3ms) 그 차이가 움직인다. 도우미를 `now` fixture와 같은 1초 여유로 바꿨다. 이 도우미를 쓰는 시험 79 PASS.
+- 일곱 번째 전체 회귀(새 DB, e8ddb2e 기준, 이 날 변경 전부 포함): 평문 **1841 PASS / 0 FAIL** / 302 SKIP(35분), TLS 55 PASS / 2 SKIP, suite-exit 0.
 
