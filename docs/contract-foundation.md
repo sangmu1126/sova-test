@@ -1458,7 +1458,7 @@ Kubernetes 진입점의 표준은 Ingress에서 Gateway API로 옮겨 갔다(ing
 - **복사.** `DUMP`/`RESTORE ABSTTL`이라 만료 시각이 그대로 간다. 12:00에 만료될 세션은 목적지에서도 12:00에 만료된다. 원본에 없는 키는 지운다.
 - **비교.** 타입별 논리 내용과 만료 시각으로 비교한다. 같은 값이라도 서버마다 인코딩이 다를 수 있기 때문이다.
 - **probe(adapter와 다른 방법).**
-  - 쓰기 거부: 각 writer로 새로 로그인해 실제 `SET`을 시도한다(트랜잭션 안, 버림).
+  - 쓰기 거부: 두 관점이 모두 동의해야 한다(ADR-0007). 하나는 각 writer로 새로 로그인해 실제 `SET`을 시도하는 것(트랜잭션 안, 버림)이고, 다른 하나는 primary와 등록된 모든 replica에서 본 서버의 권한 검사(`ACL DRYRUN`)다. 처음 구현은 시도만 봐서 ADR과 어긋나 있었다(아래 replica 절).
   - 집합별 논리 비교, 참조 불변식(모든 세션의 장바구니가 있음).
   - scratch DB 복원 훈련, 다른 테넌트 키 접근 거부, 연결의 실제 TLS 검증 여부.
 - **시험이 잡은 결함.** 트랜잭션·PING 권한이 없는 writer(`+@read +@write`만)를 시도하던 probe가 판정 대신 예외로 끝났다. 이제 첫 명령으로 로그인 실패와 권한 거부를 구분한다. MULTI가 막힌 사용자는 1초 뒤 사라지는 고유 키에 실제 `SET`을 시도한다. 이 사용자도 쓸 수 있는 writer로 판정되는 것을 시험으로 고정했다.
@@ -1473,9 +1473,26 @@ Kubernetes 진입점의 표준은 Ingress에서 Gateway API로 옮겨 갔다(ing
 **한계.**
 
 - **TLS(추가 실측).** 시험용 Valkey 두 대에 자체 CA의 TLS 포트를 열었다. 워커 실행 설정의 `ssl_ca`로 만든 연결이 서버 인증서와 호스트 이름을 검증하고, 전송 probe가 이를 pass로 잰다. 그 연결로 인계 전체를 수행했고, 서버를 보증하지 않는 CA는 거부됐다.
-- Redis Cluster(슬롯 분산)와 Sentinel(자동 승격)은 다루지 않는다. Sentinel 구성에서는 승격될 수 있는 replica도 원본에 포함해 차단해야 한다.
+- Redis Cluster(슬롯 분산)는 다루지 않는다. replica는 아래 절처럼 등록해서 다루고, Sentinel의 자동 발견은 쓰지 않는다.
 - `DUMP` 형식은 같은 계열·호환 버전 사이에서만 복원된다. 예를 들어 Redis 7.4 이후 형식을 Valkey가 읽는지는 버전마다 다르다.
 - 해시 필드 단위 만료(HEXPIRE)는 복사되지만 비교에는 넣지 않았다.
+
+### replica가 있는 서버 (2026-11-17)
+
+Redis 계열 서버는 ACL 사용자를 노드마다 따로 가진다. 복제는 데이터만 나르고 ACL은 나르지 않는다. 그래서 차단이 primary에만 걸리면, 장애 조치로 replica가 승격되는 순간 차단된 writer가 다시 쓸 수 있었다. replica를 둔 운영 구성에서 실제로 생기는 빈틈이다.
+
+- **모든 노드에 적용.** ACL 변경(준비, 멈춤, 차단, 활성화)은 primary와 등록된 각 replica(실행 설정 `replicas`)에 모두 간다. 접근 조건(writer 꺼짐·키 접근 없음, 다른 사용자 없음, writer 연결 없음, 활성화된 앱 사용자)도 모든 노드에서 성립해야 확정한다.
+- **등록되지 않은 replica.** primary가 보고하는 replica 수가 등록된 수와 같아야 한다. 또 각 replica가 그 primary를 따라야 한다(같은 복제 ID, 링크 정상). 등록되지 않은 replica가 있으면 차단은 미확인으로 남는다. 차단이 닿지 않은 replica가 승격될 수 있기 때문이다.
+- **probe.** 쓰기 거부의 서버 관점을 모든 노드에서 본다.
+- **함께 고친 것.** 쓰기 거부 probe가 시도만 보고 있었다. 로그인은 거부되지만 키 권한이 남은 writer(이미 열린 연결은 여전히 씀)를 거부로 셌다. 이제 두 관점이 필요하고, 이 경우가 거부로 판정되지 않는 것을 시험으로 고정했다. 같은 시험에서 열린 연결이 실제로 쓰는 것도 확인했다.
+
+| 시험(Valkey 9.1.3, 쪽마다 primary + replica 하나) | 결과 |
+|---|---|
+| 차단이 모든 replica에 닿고, 원본 replica를 승격해도 writer가 로그인하지 못함. 활성화는 목적지 replica에도 닿음 | PASS |
+| replica의 ACL이 writer를 다시 들이면 차단 미확인, probe도 그 replica를 가리킴 | PASS |
+| 등록되지 않은 replica가 있으면 차단 미확인(그 replica에서 writer가 여전히 쓸 수 있음을 함께 확인) | PASS |
+| 결함 주입: primary에만 적용 / replica 수 확인 제거 | 각각 2건·1건 실패로 검출 |
+| Redis 시험 전체 | 20 PASS |
 
 ## MySQL 변경 캡처: 서버 복제 기반 snapshot-cdc (2026-11-17)
 
@@ -1715,7 +1732,7 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 | Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). 관리형 미실측 |
 | 메모리 세션 drain adapter | 모의 시험 통과 | 로컬 kind, WebSocket 시험 서버. 커널 TCP 테이블로 세션 계수, drain 상한 hold·terminate |
 | 애플리케이션 한 단위(볼륨 + 세션) | 모의 시험 통과 | 로컬 kind, 게시판 + 게임 서버를 control plane 전체 흐름으로. 쓰기 정지 32.5초 1회 |
-| Redis 계열(Valkey) 키 공간 adapter·probe | 모의 시험 통과 | 로컬 kind의 Valkey 9.1.3 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. Cluster·Sentinel 미시험 |
+| Redis 계열(Valkey) 키 공간 adapter·probe | 모의 시험 통과 | 로컬 kind의 Valkey 9.1.3 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 등록된 replica까지 차단(승격 뒤에도 유지 실측). Cluster·Sentinel 자동 발견 미시험 |
 | MongoDB 데이터베이스 adapter·probe | 모의 시험 통과 | 시험용 MongoDB 8.0.34 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 단일 구성원 레플리카셋. 샤딩 미시험 |
 | MongoDB 변경 캡처(change stream, snapshot-cdc) | 모의 시험 통과 | 시험용 MongoDB 8.0.34 레플리카셋 두 대. 적합성 키트, 정지 구간 쓰기 3건(offline 20,080건), 복사 중 동시 쓰기, 재개 거부 시 전체 복사, control plane 전체 흐름 |
 | probe 관측값 보존·조회 | 모의 시험 통과 | 서명 digest와 일치를 DB 제약으로 강제, 테넌트 격리, API 조회 |

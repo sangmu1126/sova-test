@@ -363,3 +363,8 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
   - 첫 실행이 끝나지 않아 멈췄다. 이 실행이 만든 namespace와 port-forward는 직접 지웠다.
   - MongoDB 전체 30 PASS(레플리카셋으로 바꾼 기존 14 포함), 단위 5 PASS.
 - Kafka 최종 단계의 증분 복사. snapshot-cdc의 최종 단계도 토픽 전체를 다시 쓰던 것을, sync 뒤 레코드만 덧붙이게 했다. 정지 중 오프셋 11(offline 636). Kafka handoff 시험 15 PASS.
+- Redis replica 차단. ACL이 노드마다 따로라서, primary에만 건 차단은 replica 승격 뒤 풀린다. 등록된 replica 모두에 ACL 변경을 적용하고, 등록되지 않은 replica가 있으면 미확인으로 두게 했다. 내용은 [구현 안내](../contract-foundation.md#replica가-있는-서버-2026-11-17)에 있다.
+  - 함께 찾은 문서와 구현의 불일치: ADR-0007은 Redis probe가 `ACL DRYRUN`을 서버 관점으로 쓴다고 적었지만, 실제 쓰기 거부 probe는 시도만 봤다. 고치고 시험으로 고정했다.
+  - 시험 쪽 수정 셋: redis-py가 `INFO`·`ACL GETUSER` 응답을 dict로 파싱하는 것을 문자열로 다뤘다(어댑터의 복제 정보 읽기에도 같은 실수가 있었고, 시험이 먼저 드러냈다). 승격 시험 뒤 replica가 다시 따라잡기 전에 다음 시험이 시작됐다.
+  - replica 시험 3 PASS, 결함 주입 2건 검출, Redis 전체 20 PASS, 단위 900 PASS.
+
