@@ -1676,6 +1676,17 @@ MySQL은 지금까지 offline copy만 있어서, 쓰기 정지가 데이터 크�
 
 adapter는 바꾸지 않았다.
 
+**압축 토픽(추가, 2026-11-18).** 지금까지는 compact 전용 토픽을 준비 단계에서 거부했다. 상태 토픽(주문마다 최신 값, Kafka Streams changelog 등)이 이 정책을 쓴다.
+
+- **비교 기준.** 각 클러스터는 따로 압축하므로, 레코드 순서열은 달라도 의미(키마다 최신 레코드)는 같다. 그래서 정책에 `compact`가 있으면 내용은 키마다 최신 레코드로 비교한다(tombstone은 없는 키). group 위치는 그 위치부터의 레코드가 이루는 상태로 비교한다. 둘 다 압축이 얼마나 진행돼도 그대로다.
+- **최종 단계.** 전체를 다시 복사한다. 압축 뒤 남은 크기는 대략 살아 있는 키 수다. 두 번에 나눈 복사는, 그사이 원본이 압축되면 원본 레코드와 일대일로 맞지 않는다.
+- **목적지 비우기.** compact 전용 토픽은 `DeleteRecords`를 거부한다(Redpanda도 POLICY_VIOLATION, 실측). 다시 채울 목적지는 지우고 원본 설정으로 새로 만든다. 활성화 전이라 아무도 읽지 않는다.
+- **probe.** 내용 비교와 복원 훈련도 같은 기준으로 비교한다.
+- **실측.** 원본에 주문마다 8KB 버전을 24번 쓰고 둘은 지운 뒤, 원본이 실제로 압축되기를(오프셋 빈틈) 기다렸다.
+  - 인계 전체와 재복사(목적지 재생성), probe 내용 비교와 복원 훈련이 통과했다. 목적지를 읽으면 원본과 같은 28개 주문을 얻는다.
+  - sync 뒤 늦은 쓰기와 삭제도 최종 단계가 옮겼다. 목적지에서 값 하나가 바뀌면 다르다고 판정했다.
+  - 복사 **뒤에** 원본이 압축되는 경우: 의미 비교는 같다고 판정했다. 순서열로 비교하게 되돌리면 2회 모두 틀린 판정(UNKNOWN)을 냈다.
+
 **Kafka 쓰기 정지 단축(추가).** 정지 구간을 단계별로 재 보니 adapter 동작은 다 합쳐 약 2초였다. 가장 큰 단일 항목은 probe의 레코드 읽기(두 토픽 약 2초)였다.
 
 - 원인: 빈 파티션까지 모든 파티션의 끝 이벤트를 기다렸고, 그때마다 fetch가 데이터를 최대 0.5초 기다렸다. 내용 비교, 불변식, 복원 훈련이 모두 이 방식으로 읽는다.
@@ -1845,7 +1856,7 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 | control plane 이중화(API ×2, 워커 ×2)·워커 장애 복구 | 모의 시험 통과 | 로컬 kind에 실제 배포. 경로 전환 중 워커 Pod 삭제 뒤 증명·readback으로 완료. 관리형 클러스터 배포는 미시험 |
 | MySQL 간 offline copy adapter·probe | 모의 시험 통과 | 로컬 MySQL 8.4.13. 적합성 키트와 control plane 전체 흐름. TLS probe는 시험용 서버 두 대에서 실측 |
 | MySQL 변경 캡처(서버 복제, snapshot-cdc) | 모의 시험 통과 | 시험용 MySQL 8.4.13 두 대. 적합성 키트, 정지 구간 쓰기 0행(offline 20,158행), control plane 전체 흐름 |
-| Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL). 한 브로커의 두 토픽과, 서로 다른 kind 클러스터의 두 브로커 사이. control plane 전체 흐름 연결(2026-11-17). TLS 리스너만 연 Redpanda에서 검증된 TLS로 전체 흐름. snapshot-cdc 최종 단계는 sync 이후 레코드만 씀(정지 중 오프셋 11, offline 636) |
+| Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL). 한 브로커의 두 토픽과, 서로 다른 kind 클러스터의 두 브로커 사이. control plane 전체 흐름 연결(2026-11-17). TLS 리스너만 연 Redpanda에서 검증된 TLS로 전체 흐름. snapshot-cdc 최종 단계는 sync 이후 레코드만 씀(정지 중 오프셋 11, offline 636). 압축 토픽은 키별 최신 값으로 비교 |
 | RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8. 한 브로커의 두 vhost와, 서로 다른 kind 클러스터의 두 브로커 사이. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 전체 흐름 연결(2026-11-17). TLS만 받는 브로커에서 AMQP·관리 API 모두 검증된 TLS로 전체 흐름 |
 | Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). 관리형 미실측 |
 | 메모리 세션 drain adapter | 모의 시험 통과 | 로컬 kind, WebSocket 시험 서버. 커널 TCP 테이블로 세션 계수, drain 상한 hold·terminate |
