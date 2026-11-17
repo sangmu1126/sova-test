@@ -48,8 +48,11 @@ def is_on(client, name):
 
 
 def login(b, port, name):
+    from redis.backoff import NoBackoff
+    from redis.retry import Retry
+
     return b["redis"].Redis(host="127.0.0.1", port=port, username=name, password=PASSWORD,
-                            socket_timeout=10)
+                            socket_timeout=10, retry=Retry(NoBackoff(), 0))
 
 
 def test_the_fence_reaches_every_replica_and_holds_after_a_failover(redis_replicated_business):

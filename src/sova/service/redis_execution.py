@@ -125,9 +125,16 @@ def redis_resolver(app, *, route_for):
         return replica_clients[side]
 
     def connect_as(side, name):
+        """A writer's own login, tried once: redis-py retries a ConnectionError -
+        a refused login (AuthenticationError) is one - about ten times with
+        growing waits by default, so each refused probe attempt took seconds."""
+        from redis.backoff import NoBackoff
+        from redis.retry import Retry
+
         login = {k: v for k, v in settings[side].items() if k not in ("username", "password")}
         password = _read(passwords[name]) if name in passwords else None
-        return redis.Redis(**login, username=name, password=password)
+        return redis.Redis(**login, username=name, password=password,
+                           retry=Retry(NoBackoff(), 0))
 
     resolved = {
         "connect": connect, "connect_as": connect_as, "prefixes": tuple(entry["prefixes"]),

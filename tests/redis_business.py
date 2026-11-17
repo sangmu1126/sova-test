@@ -181,8 +181,13 @@ def redis_replicated_servers(tmp_path_factory):
 
 
 def as_user(servers, side, name):
+    """A user's own login, tried once (as the worker's settings make it)."""
+    from redis.backoff import NoBackoff
+    from redis.retry import Retry
+
     return servers["redis"].Redis(host="127.0.0.1", port=servers["ports"][side], username=name,
-                                  password=PASSWORD, socket_timeout=10)
+                                  password=PASSWORD, socket_timeout=10,
+                                  retry=Retry(NoBackoff(), 0))
 
 
 def _business(redis_servers):

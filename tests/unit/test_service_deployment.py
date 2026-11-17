@@ -366,6 +366,19 @@ def test_a_redis_keyspace_gets_the_keyspace_adapter(tmp_path):
     close()
 
 
+def test_a_writers_own_redis_login_is_tried_once(tmp_path):
+    """redis-py retries a refused login (an AuthenticationError is a
+    ConnectionError) with growing waits; a probe's attempt must not."""
+    pytest.importorskip("redis")
+    from sova.service.redis_execution import redis_resolver
+
+    app = redis_application(tmp_path)
+    resolve, close = redis_resolver(app, route_for=lambda spec: FakeRoute())
+    client = resolve("tenant-a", "board")["connect_as"]("source", "board-app")
+    assert client.get_retry().get_retries() == 0
+    close()
+
+
 def test_a_redis_entry_registers_each_sides_replicas(tmp_path):
     pytest.importorskip("redis")
     replica = write(tmp_path, "redis-replica.json", json.dumps({
