@@ -156,12 +156,21 @@ def test_compaction_after_the_copy_does_not_change_the_verdict(kafka_compacted_b
     meaning does not."""
     b = kafka_compacted_business
     world = KafkaWorld(b)
-    rewrite(b)
-    for action in ("stage_target", "pause_admission", "fence_source_writes", "copy_content"):
-        apply(world.adapter(), action)
-    copied = compacted_away(b, b["names"]["src"])
-    deadline = time.monotonic() + 180
-    while compacted_away(b, b["names"]["src"]) <= copied:  # the source compacts on its own
-        assert time.monotonic() < deadline, "the source did not compact after the copy"
-        time.sleep(5)
+    apply(world.adapter(), "stage_target")
+    # The source compacts its closed segments on its own schedule. If that ran
+    # before the copy, nothing is left to compact after it: write and copy
+    # again (the earlier active segment then closes, dirty) until it does.
+    for attempt in range(3):
+        rewrite(b)
+        for action in ("pause_admission", "fence_source_writes", "copy_content"):
+            apply(world.adapter(), action)
+        copied = compacted_away(b, b["names"]["src"])
+        deadline = time.monotonic() + 90
+        while compacted_away(b, b["names"]["src"]) <= copied and time.monotonic() < deadline:
+            time.sleep(5)  # the source compacts on its own
+        if compacted_away(b, b["names"]["src"]) > copied:
+            break
+        world.reopen_source()  # the writers again, for the next rewrite
+    else:
+        raise AssertionError("the source did not compact after any of three copies")
     assert readback(world.adapter(), "copy_content") == EffectStatus.APPLIED
