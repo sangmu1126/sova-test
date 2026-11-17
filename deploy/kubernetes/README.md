@@ -110,7 +110,7 @@ rules:
 - **이미지 가져오기.** 이미지가 노드에 없으면 받아 와야 한다. 사설 레지스트리를 쓰는 곳에서는 같은 digest를 미러링해 `agent_image`로 지정한다.
 - **agent 키.** 워커의 Secret에 hex로 넣고 `agent_key_file`로 가리킨다. 어느 워커 replica든 같은 키로 agent와 통신한다.
 - **NetworkPolicy.** API 서버의 Pod 프록시는 agent Pod의 8080 포트로 들어온다. 애플리케이션 namespace에 기본 거부 정책이 있다면, `app.kubernetes.io/managed-by: sova` Pod의 8080 수신을 허용해야 한다.
-- **API 서버 → agent 구간.** 이 구간은 클러스터 네트워크의 평문 HTTP다. 검증된 전송 암호화를 요구하는 계약에서 이 단위는 실패로 측정된다.
+- **API 서버 → agent 구간.** 이 구간은 클러스터 네트워크의 평문 HTTP다. 검증된 전송 암호화를 요구하는 계약에서 이 단위는 실패로 측정된다. 선택지(port-forward 위 종단 TLS, Pod 네트워크 암호화)는 [구현 안내](../../docs/contract-foundation.md)의 볼륨 절에 있다.
 
 ### 저장소별 실행 설정 항목
 
@@ -120,7 +120,7 @@ rules:
 |---|---|---|---|
 | `postgresql` | `sova.service.catalog` | DB DSN, 역할 비밀번호 | `mode: offline_copy` 또는 `logical_replication` |
 | `mysql` | 같음 | 연결 설정(JSON), 계정 비밀번호, 복제 계정 비밀번호 | `mode: replication`은 서버 복제 변경 캡처. 원본 계정이 전역 읽기 잠금을 못 걸면 `replication.snapshot: lockless`(모든 단위 테이블에 기본 키 필요, 그동안 목적지 서버는 다른 채널을 두지 않아야 함). TLS는 `ssl_ca`(호스트 검증 기본 켬) |
-| `redis` | `sova.service.redis_execution` | 서버 설정(JSON), 사용자 비밀번호 | TLS는 `ssl_ca`. replica가 있으면 `replicas`에 모두 등록해야 한다(ACL은 노드마다 따로이고, 등록되지 않은 replica가 있으면 차단이 확정되지 않음) |
+| `redis` | `sova.service.redis_execution` | 서버 설정(JSON), 사용자 비밀번호 | TLS는 `ssl_ca`. replica가 있으면 `replicas`에 모두 등록해야 한다(ACL은 노드마다 따로이고, 등록되지 않은 replica가 있으면 차단이 확정되지 않음). Sentinel이 지키면 `sentinels`(Sentinel 설정 파일들, master 이름) |
 | `kafka` | `sova.service.kafka_execution` | 관리자·principal별 클라이언트 설정(JSON) | 연결 관련 키만 받는다. probe용 트랜잭션 ID 접두어(`probe_prefix`)를 각 producer에 허용해야 한다. TLS는 `security.protocol: SASL_SSL`과 `ssl.ca.location` |
 | `rabbitmq` | `sova.service.rabbitmq_execution` | 브로커 설정(JSON), 사용자 비밀번호 | TLS는 `ssl_ca`. 관리자 자격 증명이 오가는 두 경로(AMQP, 관리 API)에 모두 쓰이므로, 관리 API 주소는 `https://`여야 한다 |
 | `mongodb` | `sova.service.mongodb_execution` | 서버 설정(JSON), 사용자 비밀번호 | `mode: change_stream`은 change stream 변경 캡처(원본이 레플리카셋이어야 함, `catch_up_seconds`). TLS는 `tls_ca` |
