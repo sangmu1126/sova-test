@@ -48,6 +48,14 @@ class Agent:
                                    headers={"X-Sova-Agent-Token": self.token}, body=body,
                                    timeout=timeout, limit=limit)
 
+    def healthy(self):
+        """Whether the agent answers now (asked directly, not the kubelet's probe)."""
+        try:
+            self._call("GET", "/healthz", {}, timeout=2, limit=1024)
+            return True
+        except Exception:  # noqa: BLE001 - not up yet, whatever the reason
+            return False
+
     def manifest(self, claim):
         return json.loads(self._call("GET", "/manifest", {"claim": str(claim)},
                                      timeout=900, limit=64 << 20))
@@ -129,6 +137,9 @@ class VolumeAgents:
                     "runAsGroup": self.run_as[1], "seccompProfile": {"type": "RuntimeDefault"}}
         if writable and self.fs_group is not None:
             security["fsGroup"] = self.fs_group  # a volume being filled is ours to set up
+            # The kubelet changes ownership of every file at each mount by default;
+            # once the volume's root is ours, each later mount skips that walk.
+            security["fsGroupChangePolicy"] = "OnRootMismatch"
         spec = {
             "restartPolicy": "Never", "activeDeadlineSeconds": 3600,
             "terminationGracePeriodSeconds": 0, "automountServiceAccountToken": False,
@@ -186,6 +197,11 @@ class VolumeAgents:
             pod = controls.pod(name)
             if pod is not None and ready(pod):
                 return Agent(controls, name, self.token(controls, name))
+            if pod is not None and _running(pod):
+                # Up before the kubelet's next readiness probe (once a second): ask it.
+                agent = Agent(controls, name, self.token(controls, name))
+                if agent.healthy():
+                    return agent
             status = (pod or {}).get("status") or {}
             waiting = [((c.get("state") or {}).get("waiting") or {}).get("reason")
                        for c in status.get("containerStatuses") or ()]
@@ -195,7 +211,7 @@ class VolumeAgents:
                                     f"{[w for w in waiting if w]})")
             if time.monotonic() >= deadline:
                 raise ContractError("Volume agent did not become ready in time")
-            time.sleep(0.25)
+            time.sleep(0.1)
 
     @contextmanager
     def running(self, *wanted):
@@ -212,6 +228,12 @@ class VolumeAgents:
                 deadline = time.monotonic() + 60
                 while controls.pod(name) is not None and time.monotonic() < deadline:
                     time.sleep(0.25)
+
+
+def _running(pod):
+    status = pod.get("status") or {}
+    return bool(status.get("podIP")) and not pod["metadata"].get("deletionTimestamp") and any(
+        (c.get("state") or {}).get("running") for c in status.get("containerStatuses") or ())
 
 
 def differences(source, target, limit=20):
