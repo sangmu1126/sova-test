@@ -31,7 +31,10 @@ longer counts.
 
 A server settings file is JSON: ``host``, ``port``, ``username``, ``password``,
 ``db``, and for TLS ``ssl_ca`` (the server certificate and host name are then
-verified).
+verified). ``"cluster": true`` makes the side a cluster: ``host``/``port`` name a
+node to start from, every node the cluster lists is a node of the side, and a
+writer's own login is made on one node at a time (it need not be allowed to
+read the cluster's topology).
 """
 
 import json
@@ -46,7 +49,8 @@ from sova.service.worker import Execution
 _KEYS = {"servers", "prefixes", "writers", "app_user", "admin_user", "user_password_files",
          "sets", "invariants", "scratch_db", "other_prefix", "routes", "zone_of", "replicas",
          "sentinels"}
-_SERVER_KEYS = {"host", "port", "username", "password", "db", "ssl_ca", "socket_timeout"}
+_SERVER_KEYS = {"host", "port", "username", "password", "db", "ssl_ca", "socket_timeout",
+                "cluster"}
 
 
 def redis_measure(probes, *, scratch_db, other_prefix):
@@ -131,7 +135,9 @@ def redis_resolver(app, *, route_for):
 
     def connect(side):
         if side not in clients:
-            clients[side] = redis.Redis(**settings[side])
+            s = {k: v for k, v in settings[side].items() if k != "cluster"}
+            clients[side] = redis.cluster.RedisCluster(**s) if settings[side].get("cluster") \
+                else redis.Redis(**s)
         return clients[side]
 
     def replicas(side):
@@ -147,14 +153,18 @@ def redis_resolver(app, *, route_for):
             replica_clients[("sentinel", side)] = [redis.Redis(**s) for s in servers]
         return replica_clients[("sentinel", side)], sentinel_settings[side][1]
 
-    def connect_as(side, name):
+    def connect_as(side, name, node=None):
         """A writer's own login, tried once: redis-py retries a ConnectionError -
         a refused login (AuthenticationError) is one - about ten times with
-        growing waits by default, so each refused probe attempt took seconds."""
+        growing waits by default, so each refused probe attempt took seconds.
+        On a cluster, ``node`` is the ``(host, port)`` to log in to."""
         from redis.backoff import NoBackoff
         from redis.retry import Retry
 
-        login = {k: v for k, v in settings[side].items() if k not in ("username", "password")}
+        login = {k: v for k, v in settings[side].items()
+                 if k not in ("username", "password", "cluster")}
+        if node is not None:
+            login.update(host=node[0], port=node[1])
         password = _read(passwords[name]) if name in passwords else None
         return redis.Redis(**login, username=name, password=password,
                            retry=Retry(NoBackoff(), 0))

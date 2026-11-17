@@ -46,6 +46,14 @@ Sentinel names this primary as the master, and the replicas it knows are
 exactly the registered ones (matched by run ID, as the addresses each sees
 differ).
 
+A cluster (``connect(side)`` a cluster client): every node the cluster lists
+is a node of the side - its keys spread over the primaries by slot, its ACL
+users kept by each node - so the access changes and postconditions above go
+to every node, and the topology holds only when every node reports the
+cluster ``ok`` and lists only nodes reached here, none of them failing. A
+key rebuilt from its contents is built under a name in its own hash slot (a
+cluster renames only within a slot).
+
 Key prefixes are plain (``board:`` or ``board:*``); a glob with classes or
 escapes is refused rather than guessed at. Every action is idempotent; a
 postcondition that does not hold reads back UNKNOWN.
@@ -104,6 +112,29 @@ def acl_rules(line):
 
 def _text(value):
     return value.decode() if isinstance(value, bytes) else value
+
+
+def is_cluster(client):
+    return callable(getattr(client, "get_nodes", None)) and \
+        callable(getattr(client, "get_redis_connection", None))
+
+
+def node_clients(client, replicas=()):
+    """(name, client) of every node of a side: a cluster's nodes, or the
+    primary and its registered replicas."""
+    if is_cluster(client):
+        return [(n.name, client.get_redis_connection(n))
+                for n in sorted(client.get_nodes(), key=lambda n: n.name)]
+    return [("primary", client)] + [(f"replica-{i}", c) for i, c in enumerate(replicas)]
+
+
+def slot_mate(key, label):
+    """A name in ``key``'s hash slot: its hash tag (the first ``{...}`` with
+    something in it), or the whole key as one."""
+    start = key.find(b"{")
+    end = key.find(b"}", start + 1) if start >= 0 else -1
+    tag = key[start + 1:end] if start >= 0 and end > start + 1 else key
+    return b"{" + tag + b"}__sova:" + label + b":" + hashlib.sha256(key).hexdigest()[:16].encode()
 
 
 def _value(v):
@@ -171,9 +202,9 @@ class RedisKeyspaceHandoffAdapter:
         return self.connect(side)
 
     def _nodes(self, side):
-        """The side's primary, then each registered replica: (name, client)."""
-        return [("primary", self._client(side))] + [
-            (f"replica-{i}", client) for i, client in enumerate(self.replicas(side))]
+        """(name, client) of every node of the side: a cluster's, or the primary
+        and each registered replica."""
+        return node_clients(self._client(side), self.replicas(side))
 
     def _all(self, side, *command):
         for _, client in self._nodes(side):
@@ -189,10 +220,35 @@ class RedisKeyspaceHandoffAdapter:
         """The node's ``INFO replication`` (parsed by the client)."""
         return client.info("replication")
 
+    def _cluster_topology(self, nodes):
+        """Every node reports the cluster ok and lists only the nodes reached
+        here, none failing (a node it lists that the fence did not reach could
+        take writes, or be promoted)."""
+        ids, listed, failing, states = set(), set(), set(), {}
+        for name, client in nodes:
+            ids.add(_text(client.execute_command("CLUSTER", "MYID")))
+            info = _text(client.execute_command("CLUSTER", "INFO"))
+            states[name] = "cluster_state:ok" in info
+            table = client.execute_command("CLUSTER", "NODES")
+            for line in (_text(table) if not isinstance(table, dict) else "").splitlines():
+                fields = line.split()
+                if len(fields) < 3:
+                    continue
+                listed.add(fields[0])
+                if set(fields[2].split(",")) & {"fail", "fail?", "handshake", "noaddr"}:
+                    failing.add(fields[0])
+        unreached = sorted(listed - ids)
+        holds = all(states.values()) and bool(listed) and not unreached and not failing
+        return holds, {"cluster_ok": states, "nodes_listed": len(listed),
+                       "nodes_reached": len(ids), "unreached": unreached[:20],
+                       "failing": sorted(failing)[:20]}
+
     def _topology(self, side):
         """Whether the primary reports exactly the registered replicas, each
         following it; (holds, detail)."""
         nodes = self._nodes(side)
+        if is_cluster(self._client(side)):
+            return self._cluster_topology(nodes)
         primary = self._replication(nodes[0][1])
         replid = primary.get("master_replid")
         followers = {name: self._replication(client) for name, client in nodes[1:]}
@@ -308,7 +364,7 @@ class RedisKeyspaceHandoffAdapter:
 
     # -- actions ---------------------------------------------------------------
     def _stage_target(self):
-        source = self._acl("source")
+        source = self._acl("source", self._nodes("source")[0][1])
         for name in self.writers:
             rules = source.get(name)
             if rules is None:
@@ -430,7 +486,7 @@ class RedisKeyspaceHandoffAdapter:
         """One key rebuilt from its contents under a temporary name (outside the
         unit), its absolute expiry set, then renamed into place whole."""
         kind = _text(source.type(key))
-        temp = b"__sova:tmp:" + hashlib.sha256(key).hexdigest()[:24].encode()
+        temp = slot_mate(key, b"tmp")  # a cluster renames within a slot only
         target.delete(temp)
         if kind == "string":
             value = source.get(key)

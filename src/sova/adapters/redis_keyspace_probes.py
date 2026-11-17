@@ -30,6 +30,11 @@ import hashlib
 import json
 from uuid import uuid4
 
+from sova.adapters.redis_keyspace_handoff import (
+    is_cluster,
+    node_clients,
+    slot_mate,
+)
 from sova.adapters.redis_keyspace_handoff import prefix as plain_prefix
 from sova.domain.contracts import ContractError
 
@@ -41,10 +46,11 @@ def _text(value):
 class RedisKeyspaceProbes:
     def __init__(self, *, connect, connect_as, writers, app_user, sets, invariants=None,
                  scratch_db=15, other_prefix=None, zone_of=None, replicas=None):
-        """``connect(side)`` is an administrative client, ``connect_as(side, user)``
-        a client logged in as ``user``; ``sets`` maps each protected set to its
-        key prefix; ``replicas(side)`` administrative clients on the side's
-        registered replicas."""
+        """``connect(side)`` is an administrative client (a cluster client for a
+        cluster), ``connect_as(side, user, node=None)`` a client logged in as
+        ``user`` (on one ``(host, port)`` node of a cluster); ``sets`` maps each
+        protected set to its key prefix; ``replicas(side)`` administrative
+        clients on the side's registered replicas."""
         if not callable(connect) or not callable(connect_as):
             raise ContractError("Administrative and per-user connections required")
         self.replicas = replicas or (lambda side: ())
@@ -67,7 +73,12 @@ class RedisKeyspaceProbes:
         import redis
 
         key = next(iter(self.sets.values())) + "sova-probe-" + uuid4().hex[:12]
-        client = self.connect_as(side, name)
+        admin = self.connect(side)
+        if is_cluster(admin):  # the writer logs in to the node holding the key's slot only:
+            node = admin.get_node_from_key(key)  # it may not read the cluster's topology
+            client = self.connect_as(side, name, node=(node.host, node.port))
+        else:
+            client = self.connect_as(side, name)
         try:
             try:  # the first command logs in: no other command is assumed allowed
                 client.execute_command("MULTI")
@@ -91,9 +102,7 @@ class RedisKeyspaceProbes:
         import redis
 
         found = []
-        clients = [("primary", self.connect(side))] + [
-            (f"replica-{i}", c) for i, c in enumerate(self.replicas(side))]
-        for node, client in clients:
+        for node, client in node_clients(self.connect(side), self.replicas(side)):
             for p in self.sets.values():
                 try:
                     answer = _text(client.execute_command("ACL", "DRYRUN", name, "SET",
@@ -183,7 +192,7 @@ class RedisKeyspaceProbes:
         other = other or self.other_prefix
         if not other:
             return False, {"probe": "cross_tenant_denied", "reason": "no other tenant registered"}
-        client = self.connect("target")
+        client = node_clients(self.connect("target"))[0][1]  # the same ACL on every node
         answers = {command: _text(client.execute_command(
             "ACL", "DRYRUN", self.app_user, command, plain_prefix(other) + "x",
             *(("1",) if command == "SET" else ()))) for command in ("GET", "SET")}
@@ -192,7 +201,7 @@ class RedisKeyspaceProbes:
             "allowed": {c: a == "OK" for c, a in answers.items()}}
 
     def transport_encrypted(self, side):
-        kwargs = self.connect(side).connection_pool.connection_kwargs
+        kwargs = node_clients(self.connect(side))[0][1].connection_pool.connection_kwargs
         tls = bool(kwargs.get("ssl")) or "ssl_cert_reqs" in kwargs
         verified = tls and kwargs.get("ssl_cert_reqs") in ("required", 2) and bool(
             kwargs.get("ssl_check_hostname"))
@@ -206,11 +215,39 @@ class RedisKeyspaceProbes:
                                   "source": "inventory" if self.zone_of else "none"}
 
     # -- restore -----------------------------------------------------------------------
+    def _restore_in_cluster(self, target):
+        """A cluster has one database: each key restored under a name in its own
+        slot, compared with the original, and removed."""
+        restored, made = {}, []
+        try:
+            for name, prefix in self.sets.items():
+                keys, equal = 0, True
+                for key in target.scan_iter(match=prefix + "*", count=500):
+                    payload = target.dump(key)
+                    if payload is None:
+                        continue
+                    copy = slot_mate(key, b"restore")
+                    expires = target.execute_command("PEXPIRETIME", key)
+                    target.execute_command("RESTORE", copy, max(expires, 0), payload,
+                                           "REPLACE", *(("ABSTTL",) if expires > 0 else ()))
+                    made.append(copy)
+                    keys += 1
+                    equal = equal and self._read(target, key) == self._read(target, copy) and \
+                        expires == target.execute_command("PEXPIRETIME", copy)
+                restored[name] = {"keys": keys, "equal": equal}
+        finally:
+            for copy in made:
+                target.delete(copy)
+        return all(r["equal"] and r["keys"] > 0 for r in restored.values()), {
+            "probe": "restore_drill", "scratch": "keys in their own slots", "sets": restored}
+
     def restore_drill(self, scratch=None):
         """Copy the target's keys into a scratch database of the target server,
-        compare them there, and remove them."""
+        compare them there, and remove them (a cluster: scratch keys instead)."""
         db = self.scratch_db if scratch is None or type(scratch) is not int else scratch
         target = self.connect("target")
+        if is_cluster(target):
+            return self._restore_in_cluster(target)
         pool = target.connection_pool  # the same server, TLS and login; another database
         scratch_client = type(target)(connection_pool=type(pool)(
             connection_class=pool.connection_class, **{**pool.connection_kwargs, "db": db}))

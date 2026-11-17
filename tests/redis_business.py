@@ -242,11 +242,19 @@ def redis_sentinel_servers(tmp_path_factory):
     yield from _servers(tmp_path_factory, replicated=True, sentinels=True)
 
 
-def as_user(servers, side, name):
-    """A user's own login, tried once (as the worker's settings make it)."""
+def as_user(servers, side, name, node=None):
+    """A user's own login, tried once (as the worker's settings make it): on one
+    ``(host, port)`` node, or a cluster client for a cluster."""
     from redis.backoff import NoBackoff
     from redis.retry import Retry
 
+    if node is not None:
+        return servers["redis"].Redis(host=node[0], port=node[1], username=name,
+                                      password=PASSWORD, socket_timeout=10,
+                                      retry=Retry(NoBackoff(), 0))
+    if "cluster" in servers:
+        return servers["cluster"](side, username=name, password=PASSWORD,
+                                  retry=Retry(NoBackoff(), 0))
     return servers["redis"].Redis(host="127.0.0.1", port=servers["ports"][side], username=name,
                                   password=PASSWORD, socket_timeout=10,
                                   retry=Retry(NoBackoff(), 0))
@@ -386,3 +394,87 @@ def redis_to_valkey_servers():
 @pytest.fixture
 def redis_to_valkey_business(redis_to_valkey_servers):
     yield from _business(redis_to_valkey_servers)
+
+
+CLUSTER_CONFIG = PLAIN_CONFIG + """cluster-enabled yes
+cluster-config-file /data/nodes.conf
+cluster-node-timeout 5000
+"""
+CLUSTER_SIZE = 3
+
+
+@pytest.fixture(scope="module")
+def redis_cluster_servers():
+    """A Valkey cluster of three primaries on each side, slots spread over them;
+    the test reaches each node through its own port-forward, and the client
+    maps the addresses the cluster announces (Pod IPs) to those."""
+    pytest.importorskip("redis")
+    import redis
+    from redis.cluster import RedisCluster
+
+    from kind_support import delete_namespace, kind_namespace, kubectl
+
+    if not os.environ.get("SOVA_TEST_KUBE_CONTEXT"):
+        pytest.skip("SOVA_TEST_KUBE_CONTEXT is required for the Redis-protocol tests")
+    names = {side: [f"valkey-{side}-{i}" for i in range(CLUSTER_SIZE)]
+             for side in ("source", "target")}
+    objects = [{"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "plain-server"},
+                "data": {"server.conf": CLUSTER_CONFIG}}]
+    objects += [_plain_server(n, VALKEY, "valkey-server") for side in names
+                for n in names[side]]
+    context, namespace, _ = kind_namespace([], objects, prefix="valkey-cluster")
+    forwards = []
+    try:
+        remap, first = {}, {}
+        for side, deployments in names.items():
+            ips = []
+            for deployment in deployments:
+                kubectl(context, "-n", namespace, "rollout", "status",
+                        f"deployment/{deployment}", "--timeout=180s")
+                ip = kubectl(context, "-n", namespace, "get", "pods", "-l", f"app={deployment}",
+                             "-o", "jsonpath={.items[0].status.podIP}").strip()
+                process, port = _forward(context, namespace, deployment)
+                forwards.append(process)
+                remap[(ip, 6379)] = ("127.0.0.1", port)
+                ips.append(ip)
+                first.setdefault(side, port)
+            kubectl(context, "-n", namespace, "exec", f"deployment/{deployments[0]}", "--",
+                    "valkey-cli", "--user", ADMIN[0], "--pass", ADMIN[1], "--no-auth-warning",
+                    "--cluster", "create", *[f"{ip}:6379" for ip in ips], "--cluster-yes")
+
+        def address(host_port):
+            return remap.get(tuple(host_port), host_port)
+
+        def cluster(side, **login):
+            return RedisCluster(host="127.0.0.1", port=first[side], address_remap=address,
+                                socket_timeout=10, **(login or {"username": ADMIN[0],
+                                                               "password": ADMIN[1]}))
+
+        clients = {}
+        for side in ("source", "target"):
+            deadline = time.monotonic() + 90
+            while True:
+                try:
+                    client = cluster(side)
+                    if all(b"cluster_state:ok" in client.get_redis_connection(n).execute_command(
+                            "CLUSTER", "INFO") for n in client.get_nodes()):
+                        break
+                except redis.exceptions.RedisError:
+                    pass
+                if time.monotonic() > deadline:
+                    raise AssertionError(f"the {side} cluster did not form")
+                time.sleep(1)
+            clients[side] = client
+        nodes = {side: [c.get_redis_connection(n) for n in c.get_nodes()]
+                 for side, c in clients.items()}
+        yield {"admin": clients, "redis": redis, "replicas": nodes, "cluster": cluster,
+               "ports": first}
+    finally:
+        for process in forwards:
+            process.terminate()
+        delete_namespace(context, namespace)
+
+
+@pytest.fixture
+def redis_cluster_business(redis_cluster_servers):
+    yield from _business(redis_cluster_servers)

@@ -394,6 +394,25 @@ def test_a_redis_entry_registers_each_sides_replicas(tmp_path):
     close()
 
 
+def test_a_redis_side_may_be_a_cluster(tmp_path):
+    pytest.importorskip("redis")
+    from sova.service.redis_execution import _server, redis_resolver
+
+    node = write(tmp_path, "cluster.json", json.dumps({
+        "host": "10.0.0.5", "port": 6379, "username": "sova-admin", "password": "x",
+        "cluster": True}))
+    assert _server(node)["cluster"] is True
+    app = redis_application(tmp_path)
+    app["redis"]["servers"]["source"] = node
+    resolve, close = redis_resolver(app, route_for=lambda spec: FakeRoute())
+    login = resolve("tenant-a", "board")["connect_as"]("source", "board-app",
+                                                         node=("10.0.0.7", 6380))
+    kwargs = login.connection_pool.connection_kwargs
+    assert (kwargs["host"], kwargs["port"], kwargs["username"]) == (
+        "10.0.0.7", 6380, "board-app") and "cluster" not in kwargs
+    close()
+
+
 def test_a_redis_entry_names_each_sides_sentinels(tmp_path):
     pytest.importorskip("redis")
     watcher = write(tmp_path, "sentinel.json", json.dumps({"host": "10.0.0.9", "port": 26379}))

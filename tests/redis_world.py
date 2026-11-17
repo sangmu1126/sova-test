@@ -83,7 +83,12 @@ class RedisWorld:
     # -- the business and writers -----------------------------------------------------
     def can_write(self, side, writer):
         redis = self.b["redis"]
-        client = as_user(self.b, self._side(side), self.writers[writer])
+        admin = self.b["admin"][self._side(side)]
+        node = None
+        if hasattr(admin, "get_node_from_key"):  # the node that holds the probe key
+            found = admin.get_node_from_key(self.prefix + "sova-probe")
+            node = (found.host, found.port)
+        client = as_user(self.b, self._side(side), self.writers[writer], node=node)
         try:
             try:  # the first command logs in: no other command is assumed allowed
                 client.execute_command("MULTI")
@@ -117,10 +122,18 @@ class RedisWorld:
         client.close()
 
     # -- changes outside the plan ----------------------------------------------------------
+    def _everywhere(self, side, *command):
+        """An ACL change on every node of a side (a cluster keeps ACLs per node)."""
+        admin = self.b["admin"][side]
+        nodes = [admin.get_redis_connection(n) for n in admin.get_nodes()] \
+            if hasattr(admin, "get_nodes") else [admin]
+        for node in nodes:
+            node.execute_command(*command)
+
     def reopen_source(self):
         """The application's access restored as it was before the handoff."""
-        self.b["admin"]["source"].execute_command(
-            "ACL", "SETUSER", self.users["app"], "on", f"~{self.prefix}*")
+        self._everywhere("source", "ACL", "SETUSER", self.users["app"], "on",
+                         f"~{self.prefix}*")
 
     def tamper_target(self):
         self.b["admin"]["target"].set(self.prefix + "forged", json.dumps({"forged": True}))
@@ -137,8 +150,8 @@ class RedisWorld:
     def open_pending_write(self):
         """A further user, outside the registered writers, that may write the keys."""
         self.pending = f"maintenance-{self.users['app'].rsplit('-', 1)[1]}"
-        self.b["admin"]["source"].execute_command(
-            "ACL", "SETUSER", self.pending, "on", f">{PASSWORD}", f"~{self.prefix}*", "+@all")
+        self._everywhere("source", "ACL", "SETUSER", self.pending, "on", f">{PASSWORD}",
+                         f"~{self.prefix}*", "+@all")
 
     def resolve_pending_write(self):
-        self.b["admin"]["source"].execute_command("ACL", "DELUSER", self.pending)
+        self._everywhere("source", "ACL", "DELUSER", self.pending)
