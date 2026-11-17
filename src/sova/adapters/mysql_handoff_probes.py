@@ -3,9 +3,14 @@
 The same measurements as the PostgreSQL probes, made separately from the
 adapter that changed the databases:
 
-* write probes connect as each registered writer account and attempt a real
-  write inside a transaction that is always rolled back; a refused
-  connection, a locked account or a refused statement is a denial;
+* write denial needs two views to agree (ADR-0007): an attempt - each
+  registered writer account connects and makes a real write inside a
+  transaction that is always rolled back - and the server's own list of the
+  account's sessions. MySQL leaves an open session its global privileges
+  after a ``REVOKE`` and its login after the account is locked, so a refused
+  connection, a locked account or a refused statement is a denial only when
+  no session of the account is open; an error outside those decides
+  nothing;
 * content probes compare each table's rows as a multiset (the shared row
   digest over a canonical row text, session time zone pinned to UTC);
 * the restore drill rebuilds the authoritative tables in an empty database on
@@ -76,11 +81,30 @@ class MySqlHandoffProbes:
             finally:
                 conn.close()
 
+    def _sessions(self, which, writer):
+        """The account's open sessions on the server, as the server lists them."""
+        user = writer.rsplit("@", 1)[0]
+        conn = self.admin_connect(self._db(which))
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM information_schema.PROCESSLIST "
+                            "WHERE USER = %s", (user,))
+                return cur.fetchone()[0]
+        finally:
+            conn.close()
+
+    def _denied(self, which, writer):
+        wrote, attempt = self._try_write(which, writer)
+        sessions = self._sessions(which, writer)
+        denied = not wrote and attempt in ("connection_refused", "write_privilege_denied") \
+            and sessions == 0
+        return denied, {"attempt": attempt, "open_sessions": sessions}
+
     def write_denied(self, which):
-        outcomes = {w: self._try_write(which, w) for w in self.writer_accounts}
-        return not any(wrote for wrote, _ in outcomes.values()), {
+        outcomes = {w: self._denied(which, w) for w in self.writer_accounts}
+        return all(d for d, _ in outcomes.values()), {
             "probe": "write_denied", "database": self._db(which),
-            "outcomes": {w: outcome for w, (_, outcome) in outcomes.items()}}
+            "outcomes": {w: detail for w, (_, detail) in outcomes.items()}}
 
     def cold_start_without_source(self):
         """A fresh application session writes on the target while the source

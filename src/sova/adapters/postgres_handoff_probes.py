@@ -1,10 +1,17 @@
 """Independent probes for a PostgreSQL handoff (§16.3, §15.5, §28.2).
 
 Probes observe the databases separately from the adapter that changed them.
-Write probes connect as the application role and attempt a real write inside
-a transaction that is always rolled back; a refused connection or a refused
-statement is a denial. Content probes compare row sets by an ordered SHA-256
-over each row's text form. Each probe returns ``(passed, observation)``; the
+Write denial needs two views to agree (ADR-0007): an attempt - the role
+connects and makes a real write inside a transaction that is always rolled
+back - and the server's own account of the role, as the administrator reads
+it: whether it may change a unit table, and whether it can get a session to
+do it (log in and connect, or one already open). A refused statement, or a
+refused connection on a server the administrator reaches, that the server's
+view agrees with is a denial. A connection that fails on a server the
+administrator cannot reach decides nothing (psycopg gives no SQLSTATE for a
+refused connection, so reachability tells a refusal from a network fault).
+Content probes compare row sets by an ordered SHA-256 over each row's text
+form. Each probe returns ``(passed, observation)``; the
 observation is what a signed evidence record's artifact digest is taken over.
 
 These probes measure a local reference profile. Transport encryption is
@@ -38,23 +45,63 @@ class PostgresHandoffProbes:
     def _db(self, which):
         return self.source_db if which == "source" else self.target_db
 
+    def _reachable(self, database):
+        try:
+            with self.admin_connect(database) as conn:
+                conn.execute("SELECT 1")
+            return True
+        except psycopg.OperationalError:
+            return False
+
     def _try_write(self, which, role=None):
         """True when a real write by ``role`` (default: the application) would commit."""
+        database = self._db(which)
         try:
-            with self.connect_as(self._db(which), role or self.app_role) as conn:
+            with self.connect_as(database, role or self.app_role) as conn:
                 with conn.transaction(force_rollback=True):
                     conn.execute(self.probe_insert)
             return True, "write_accepted"
         except psycopg.errors.InsufficientPrivilege:
             return False, "write_privilege_denied"
         except psycopg.OperationalError:
-            return False, "connection_refused"
+            if self._reachable(database):
+                return False, "connection_refused"
+            return False, "undecided:unreachable"
+
+    def _may_write(self, which, role):
+        """The server's view of ``role``: unit tables it may change, and whether
+        it can get a session (log in and connect, or one already open)."""
+        with self.admin_connect(self._db(which)) as conn:
+            found = conn.execute(
+                "SELECT r.rolcanlogin, has_database_privilege(r.oid, current_database(), "
+                "'CONNECT'), (SELECT count(*) FROM pg_stat_activity a WHERE "
+                "a.usename = r.rolname AND a.datname = current_database()) "
+                "FROM pg_roles r WHERE r.rolname = %s", (role,)).fetchone()
+            if found is None:
+                return {"may_write": False, "role_exists": False}
+            can_login, can_connect, sessions = found
+            writable = [table for table, _ in self.tables if conn.execute(
+                "SELECT coalesce(has_table_privilege(%s, to_regclass(%s), "
+                "'INSERT,UPDATE,DELETE,TRUNCATE'), false)",
+                (role, sql.Identifier(table).as_string(conn))).fetchone()[0]]
+        session = bool(can_login and can_connect) or sessions > 0
+        return {"may_write": bool(writable) and session, "writable_tables": writable,
+                "can_log_in": can_login, "can_connect": can_connect, "open_sessions": sessions}
+
+    def _denied(self, which, role):
+        wrote, attempt = self._try_write(which, role)
+        if attempt.startswith("undecided"):  # nor can the administrator ask the server
+            return False, {"attempt": attempt}
+        view = self._may_write(which, role)
+        denied = not wrote and attempt in ("write_privilege_denied", "connection_refused") \
+            and not view["may_write"]
+        return denied, {"attempt": attempt, **view}
 
     def write_denied(self, which):
-        outcomes = {role: self._try_write(which, role) for role in self.writer_roles}
-        return not any(wrote for wrote, _ in outcomes.values()), {
+        outcomes = {role: self._denied(which, role) for role in self.writer_roles}
+        return all(d for d, _ in outcomes.values()), {
             "probe": "write_denied", "database": self._db(which),
-            "outcomes": {role: outcome for role, (_, outcome) in outcomes.items()}}
+            "outcomes": {role: detail for role, (_, detail) in outcomes.items()}}
 
     def cold_start_without_source(self):
         """A fresh application session completes a write on the target while the
@@ -128,12 +175,23 @@ class PostgresHandoffProbes:
                           "client_verification": mode}
 
     def cross_tenant_denied(self, other_db):
+        """The application role cannot connect to another tenant's database: its
+        connection is refused by a server the administrator reaches, and that
+        server does not grant it ``CONNECT`` there."""
         try:
             with self.connect_as(other_db, self.app_role) as conn:
                 conn.execute("SELECT 1")
             return False, {"probe": "cross_tenant_denied", "outcome": "connected"}
         except psycopg.OperationalError:
-            return True, {"probe": "cross_tenant_denied", "outcome": "connection_refused"}
+            pass
+        try:
+            with self.admin_connect(other_db) as conn:
+                granted = conn.execute("SELECT has_database_privilege(%s, current_database(), "
+                                       "'CONNECT')", (self.app_role,)).fetchone()[0]
+        except psycopg.OperationalError:
+            return False, {"probe": "cross_tenant_denied", "outcome": "undecided:unreachable"}
+        return not granted, {"probe": "cross_tenant_denied", "outcome": "connection_refused",
+                             "connect_granted": granted}
 
     def restore_drill(self, scratch_db):
         """Copy the authoritative tables into an empty database and compare."""

@@ -288,7 +288,8 @@ def test_a_writer_missing_from_the_inventory_is_caught_by_the_probe(postgres_dat
     assert x["record"].state == HandoffState.SAFE_HOLD
     assert x["record"].reason == "CONTRACT_BREACH" and not x["record"].activation_possible
     denied, observation = x["probes"].write_denied("source")
-    assert not denied and observation["outcomes"][business["batch"]] == "write_accepted"
+    assert not denied and observation["outcomes"][business["batch"]]["attempt"] == \
+        "write_accepted"
 
 
 def test_a_prepared_transaction_keeps_the_fence_unconfirmed(postgres_database, now,
