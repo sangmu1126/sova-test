@@ -58,21 +58,24 @@ def test_copying_again_leaves_the_same_stream_not_a_longer_one(world):
     assert world.content("target") == first == world.content("source")
 
 
-def test_a_compact_only_topic_is_refused_before_anything_changes(world):
+def test_a_compact_only_topic_is_staged_with_its_policy_and_copied_again_whole(world):
+    """Once refused, now handed off: the target gets the source's policy, and a
+    second copy recreates it (a compact-only topic refuses DeleteRecords)."""
     from confluent_kafka.admin import AlterConfigOpType, ConfigEntry, ConfigResource
     from confluent_kafka.admin import ResourceType
-
-    from sova.domain.contracts import ContractError
 
     resource = ConfigResource(ResourceType.TOPIC, world.names["src"], incremental_configs=[
         ConfigEntry("cleanup.policy", "compact",
                     incremental_operation=AlterConfigOpType.SET)])
     for future in world.b["admin"].incremental_alter_configs([resource]).values():
         future.result()
-    before = world.state()
-    with pytest.raises(ContractError):
-        apply(world.adapter(), "stage_target")
-    assert world.state() == before
+    for action in ("stage_target", "pause_admission", "fence_source_writes", "copy_content"):
+        apply(world.adapter(), action)
+    target = ConfigResource(ResourceType.TOPIC, world.names["tgt"])
+    found = world.b["admin"].describe_configs([target])[target].result()
+    assert found["cleanup.policy"].value == "compact"
+    apply(world.adapter(), "copy_content")
+    assert readback(world.adapter(), "verify_final_state") == EffectStatus.APPLIED
 
 
 def records_written(world):

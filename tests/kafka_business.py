@@ -46,8 +46,9 @@ def settings(address, user, password, ca=None):
     return found
 
 
-def business(address, root, api, ca=None):
-    """The topic and its business on one broker (``ca``: reached over TLS)."""
+def business(address, root, api, ca=None, config=None):
+    """The topic and its business on one broker (``ca``: reached over TLS;
+    ``config``: the topic's own configuration)."""
     import httpx
     from confluent_kafka import Consumer, Producer, TopicPartition
     from confluent_kafka.admin import (
@@ -73,7 +74,7 @@ def business(address, root, api, ca=None):
         httpx.post(f"{api}/v1/security/users", json={
             "username": user, "password": PASSWORD, "algorithm": "SCRAM-SHA-256"},
             timeout=10).raise_for_status()
-    created = admin.create_topics([NewTopic(names["src"], PARTITIONS, 1, config={
+    created = admin.create_topics([NewTopic(names["src"], PARTITIONS, 1, config=config or {
         "cleanup.policy": "delete", "retention.ms": "604800000"})])
     created[names["src"]].result()
 
@@ -131,6 +132,15 @@ def business(address, root, api, ca=None):
 @pytest.fixture
 def kafka_business():
     yield from business(*broker())
+
+
+@pytest.fixture
+def kafka_compacted_business():
+    """The same business on a compact-only topic (a state topic: the latest value
+    of each order), rolling small segments so compaction runs within a test."""
+    yield from business(*broker(), config={
+        "cleanup.policy": "compact", "segment.bytes": "1048576",
+        "min.cleanable.dirty.ratio": "0.01", "delete.retention.ms": "1000"})
 
 
 REDPANDA = ("docker.io/redpandadata/redpanda:v26.2.5@sha256:"

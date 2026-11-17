@@ -12,7 +12,10 @@ Made apart from the adapter that moved the records, by other means:
   transactional ID refused, a timeout) decides nothing and counts against;
 * content is read with a ``read_committed`` consumer of the probes' own: every
   partition's records in order (key, value, headers, producer timestamp) and
-  each registered group's position counted as records before it;
+  each registered group's position counted as records before it; a
+  compacted topic by its meaning instead - the latest record of each key, and
+  each group's state of the records from its position on - which each
+  cluster's own compaction leaves unchanged;
 * a business invariant is a registered check over the target's records: every
   value is JSON carrying a field, or no key appears twice;
 * the restore drill copies the target topic into a scratch topic, compares
@@ -189,10 +192,48 @@ class KafkaTopicProbes:
                 for tp in found.topic_partitions if tp.offset >= 0)
         return positions
 
+    def _compacted(self, side, topic):
+        """Whether the topic is compacted: it then means its latest record per key."""
+        k = _kafka()
+        admin = k.admin.AdminClient(self.config(side))
+        resource = k.admin.ConfigResource(k.admin.ResourceType.TOPIC, topic)
+        entries = admin.describe_configs([resource])[resource].result()
+        policy = entries.get("cleanup.policy")
+        return "compact" in str(policy.value if policy else "delete").split(",")
+
+    @staticmethod
+    def _state(records):
+        """The latest record of each key, a tombstone as the key absent."""
+        latest = {}
+        for _, key, value, headers, stamp in records:
+            latest[key] = (value, headers, stamp)
+        return sorted((key, v) for key, v in latest.items() if v[0] is not None)
+
+    def _meaning(self, side, topic, records):
+        """A compacted topic's digest: each partition's state, and each group's
+        state of the records from its position on - unchanged by compaction."""
+        k = _kafka()
+        admin = k.admin.AdminClient(self.config(side))
+        h, keys = hashlib.sha256(), 0
+        for partition in sorted(records):
+            state = self._state(records[partition])
+            keys += len(state)
+            h.update(repr((partition, state)).encode())
+        for group in self.groups:
+            found = admin.list_consumer_group_offsets([k.ConsumerGroupTopicPartitions(
+                group, [k.TopicPartition(topic, p) for p in records])])[group].result()
+            for tp in sorted(found.topic_partitions, key=lambda tp: tp.partition):
+                if tp.offset >= 0:
+                    h.update(repr((group, tp.partition, self._state(
+                        [r for r in records[tp.partition] if r[0] >= tp.offset]))).encode())
+        return h.hexdigest(), keys
+
     def _digest(self, side, topic):
         records = self._read(side, topic)
         if records is None:
             return None, 0
+        if self._compacted(side, topic):
+            return self._meaning(side, topic, records)
         h, count = hashlib.sha256(), 0
         for partition in sorted(records):
             for _, key, value, headers, stamp in records[partition]:
@@ -315,9 +356,14 @@ class KafkaTopicProbes:
             if producer.flush(self.timeout):
                 return False, {"probe": "restore_drill", "reason": "records not delivered"}
             restored = self._read("target", scratch)
-            strip = {p: [r[1:] for r in rs] for p, rs in records.items()}
-            equal = restored is not None and {p: [r[1:] for r in rs]
-                                              for p, rs in restored.items()} == strip
+            if self._compacted("target", topic):  # the scratch copy is not compacted yet
+                equal = restored is not None and {p: self._state(rs)
+                                                  for p, rs in restored.items()} == {
+                    p: self._state(rs) for p, rs in records.items()}
+            else:
+                strip = {p: [r[1:] for r in rs] for p, rs in records.items()}
+                equal = restored is not None and {p: [r[1:] for r in rs]
+                                                  for p, rs in restored.items()} == strip
         finally:
             admin.delete_topics([scratch])
         return equal, {"probe": "restore_drill", "scratch_topic": scratch,

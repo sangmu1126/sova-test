@@ -28,8 +28,17 @@ from the clusters:
 Kafka authorizes every request against the current ACLs, so revoking is
 enough for open connections; nothing caches a right as MySQL sessions do.
 
-Topics whose cleanup policy is compact only are refused at staging: emptying
-the target for a repeated copy needs ``DeleteRecords``, which they reject.
+A compacted topic (``compact`` in its cleanup policy) means its latest
+record per key: each cluster compacts on its own schedule, so the two sides'
+record sequences differ while their meaning does not. Its content is
+compared as the latest record of each key (a tombstone: the key absent), and
+a group's position as that state of the records from the position on - both
+the same however far compaction has run. Its final step copies the whole
+topic again (what is left after compaction: about its live keys), since a
+copy in two steps no longer maps the source's records one to one once the
+source compacts in between. A compact-only topic refuses ``DeleteRecords``:
+a target to be filled again is deleted and created anew instead (before
+activation, nothing reads it).
 
 The copy is idempotent: it first deletes the target's records
 (``DeleteRecords``) and rewrites every committed source record in one
@@ -49,6 +58,7 @@ standard authorizer does: literal, prefixed and wildcard patterns, the
 from bisect import bisect_left
 import hashlib
 import json
+import time
 from uuid import uuid4
 
 from sova.adapters.evidence_bounds import bounded
@@ -349,11 +359,6 @@ class KafkaTopicHandoffAdapter:
         partitions = self._describe("source")
         if partitions is None:
             raise ContractError("The source topic does not exist")
-        policy = self._configs("source").get("cleanup.policy", "delete")
-        if "delete" not in policy.split(","):
-            # A repeated copy empties the target with DeleteRecords, which a
-            # compact-only topic refuses; its copy needs a key-state comparison.
-            raise ContractError("Compact-only topics are not supported by this adapter")
         if self._describe("target") is None:
             topic = admin.NewTopic(self.target_topic, partitions, -1,
                                    config=self._configs("source"))
@@ -415,6 +420,31 @@ class KafkaTopicHandoffAdapter:
             kept[p] = n
         return kept
 
+    def _policy(self):
+        """(compacted, records deletable) from the source's cleanup policy."""
+        policy = set(self._configs("source").get("cleanup.policy", "delete").split(","))
+        return "compact" in policy, "delete" in policy
+
+    def _recreate_target(self, partitions):
+        """A compact-only topic refuses DeleteRecords: delete the target topic and
+        create it anew with the source's configuration (before activation)."""
+        admin, k = _kafka()["admin"], _kafka()
+        for future in self._admin("target").delete_topics(
+                [self.target_topic], request_timeout=self.timeout).values():
+            future.result()
+        deadline = time.monotonic() + max(self.timeout, 60)
+        while True:  # deletion completes in the background
+            try:
+                self._admin("target").create_topics([admin.NewTopic(
+                    self.target_topic, partitions, -1, config=self._configs("source"))])[
+                    self.target_topic].result()
+                return
+            except k["KafkaException"] as error:
+                if error.args[0].code() != k["KafkaError"].TOPIC_ALREADY_EXISTS or \
+                        time.monotonic() > deadline:
+                    raise
+                time.sleep(0.5)
+
     def _copy(self, *, append=False):
         """Make the target hold the source's committed records. With ``append``
         a target that already holds a prefix of them (the sync's copy) gets
@@ -426,15 +456,18 @@ class KafkaTopicHandoffAdapter:
         target_partitions = self._describe("target")
         if partitions is None or target_partitions != partitions:
             raise ContractError("Source and target topics must exist with equal partitions")
+        compacted, deletable = self._policy()
         source = self._records("source", partitions)
-        kept = self._kept(source, partitions) if append else None
+        kept = self._kept(source, partitions) if append and not compacted else None
         if kept is None:
             # Logically empty the target: its records before the high watermark go.
             kept = {p: 0 for p in range(partitions)}
             high = self._offsets("target", partitions, k["IsolationLevel"].READ_UNCOMMITTED)
             doomed = [k["TopicPartition"](self.target_topic, p, high[p])
                       for p in range(partitions) if high[p] > 0]
-            if doomed:
+            if doomed and not deletable:
+                self._recreate_target(partitions)
+            elif doomed:
                 for future in self._admin("target").delete_records(
                         doomed, request_timeout=self.timeout).values():
                     future.result()
@@ -472,6 +505,28 @@ class KafkaTopicHandoffAdapter:
             self._admin("target").alter_consumer_group_offsets(
                 [request], request_timeout=self.timeout)[request.group_id].result()
 
+    @staticmethod
+    def _state(records):
+        """The latest record of each key, a tombstone as the key absent: what a
+        compacted partition means, the same however far compaction has run."""
+        latest = {}
+        for _, r in records:
+            latest[r["key"]] = r
+        live = sorted(((k, r) for k, r in latest.items() if r["value"] is not None),
+                      key=lambda item: item[0] or b"")
+        h = hashlib.sha256()
+        for key, r in live:
+            h.update(json.dumps([_bytes(key), _bytes(r["value"]),
+                                 [[n, _bytes(v)] for n, v in r["headers"]], r["timestamp"]],
+                                separators=(",", ":")).encode() + b"\n")
+        return {"keys": len(live), "sha256": h.hexdigest()}
+
+    def _suffix_states(self, side, partitions, records):
+        """group -> partition -> state of the records from its position on."""
+        return {group: {p: self._state([(o, r) for o, r in records[p] if o >= offset])
+                        for p, offset in by_p.items()}
+                for group, by_p in self._committed(side, partitions).items()}
+
     def _compare(self):
         partitions = self._describe("source")
         target_partitions = self._describe("target")
@@ -479,6 +534,15 @@ class KafkaTopicHandoffAdapter:
             return False, {"partitions": [partitions, target_partitions]}
         source, target = self._records("source", partitions), self._records("target",
                                                                             partitions)
+        if self._policy()[0]:  # compacted: compare meanings, not sequences
+            digests = {str(p): [self._state(source[p]), self._state(target[p])]
+                       for p in range(partitions)}
+            positions = (self._suffix_states("source", partitions, source),
+                         self._suffix_states("target", partitions, target))
+            same = all(a == b for a, b in digests.values()) and positions[0] == positions[1]
+            return same, {"compacted": True, "partitions": digests, "group_positions": [
+                {g: {str(p): n for p, n in by_p.items()} for g, by_p in side.items()}
+                for side in positions]}
         digests = {str(p): [self._digest(source[p]), self._digest(target[p])]
                    for p in range(partitions)}
         positions = (self._positions("source", partitions, source),
