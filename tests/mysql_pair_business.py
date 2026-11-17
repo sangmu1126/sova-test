@@ -25,7 +25,7 @@ ROOT = "sova-mysql-pair-test-secret"
 REPLICATION = ("sova_repl", "sova-replication-test-secret")
 
 
-def server(side, server_id):
+def server(side, server_id, gtid=True):
     labels = {"app": "mysql", "side": side}
     return [
         {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": f"mysql-{side}"},
@@ -35,8 +35,10 @@ def server(side, server_id):
                       "name": "mysql", "image": MYSQL, "imagePullPolicy": "IfNotPresent",
                       "args": [f"--server-id={server_id}", "--skip-name-resolve",
                                "--innodb-buffer-pool-size=32M", "--performance-schema=OFF",
-                               "--max-connections=100", "--gtid-mode=ON",
-                               "--enforce-gtid-consistency=ON", "--skip-replica-start",
+                               "--max-connections=100",
+                               *(["--gtid-mode=ON", "--enforce-gtid-consistency=ON"]
+                                 if gtid else ["--gtid-mode=OFF"]),
+                               "--skip-replica-start",
                                # TLS offered (not required): a CA of the test's own
                                "--ssl-ca=/etc/mysql-tls/ca.pem",
                                "--ssl-cert=/etc/mysql-tls/server-cert.pem",
@@ -113,6 +115,17 @@ def _forward(context, namespace, deployment):
 
 @pytest.fixture(scope="module")
 def mysql_pair(tmp_path_factory):
+    yield from _pair(tmp_path_factory)
+
+
+@pytest.fixture(scope="module")
+def mysql_pair_gtid_off_source(tmp_path_factory):
+    """As ``mysql_pair``, the source with GTIDs off (MySQL's own default) and the
+    target with them on."""
+    yield from _pair(tmp_path_factory, source_gtid=False)
+
+
+def _pair(tmp_path_factory, source_gtid=True):
     pymysql = pytest.importorskip("pymysql")
     from kind_support import delete_namespace, kind_namespace, kubectl
 
@@ -121,8 +134,8 @@ def mysql_pair(tmp_path_factory):
     import base64
     import json
 
-    context, namespace, _ = kind_namespace([], [*server("source", 101), *server("target", 102)],
-                                           prefix="mysqlpair")
+    context, namespace, _ = kind_namespace([], [*server("source", 101, source_gtid),
+                                                 *server("target", 102)], prefix="mysqlpair")
     forwards = []
     try:
         material = tls_material(namespace)  # the Pods wait for it to mount
@@ -162,6 +175,15 @@ def mysql_pair(tmp_path_factory):
 
 @pytest.fixture
 def mysql_pair_business(mysql_pair):
+    yield from _pair_business(mysql_pair)
+
+
+@pytest.fixture
+def mysql_gtid_off_business(mysql_pair_gtid_off_source):
+    yield from _pair_business(mysql_pair_gtid_off_source)
+
+
+def _pair_business(mysql_pair):
     from sova.adapters.mysql_offline_copy import statements
 
     pymysql, admin = mysql_pair["pymysql"], mysql_pair["admin"]

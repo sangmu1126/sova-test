@@ -51,12 +51,23 @@ change and put back from there, so a worker lost in between does not leave
 the operator's settings behind. A transaction the settle did not cover
 would be missing from the target, and the final comparison would hold the
 handoff.
+
+The two servers' ``gtid_mode`` need not match. A target with GTIDs ``ON``
+refuses an anonymous transaction, which is all a source with them ``OFF``
+(MySQL's own default) writes: the channel then gives each one a GTID of its
+own (``ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS``) under a UUID derived from
+the channel, so the target's ``gtid_executed`` tells the handed-off
+transactions from its own. A target with GTIDs ``OFF`` cannot take a
+transaction that has one: a source that writes them (``ON``,
+``ON_PERMISSIVE``) is refused before the snapshot, naming the target modes
+that would take it (both permissive modes, reached online).
 """
 
 import hashlib
 import json
 import re
 import time
+import uuid
 
 from sova.adapters.mysql_offline_copy import MARKS, MySqlOfflineCopyAdapter, account, name
 from sova.domain.contracts import ContractError
@@ -67,6 +78,10 @@ _HOST = re.compile(r"[A-Za-z0-9.-]{1,253}")
 _TRANSIENT = frozenset({2002, 2003, 2005, 2013})
 _CONNECT_RETRY_SECONDS = 5  # the server's default is 60
 _APPLIER = "sova_handoff_applier"  # the target's own applier settings, while changed
+# What a server with each gtid_mode writes, and what it takes from a channel.
+_WRITES_GTIDS = frozenset({"ON_PERMISSIVE", "ON"})
+_TAKES_ANONYMOUS = frozenset({"OFF", "OFF_PERMISSIVE", "ON_PERMISSIVE"})
+_TAKES_GTIDS = frozenset({"OFF_PERMISSIVE", "ON_PERMISSIVE", "ON"})
 
 
 class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
@@ -95,6 +110,46 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
         self.catch_up_seconds = catch_up_seconds
         self.channel = "sova_" + hashlib.sha256(json.dumps(
             [adapter_id, self.source_db, self.target_db]).encode()).hexdigest()[:24]
+        # The GTIDs the channel gives anonymous transactions, when the target needs them.
+        self.assigned_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, "sova:mysql:" + self.channel))
+
+    def _gtid_modes(self):
+        modes = {}
+        for side in ("source", "target"):
+            with self._session(side) as cur:
+                cur.execute("SELECT @@GLOBAL.gtid_mode")
+                modes[side] = cur.fetchone()[0]
+        return modes
+
+    def _assign_gtids(self, modes):
+        """Whether the channel must give anonymous transactions GTIDs; refused if
+        the target cannot take the source's own GTIDs."""
+        if modes["source"] in _WRITES_GTIDS and modes["target"] not in _TAKES_GTIDS:
+            raise ContractError(
+                f"The target (gtid_mode {modes['target']}) cannot apply the source's GTID "
+                f"transactions (gtid_mode {modes['source']}): set the target's gtid_mode "
+                "to OFF_PERMISSIVE or ON_PERMISSIVE first")
+        return modes["source"] not in _WRITES_GTIDS and modes["target"] not in _TAKES_ANONYMOUS \
+            or modes["source"] == "ON_PERMISSIVE" and modes["target"] == "ON"
+
+    def _assigned(self):
+        """The channel's own setting, as the target server reports it."""
+        with self._session("target") as cur:
+            cur.execute("SELECT ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS_TYPE, "
+                        "ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS_VALUE FROM performance_schema."
+                        "replication_applier_configuration WHERE CHANNEL_NAME = %s",
+                        (self.channel,))
+            row = cur.fetchone()
+        return None if row is None else {"type": row[0], "value": row[1] or None}
+
+    def _behind(self, what, file, position):
+        status = self._status() or {}
+        return ContractError(
+            f"The replica did not reach {what} {file}:{position} in time: read "
+            f"{status.get('Source_Log_File')}:{status.get('Read_Source_Log_Pos')}, executed "
+            f"{status.get('Relay_Source_Log_File')}:{status.get('Exec_Source_Log_Pos')}, "
+            f"io={status.get('Last_IO_Error') or None!r} "
+            f"sql={status.get('Last_SQL_Error') or None!r}")
 
     # -- the channel -----------------------------------------------------------------
     def _status(self):
@@ -227,33 +282,28 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
                         (file, position, self.catch_up_seconds, self.channel))
             reached = cur.fetchone()[0]
         if reached is None or reached < 0:
-            status = self._status() or {}
-            raise ContractError(
-                f"The replica did not pass the snapshot's position {file}:{position} in "
-                f"time: read {status.get('Source_Log_File')}:"
-                f"{status.get('Read_Source_Log_Pos')}, executed "
-                f"{status.get('Relay_Source_Log_File')}:{status.get('Exec_Source_Log_Pos')}, "
-                f"io={status.get('Last_IO_Error') or None!r} "
-                f"sql={status.get('Last_SQL_Error') or None!r}")
+            raise self._behind("the snapshot's position", file, position)
         with self._session("target") as cur:
             cur.execute("STOP REPLICA SQL_THREAD FOR CHANNEL %s", (self.channel,))
         self._close_window()  # the applier threads are read when it starts again
         with self._session("target") as cur:
             cur.execute("START REPLICA SQL_THREAD FOR CHANNEL %s", (self.channel,))
 
-    def _start_channel(self, file, position):
+    def _start_channel(self, file, position, assign):
         user, _ = account(self.replication_account)
         host, port = self.source_endpoint
         tls = (", SOURCE_SSL=1, SOURCE_SSL_VERIFY_SERVER_CERT=1, SOURCE_SSL_CA=%s"
                if self.replication_tls else "")
+        gtids = ", ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS=%s" if assign else ""
         with self._session("target") as cur:
             cur.execute(
                 "CHANGE REPLICATION SOURCE TO SOURCE_HOST=%s, SOURCE_PORT=%s, SOURCE_USER=%s, "
                 "SOURCE_PASSWORD=%s, SOURCE_LOG_FILE=%s, SOURCE_LOG_POS=%s, "
                 f"SOURCE_AUTO_POSITION=0, GET_SOURCE_PUBLIC_KEY=1, "
-                f"SOURCE_CONNECT_RETRY={_CONNECT_RETRY_SECONDS}{tls} FOR CHANNEL %s",
+                f"SOURCE_CONNECT_RETRY={_CONNECT_RETRY_SECONDS}{tls}{gtids} FOR CHANNEL %s",
                 (host, port, user, self.replication_password, file, position,
-                 *((self.replication_ca_path,) if self.replication_tls else ()), self.channel))
+                 *((self.replication_ca_path,) if self.replication_tls else ()),
+                 *((self.assigned_uuid,) if assign else ()), self.channel))
             cur.execute(
                 f"CHANGE REPLICATION FILTER REPLICATE_REWRITE_DB = (({name(self.source_db)}, "
                 f"{name(self.target_db)})), REPLICATE_DO_DB = ({name(self.target_db)}) "
@@ -279,17 +329,18 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
     # -- actions ---------------------------------------------------------------
     def _start_sync(self):
         self._drop_channel()  # a second run starts over from a new snapshot
+        assign = self._assign_gtids(self._gtid_modes())  # refused before any copy
         if self.snapshot_mode == "lockless":
             (file, position), after = self._snapshot_lockless()
             self._copy_counters()
             self._open_window()  # the copy's changes come again
-            self._start_channel(file, position)
+            self._start_channel(file, position, assign)
             self._await_channel()
             self._strict_after(*after)
         else:
             file, position = self._snapshot()
             self._copy_counters()
-            self._start_channel(file, position)
+            self._start_channel(file, position, assign)
             self._await_channel()
         with self._session("target") as cur:
             cur.execute(f"CREATE TABLE IF NOT EXISTS {name(self.target_db)}.{name(MARKS)} "
@@ -309,10 +360,21 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
         running = running and (tls or not self.replication_tls)
         open_, mode, workers = self._window() if self.snapshot_mode == "lockless" else (
             False, None, None)
-        return holds and running and not open_, {  # past the copy's changes
+        modes = self._gtid_modes()
+        try:
+            needed = self._assign_gtids(modes)
+        except ContractError:
+            needed = None  # no channel setting makes these two compatible
+        assigned = self._assigned() if status is not None else None
+        given = assigned is not None and assigned["type"] == "UUID" and \
+            assigned["value"] == self.assigned_uuid
+        gtids_ok = needed is not None and (given if needed else
+                                          assigned is None or assigned["type"] == "OFF")
+        return holds and running and not open_ and gtids_ok, {  # past the copy's changes
             **detail, "channel": self.channel, "running": running, "tls_verified": tls,
             "snapshot": self.snapshot_mode, "replay_window_open": open_, "exec_mode": mode,
-            "applier_threads": workers,
+            "applier_threads": workers, "gtid_modes": modes, "gtids_assigned": assigned,
+            "gtids_compatible": gtids_ok,
                                    "errors": None if status is None else {
                                        "io": status.get("Last_IO_Error") or None,
                                        "sql": status.get("Last_SQL_Error") or None}}
@@ -329,7 +391,7 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
                         (file, int(position), self.catch_up_seconds, self.channel))
             reached = cur.fetchone()[0]
         if reached is None or reached < 0:
-            raise ContractError("The replica did not reach the source's position in time")
+            raise self._behind("the source's position", file, position)
         self._drop_channel()
         if self.snapshot_mode == "lockless":
             self._close_window()  # if the sync's own close never ran
