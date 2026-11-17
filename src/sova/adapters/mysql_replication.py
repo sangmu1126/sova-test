@@ -34,6 +34,7 @@ target server.
 import hashlib
 import json
 import re
+import time
 
 from sova.adapters.mysql_offline_copy import MARKS, MySqlOfflineCopyAdapter, account, name
 from sova.domain.contracts import ContractError
@@ -126,12 +127,26 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
                 "FOR CHANNEL %s", (self.channel,))
             cur.execute("START REPLICA FOR CHANNEL %s", (self.channel,))
 
+    def _await_channel(self, seconds=30):
+        """``START REPLICA`` returns before the channel has reached the source; a
+        TLS handshake under load takes seconds. Wait (bounded) until it runs or
+        reports an error, so the readback that follows sees where it settled
+        instead of a channel still connecting."""
+        deadline = time.monotonic() + min(seconds, self.catch_up_seconds)
+        while time.monotonic() < deadline:
+            status = self._status()
+            if status is None or status.get("Last_IO_Error") or \
+                    status.get("Replica_IO_Running") != "Connecting":
+                return
+            time.sleep(0.2)
+
     # -- actions ---------------------------------------------------------------
     def _start_sync(self):
         self._drop_channel()  # a second run starts over from a new snapshot
         file, position = self._snapshot()
         self._copy_counters()
         self._start_channel(file, position)
+        self._await_channel()
         with self._session("target") as cur:
             cur.execute(f"CREATE TABLE IF NOT EXISTS {name(self.target_db)}.{name(MARKS)} "
                         "(table_name VARCHAR(64) PRIMARY KEY, copied_at DATETIME(6) NOT NULL)")
