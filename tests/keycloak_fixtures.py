@@ -13,6 +13,7 @@ from uuid import uuid4
 import pytest
 
 CLIENT = "orders-web"
+_MADE = []  # (server, realm) created while the running test ran
 
 
 class Server:
@@ -45,6 +46,7 @@ class Server:
         """A realm with a test client that may sign users in directly and puts
         group membership into its tokens."""
         self.call("POST", "", {"realm": name, "enabled": True})
+        _MADE.append((self, name))
         self.call("POST", f"/{name}/clients", {
             "clientId": CLIENT, "publicClient": True, "directAccessGrantsEnabled": True,
             "standardFlowEnabled": False,
@@ -92,6 +94,23 @@ def keycloak_servers():
     return {"source": Server(parsed[0], (user, password)),
             "target": Server(parsed[1], (user, password)),
             "admin": (user, password)}
+
+
+@pytest.fixture(autouse=True)
+def _realms_removed():
+    """Each realm a test made is removed after it. Keycloak keeps every realm
+    in memory: realms left behind by two days of regressions grew both test
+    servers past their 900 MiB limit (OOM-killed during a regression).
+    Realms are made only in function-scoped fixtures and tests."""
+    start = len(_MADE)
+    yield
+    made = _MADE[start:]
+    del _MADE[start:]
+    for server, name in made:
+        try:
+            server.call("DELETE", f"/{name}")
+        except Exception:  # noqa: BLE001 - gone already, or the server is restarting
+            pass
 
 
 @pytest.fixture
