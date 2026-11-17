@@ -23,12 +23,19 @@ An execution-file entry for a volume unit (``engine: kubernetes-volume``)::
                                      "under": "uploads"}},
         "zone_of": {"source": "<zone>", "target": "<zone>"},
         "other_tenant": {"registration_file": "...", "token_file": "...", "claim": "..."},
-        "scratch_claim": "sova-restore"},
+        "scratch_claim": "sova-restore",
+        "agent_transport": "port-forward",                              # optional
+        "kubelet_tls_verified": {"source": true, "target": true}},      # inventory
      "route": {"kind": "kubernetes_service", ...}}
 
 Each side's registration pins its API server; the token is that cluster's
 (another cluster's token is a mounted file of its own). The agent key is read
-from its file, never from the execution file.
+from its file, never from the execution file. ``agent_transport``
+``port-forward`` reaches the agents through the API server's port-forward
+(the token then needs ``pods/portforward`` ``create``) instead of its Pod
+proxy, so no data crosses the cluster network in the clear;
+``kubelet_tls_verified`` is the operator's record that each cluster's API
+server verifies its kubelets' certificates, which a client cannot observe.
 """
 
 from pathlib import Path
@@ -46,7 +53,8 @@ from sova.service.worker import Execution
 SERVICE_ACCOUNT = Path("/var/run/secrets/kubernetes.io/serviceaccount")
 _VOLUME_KEYS = {"source", "target", "routes", "agent_image", "agent_key_file", "run_as",
                 "fs_group", "storage_class", "app_replicas", "write_probe", "databases",
-                "invariants", "zone_of", "other_tenant", "scratch_claim"}
+                "invariants", "zone_of", "other_tenant", "scratch_claim", "agent_transport",
+                "kubelet_tls_verified"}
 _VOLUME_REQUIRED = {"source", "target", "routes", "agent_image", "agent_key_file", "run_as",
                     "scratch_claim"}
 _SIDE_KEYS = {"registration_file", "token_file", "ca_file", "claims", "app", "others"}
@@ -72,14 +80,17 @@ def volume_factory(adapter_id, resolve):
             adapter_id, source=d["source"], target=d["target"], route=d["route"],
             routes=d["routes"], agent_key=d["agent_key"], image=d["agent_image"],
             run_as=d["run_as"], fs_group=d.get("fs_group"), storage_class=d.get("storage_class"),
-            app_replicas=d.get("app_replicas", 1))
+            app_replicas=d.get("app_replicas", 1),
+            agent_transport=d.get("agent_transport", "proxy"))
         agents = VolumeAgents(label="probe" + adapter.unit[:10], key=d["agent_key"],
                               image=d["agent_image"], run_as=d["run_as"],
-                              fs_group=d.get("fs_group"))
+                              fs_group=d.get("fs_group"),
+                              transport=d.get("agent_transport", "proxy"))
         probes = KubernetesVolumeProbes(
             source=d["source"], target=d["target"], agents=agents,
             write_probe=d.get("write_probe"), databases=d.get("databases", ()),
-            invariants=d.get("invariants"), zone_of=d.get("zone_of"), other=d.get("other"))
+            invariants=d.get("invariants"), zone_of=d.get("zone_of"), other=d.get("other"),
+            kubelet_tls_verified=d.get("kubelet_tls_verified"))
         return Execution(adapter, volume_measure(probes, scratch=d["scratch_claim"]))
 
     return factory
@@ -134,6 +145,13 @@ def volume_resolver(app, *, route_for, controls_for=controls_from):
     probe = volume.get("write_probe")
     if probe is not None and (type(probe) is not dict or set(probe) != {"port", "path"}):
         raise ContractError("write_probe: port and path required")
+    transport = volume.get("agent_transport", "proxy")
+    if transport not in ("proxy", "port-forward"):
+        raise ContractError("agent_transport: proxy or port-forward")
+    verified = volume.get("kubelet_tls_verified") or {}
+    if type(verified) is not dict or set(verified) - {"source", "target"} or not all(
+            type(v) is bool for v in verified.values()):
+        raise ContractError("kubelet_tls_verified: true or false per side")
     zones = volume.get("zone_of") or {}
     if type(zones) is not dict or set(zones) - {"source", "target"}:
         raise ContractError("zone_of: source and target labels")
@@ -156,7 +174,9 @@ def volume_resolver(app, *, route_for, controls_for=controls_from):
         "databases": tuple(volume.get("databases") or ()),
         "invariants": volume.get("invariants") or {},
         "zone_of": (lambda side: zones.get(side)) if zones else None, "other": other,
-        "scratch_claim": volume["scratch_claim"]}
+        "scratch_claim": volume["scratch_claim"],
+        "agent_transport": transport,
+        "kubelet_tls_verified": (lambda side: verified.get(side) is True) if verified else None}
 
     def resolve(tenant_id, application_id):
         if (tenant_id, application_id) != (app["tenant_id"], app["application_id"]):

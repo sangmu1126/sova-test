@@ -138,6 +138,7 @@ http.server.ThreadingHTTPServer(("", 8080), Handler).serve_forever()
 RULES = [
     {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list", "create", "delete"]},
     {"apiGroups": [""], "resources": ["pods/proxy"], "verbs": ["get", "create", "update"]},
+    {"apiGroups": [""], "resources": ["pods/portforward"], "verbs": ["get", "create"]},
     {"apiGroups": [""], "resources": ["persistentvolumeclaims"],
      "verbs": ["get", "list", "create", "patch", "delete"]},
     {"apiGroups": [""], "resources": ["services"], "verbs": ["get", "patch"]},

@@ -63,6 +63,8 @@ class VolumeWorld:
         return VolumeSide(controls, (f"board-data-{name}",), ("deployment", f"board-{name}"),
                           (("deployment", f"board-worker-{name}"),))
 
+    transport = "proxy"  # how the agents are reached through the API server
+
     def _adapter(self, source, target, routes):
         controls = self.b["controls"]()
         return KubernetesVolumeHandoffAdapter(
@@ -70,7 +72,8 @@ class VolumeWorld:
             target=self._side(target, controls), route=Route(controls, "board", SIDES,
                                                              converge_seconds=60),
             routes=routes, agent_key=self.KEY, image=PYTHON, run_as=(UID, UID),
-            storage_class="standard", settle_seconds=90, start_seconds=180)
+            storage_class="standard", settle_seconds=90, start_seconds=180,
+            agent_transport=self.transport)
 
     def adapter(self):
         return self._adapter("source", "target", ("board_src", "board_tgt"))

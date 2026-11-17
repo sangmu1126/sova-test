@@ -113,7 +113,7 @@ class VolumeSide:
 class KubernetesVolumeHandoffAdapter:
     def __init__(self, adapter_id, *, source, target, route, routes, agent_key, image, run_as,
                  fs_group=None, storage_class=None, app_replicas=1, settle_seconds=60.0,
-                 start_seconds=120.0, chunk_bytes=4 << 20):
+                 start_seconds=120.0, chunk_bytes=4 << 20, agent_transport="proxy"):
         """``routes`` is the route value of (source, target); ``agent_key`` (at
         least 32 bytes, from the worker's secrets) derives each agent's token, so
         any worker instance can talk to an agent another one started."""
@@ -137,7 +137,8 @@ class KubernetesVolumeHandoffAdapter:
             [adapter_id, *sorted(f"{s.namespace}/{','.join(s.claims)}"
                                  for s in self.sides.values())]).encode()).hexdigest()[:12]
         self.agents = VolumeAgents(label=self.unit, key=agent_key, image=image, run_as=run_as,
-                                   fs_group=fs_group, start_seconds=start_seconds)
+                                   fs_group=fs_group, start_seconds=start_seconds,
+                                   transport=agent_transport)
 
     # -- EffectAdapter -------------------------------------------------------
     def validate(self, command):

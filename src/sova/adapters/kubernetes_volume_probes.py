@@ -41,7 +41,8 @@ from sova.domain.contracts import ContractError
 
 class KubernetesVolumeProbes:
     def __init__(self, *, source, target, agents, write_probe=None, databases=(),
-                 invariants=None, zone_of=None, other=None, settle_seconds=2.0):
+                 invariants=None, zone_of=None, other=None, settle_seconds=2.0,
+                 kubelet_tls_verified=None):
         """``source``/``target`` are the adapter's ``VolumeSide`` values;
         ``agents`` a ``VolumeAgents`` with a label of the probes' own;
         ``write_probe`` the application's ``(port, path)`` that writes and undoes
@@ -53,6 +54,7 @@ class KubernetesVolumeProbes:
             raise ContractError("Write probe as (port, path)")
         self.write_probe, self.zone_of, self.other = write_probe, zone_of, other
         self.settle_seconds = settle_seconds
+        self.kubelet_tls_verified = kubelet_tls_verified  # side -> the inventory's word
 
     # -- helpers ---------------------------------------------------------------
     def _locate(self, name):
@@ -225,9 +227,27 @@ class KubernetesVolumeProbes:
         return not taken, {"probe": "cross_tenant_denied", "other_volume_bound_here": taken}
 
     def transport_encrypted(self, side):
-        return False, {"probe": "transport_encrypted", "side": side, "encrypted": False,
-                       "reason": "agent Pods are reached by the API server over the cluster "
-                                 "network without TLS"}
+        """How the data reaches the side's agents, hop by hop. Through the Pod
+        proxy the API server reaches the Pod over the cluster network in the
+        clear. Through the port-forward the bytes stay inside this client's
+        verified TLS to the API server and the API server's TLS to the kubelet,
+        then within the node; whether the API server verifies the kubelet's
+        certificate is the cluster's setting, which this client cannot see:
+        it is the inventory's word (``kubelet_tls_verified``), said as such."""
+        if self.agents.transport != "port-forward":
+            return False, {"probe": "transport_encrypted", "side": side, "encrypted": False,
+                           "transport": "proxy",
+                           "reason": "agent Pods are reached by the API server over the "
+                                     "cluster network without TLS"}
+        kubelet = bool(self.kubelet_tls_verified and self.kubelet_tls_verified(side))
+        return kubelet, {"probe": "transport_encrypted", "side": side, "encrypted": True,
+                         "transport": "port-forward",
+                         "hops": {"client_to_api_server": "verified TLS (registered CA)",
+                                  "api_server_to_kubelet": "TLS, verified per inventory"
+                                  if kubelet else "TLS, verification not recorded",
+                                  "kubelet_to_pod": "within the node"},
+                         "client_verification": "verify-identity" if kubelet else "partial",
+                         "source": "inventory" if self.kubelet_tls_verified else "none"}
 
     # -- restore -----------------------------------------------------------------------
     def restore_drill(self, scratch):

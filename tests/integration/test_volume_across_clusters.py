@@ -143,7 +143,8 @@ def test_copy_throughput_between_two_clusters(volume_business, second_cluster):
     adapter = KubernetesVolumeHandoffAdapter(
         "kubernetes-volume-handoff", source=source, target=target, route=Route("board_src"),
         routes=("board_src", "board_tgt"), agent_key=VolumeWorld.KEY, image=PYTHON,
-        run_as=(UID, UID), storage_class="standard")
+        run_as=(UID, UID), storage_class="standard",
+        agent_transport=os.environ.get("SOVA_TEST_PERF_TRANSPORT", "proxy"))
     for action in HANDOFF[:3]:
         apply(adapter, action)
     started = time.monotonic()
@@ -154,5 +155,6 @@ def test_copy_throughput_between_two_clusters(volume_business, second_cluster):
                                    datetime.now(UTC))
     verified = time.monotonic() - started
     assert observation.status == EffectStatus.APPLIED
-    print(f"copy {size_mb} MiB: {copied:.1f}s ({size_mb / copied:.1f} MiB/s), "
+    print(f"copy {size_mb} MiB ({adapter.agents.transport}): {copied:.1f}s "
+          f"({size_mb / copied:.1f} MiB/s), "
           f"verify both sides: {verified:.1f}s")

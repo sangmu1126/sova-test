@@ -37,16 +37,24 @@ with open(_agent_module.__file__, encoding="utf-8") as _source:
 AGENT_DIGEST = hashlib.sha256(AGENT_SOURCE.encode()).hexdigest()
 
 
-class Agent:
-    """Requests to one agent Pod through the API server."""
+TRANSPORTS = ("proxy", "port-forward")
 
-    def __init__(self, controls, name, token):
+
+class Agent:
+    """Requests to one agent Pod through the API server: its Pod proxy (the
+    API server reaches the Pod over the cluster network in the clear) or its
+    port-forward (the bytes stay inside TLS to the kubelet)."""
+
+    def __init__(self, controls, name, token, transport="proxy"):
         self.controls, self.name, self.token = controls, name, token
+        self.transport = transport
 
     def _call(self, method, path, query, *, body=None, timeout=120, limit=1 << 20):
-        return self.controls.proxy(method, self.name, AGENT_PORT, path, query,
-                                   headers={"X-Sova-Agent-Token": self.token}, body=body,
-                                   timeout=timeout, limit=limit)
+        call = self.controls.forward if self.transport == "port-forward" else \
+            self.controls.proxy
+        return call(method, self.name, AGENT_PORT, path, query,
+                    headers={"X-Sova-Agent-Token": self.token}, body=body,
+                    timeout=timeout, limit=limit)
 
     def healthy(self):
         """Whether the agent answers now (asked directly, not the kubelet's probe)."""
@@ -110,7 +118,7 @@ class VolumeAgents:
     """Start, reach and reap agent Pods for one unit (``label`` tells them apart)."""
 
     def __init__(self, *, label, key, image, run_as, fs_group=None, start_seconds=120.0,
-                 scratch="1Gi"):
+                 scratch="1Gi", transport="proxy"):
         if type(key) is not bytes or len(key) < 32:
             raise ContractError("An agent key of at least 32 bytes required")
         if type(image) is not str or not _IMAGE.fullmatch(image):
@@ -124,6 +132,9 @@ class VolumeAgents:
             raise ContractError("A scratch size in Mi or Gi required")
         if type(label) is not str or not re.fullmatch(r"[a-z0-9]{6,20}", label):
             raise ContractError("A short agent label required")
+        if transport not in TRANSPORTS:
+            raise ContractError("Agent transport: proxy or port-forward")
+        self.transport = transport
         self.label, self.key, self.image, self.run_as = label, key, image, run_as
         self.fs_group, self.start_seconds, self.scratch = fs_group, start_seconds, scratch
 
@@ -196,10 +207,10 @@ class VolumeAgents:
         while True:
             pod = controls.pod(name)
             if pod is not None and ready(pod):
-                return Agent(controls, name, self.token(controls, name))
+                return Agent(controls, name, self.token(controls, name), self.transport)
             if pod is not None and _running(pod):
                 # Up before the kubelet's next readiness probe (once a second): ask it.
-                agent = Agent(controls, name, self.token(controls, name))
+                agent = Agent(controls, name, self.token(controls, name), self.transport)
                 if agent.healthy():
                     return agent
             status = (pod or {}).get("status") or {}

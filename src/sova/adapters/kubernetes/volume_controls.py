@@ -10,6 +10,7 @@ namespace; every change to an existing object is a guarded JSON Patch.
 
 from decimal import Decimal, InvalidOperation
 import json
+from urllib.parse import urlencode
 import re
 
 from sova.adapters.kubernetes.handoff_controls import (
@@ -89,6 +90,21 @@ def ready(pod):
 def matches(pod, selector):
     labels = pod["metadata"].get("labels") or {}
     return all(labels.get(k) == v for k, v in selector.items())
+
+
+def _whole_answer(answer):
+    """Whether an HTTP answer has all the body its Content-Length announces."""
+    head, separator, rest = bytes(answer).partition(b"\r\n\r\n")
+    if not separator:
+        return False
+    for line in head.split(b"\r\n")[1:]:
+        name, _, value = line.partition(b":")
+        if name.strip().lower() == b"content-length":
+            try:
+                return len(rest) >= int(value.strip())
+            except ValueError:
+                return False
+    return False
 
 
 class KubernetesVolumeControls(KubernetesHandoffControls):
@@ -243,6 +259,47 @@ class KubernetesVolumeControls(KubernetesHandoffControls):
         except KubernetesRequestRefused as refused:
             if refused.status != 404:
                 raise
+
+    def forward(self, method, pod, port, path, query, *, headers, body=None, timeout=60,
+                limit=1 << 20):
+        """A request to ``pod:port`` through the API server's port-forward,
+        answered as bytes: the same exchange as ``proxy`` without the bytes
+        crossing the cluster network in the clear."""
+        if type(port) is not int or not 1 <= port <= 65535 or type(path) is not str \
+                or not path.startswith("/") or ".." in path or method not in (
+                    "GET", "POST", "PUT") or (body is not None and type(body) is not bytes):
+            raise ContractError("Exact agent request required")
+        if any(type(k) is not str or not k.startswith("X-Sova-") or type(v) is not str
+               or any(ord(c) < 33 or ord(c) > 126 for c in v) for k, v in headers.items()):
+            raise ContractError("Exact agent request required")
+        body = body or b""
+        target = path + ("?" + urlencode(query) if query else "")
+        lines = [f"{method} {target} HTTP/1.1", "Host: localhost", "Connection: close",
+                 "Accept-Encoding: identity", f"Content-Length: {len(body)}",
+                 *(["Content-Type: application/octet-stream"] if method in ("POST", "PUT")
+                   else []), *(f"{k}: {v}" for k, v in headers.items())]
+        answer = self._stream(self._ns("/api/v1", "pods", pod) + "/portforward",
+                              {"ports": str(port)}, ("\r\n".join(lines) + "\r\n\r\n").encode()
+                              + body, timeout=timeout, limit=limit + 65536,
+                              complete=_whole_answer)
+        head, separator, rest = answer.partition(b"\r\n\r\n")
+        if not separator:
+            raise ContractError("Agent answer cut short")
+        lines = head.decode("latin-1").split("\r\n")
+        try:
+            status = int(lines[0].split(" ", 2)[1])
+        except (IndexError, ValueError) as exc:
+            raise ContractError("Unexpected agent answer") from exc
+        fields = {n.strip().lower(): v.strip() for n, _, v in
+                  (line.partition(":") for line in lines[1:])}
+        if status != 200:
+            raise KubernetesRequestRefused(status)
+        if "content-length" not in fields or fields.get("transfer-encoding"):
+            raise ContractError("Agent answer without a length")
+        length = int(fields["content-length"])
+        if len(rest) < length or length > limit:
+            raise ContractError("Agent answer cut short")
+        return rest[:length]
 
     def proxy(self, method, pod, port, path, query, *, headers, body=None, timeout=60,
               limit=1 << 20):
