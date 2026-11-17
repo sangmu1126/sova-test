@@ -162,10 +162,14 @@ class KafkaTopicHandoffAdapter:
         """Every committed record per partition, in order: [(offset, record)]."""
         k = _kafka()
         topic = self._topic(side)
+        # A partition the copy wrote ends in a transaction marker: its end is
+        # known only from an end-of-partition event, which comes after a fetch
+        # that waits for more data - so the wait is kept short.
         consumer = k["Consumer"]({**self.config(side), "group.id": "sova-readback-" +
                                   uuid4().hex, "enable.auto.commit": False,
                                   "isolation.level": "read_committed",
-                                  "enable.partition.eof": True, "auto.offset.reset": "earliest"})
+                                  "enable.partition.eof": True, "auto.offset.reset": "earliest",
+                                  "fetch.wait.max.ms": 50})
         try:
             starts = self._admin(side).list_offsets(
                 {k["TopicPartition"](topic, p): k["admin"].OffsetSpec.earliest()

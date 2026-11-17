@@ -153,7 +153,9 @@ class KafkaTopicProbes:
         out = {p: [] for p in described.partitions}
         try:
             todo = {p for p in described.partitions if starts[p] < stable[p]}
-            consumer.assign([k.TopicPartition(topic, p, k.OFFSET_BEGINNING) for p in todo])
+            # Real offsets, not OFFSET_BEGINNING: a logical offset is first
+            # resolved by the client, which costs about half a second.
+            consumer.assign([k.TopicPartition(topic, p, starts[p]) for p in todo])
             idle = 0
             while todo and idle < 20:
                 m = consumer.poll(0.5)
