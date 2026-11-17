@@ -1960,13 +1960,13 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 | control plane 이중화(API ×2, 워커 ×2)·워커 장애 복구 | 모의 시험 통과 | 로컬 kind에 실제 배포. 경로 전환 중 워커 Pod 삭제 뒤 증명·readback으로 완료. 관리형 클러스터 배포는 미시험 |
 | MySQL 간 offline copy adapter·probe | 모의 시험 통과 | 로컬 MySQL 8.4.13. 적합성 키트와 control plane 전체 흐름. TLS probe는 시험용 서버 두 대에서 실측 |
 | MySQL 변경 캡처(서버 복제, snapshot-cdc) | 모의 시험 통과 | 시험용 MySQL 8.4.13 두 대. 적합성 키트, 정지 구간 쓰기 0행(offline 20,158행), control plane 전체 흐름. 잠금 없는 스냅샷, GTID 모드가 다른 두 서버 |
-| Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL). 한 브로커의 두 토픽과, 서로 다른 kind 클러스터의 두 브로커 사이. control plane 전체 흐름 연결(2026-11-17). TLS 리스너만 연 Redpanda에서 검증된 TLS로 전체 흐름. snapshot-cdc 최종 단계는 sync 이후 레코드만 씀(정지 중 오프셋 11, offline 636). 압축 토픽은 키별 최신 값으로 비교 |
+| Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL). 한 브로커의 두 토픽과, 서로 다른 kind 클러스터의 두 브로커 사이. control plane 전체 흐름 연결(2026-11-17). TLS 리스너만 연 Redpanda에서 검증된 TLS로 전체 흐름. snapshot-cdc 최종 단계는 sync 이후 레코드만 씀(정지 중 오프셋 11, offline 636). 압축 토픽은 키별 최신 값으로 비교. 복사 뒤 원본의 시간 보존이 지운 레코드는 근거를 확인하고 빼서 비교 |
 | RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8. 한 브로커의 두 vhost와, 서로 다른 kind 클러스터의 두 브로커 사이. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 전체 흐름 연결(2026-11-17). TLS만 받는 브로커에서 AMQP·관리 API 모두 검증된 TLS로 전체 흐름 |
 | Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). agent 전송 port-forward 선택 가능(처리량 프록시와 같음). snapshot-cdc 템플릿으로 쓰기 정지 14.2~15.0초. 관리형 미실측 |
 | 메모리 세션 drain adapter | 모의 시험 통과 | 로컬 kind, WebSocket 시험 서버. 커널 TCP 테이블로 세션 계수, drain 상한 hold·terminate |
 | 애플리케이션 한 단위(볼륨 + 세션) | 모의 시험 통과 | 로컬 kind, 게시판 + 게임 서버를 control plane 전체 흐름으로. 쓰기 정지 offline-copy 27.8~29.2초, snapshot-cdc 19.1~20.0초(각 2회) |
-| Redis 계열(Valkey) 키 공간 adapter·probe | 모의 시험 통과 | 로컬 kind의 Valkey 9.1.3 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 등록된 replica까지 차단(승격 뒤에도 유지 실측), Sentinel 시각 대조, Redis 8 → Valkey 9(내용 복사), 클러스터(primary 셋) |
-| MongoDB 데이터베이스 adapter·probe | 모의 시험 통과 | 시험용 MongoDB 8.0.34 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 단일 구성원 레플리카셋. 샤딩 클러스터 원본(복사·변경 캡처)과 목적지(복사) |
+| Redis 계열(Valkey) 키 공간 adapter·probe | 모의 시험 통과 | 로컬 kind의 Valkey 9.1.3 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 등록된 replica까지 차단(승격 뒤에도 유지 실측), Sentinel 시각 대조, Redis 8 → Valkey 9(내용 복사), 클러스터(primary 셋). 만료가 임박한 키·해시 필드는 여유(기본 120초) 안이면 양쪽에서 빼고, 해시 필드 만료까지 비교 |
+| MongoDB 데이터베이스 adapter·probe | 모의 시험 통과 | 시험용 MongoDB 8.0.34 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 단일 구성원 레플리카셋. 샤딩 클러스터 원본(복사·변경 캡처)과 목적지(복사). 실제 oplog 순환 뒤 전체 복사 대체 실측 |
 | MongoDB 변경 캡처(change stream, snapshot-cdc) | 모의 시험 통과 | 시험용 MongoDB 8.0.34 레플리카셋 두 대, 샤딩 클러스터 원본(샤드 둘 + mongos). 적합성 키트, 정지 구간 쓰기 3건(offline 20,080건), 복사 중 동시 쓰기, 재개 거부 시 전체 복사, control plane 전체 흐름 |
 | probe 관측값 보존·조회 | 모의 시험 통과 | 서명 digest와 일치를 DB 제약으로 강제, 테넌트 격리, API 조회 |
 | MFA·이중 발급자·유출·SLO 실측 | 미검증 | 구현 없음 |
