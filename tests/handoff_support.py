@@ -37,10 +37,15 @@ COLLECTOR = "change-collector-1"
 
 
 def complete_feeds(feed, revision, plan):
-    """Report every change feed the plan depends on as complete up to now."""
+    """Report every change feed the plan depends on as complete up to now.
+
+    The database refuses a watermark ahead of its own clock, and the test
+    database's clock trails the host's by a few milliseconds that drift (the
+    container VM's clock is corrected in steps): a second back, as the ``now``
+    fixture keeps, rather than five milliseconds."""
     for environment in sorted(ImpactIndex.from_plan(revision, plan).required_feeds):
         feed.advance(environment, collector_id=COLLECTOR,
-                     observed_through=datetime.now(UTC) - timedelta(milliseconds=5))
+                     observed_through=datetime.now(UTC) - timedelta(seconds=1))
 
 
 def admitted_handoff(postgres_database, now, *, witness_for=None, adjust=None,
