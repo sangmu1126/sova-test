@@ -50,8 +50,8 @@
 |---|---|---|---|---|---|
 | 22 | Kafka | 쓰기 정지 8.9초(예산 5초) | 빈 파티션까지 끝 이벤트를 기다림 / 트랜잭션 마커 뒤 fetch 대기 / 논리 오프셋 해석 | 끝 오프셋까지만 읽기, 짧은 fetch 대기, 실제 오프셋 지정(fd9ed1d, 0e2e394) | 단계별 측정. 정지 2.63초, 클러스터 사이 2.93초 |
 | 23 | Redis | 쓰기 정지 10.1초 | redis-py가 로그인 거부도 최대 10번 재시도 | writer 로그인은 한 번만 시도(91b3d57) | 정지 1.75초, 재시도 0 단위 시험 |
-| 28 | 볼륨 port-forward(개발 중 발견) | port-forward 전송의 모든 호출이 약 1초 걸려 복사가 1.5MiB/s였다 | agent가 닫은 연결의 종료가 port-forward를 거쳐 약 1초 늦게 옴 | Content-Length만큼 오면 바로 끝냄(11f7487) | 호출 12~40ms, 처리량 프록시와 같음 |
 | 27 | 볼륨 | 쓰기 정지 27.5초 | agent 준비를 kubelet의 1초 주기 확인으로 기다림, 쓰기 agent 마운트마다 소유권 전체 변경 | 직접 `/healthz` 확인, `fsGroupChangePolicy: OnRootMismatch`(27e7b20) | 정지 20.4초 |
+| 28 | 볼륨 port-forward(개발 중 발견) | port-forward 전송의 모든 호출이 약 1초 걸려 복사가 1.5MiB/s였다 | agent가 닫은 연결의 종료가 port-forward를 거쳐 약 1초 늦게 옴 | Content-Length만큼 오면 바로 끝냄(11f7487) | 호출 12~40ms, 처리량 프록시와 같음 |
 
 ## 시험 쪽 결함
 
