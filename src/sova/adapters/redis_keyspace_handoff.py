@@ -19,7 +19,14 @@ postconditions as the other data adapters, read back from the servers:
   activation turns only the application user ``on`` there.
 * Copying is ``DUMP``/``RESTORE`` with the absolute expiry time, so a session
   that expires at 12:00 on the source expires at 12:00 on the target; keys of
-  the unit the source no longer has are removed. ``start_sync`` copies while
+  the unit the source no longer has are removed. A target that refuses the
+  source's serialization (Valkey 9 refuses every Redis 8 ``DUMP``: another
+  RDB version) gets the keys copied by their contents instead, type by type,
+  each built under a temporary name and renamed into place whole: strings,
+  lists, sets, sorted sets, hashes with their fields' expiry, and streams
+  with their last ID, consumer groups and pending entries (``XCLAIM ...
+  FORCE``, with each entry's consumer, idle time and delivery count). A type
+  it cannot rebuild (a module's) is refused. ``start_sync`` copies while
   the source still serves and leaves a marker key outside the unit.
 * Content is compared logically, per type (strings, lists, sets, sorted sets,
   hashes, streams with their consumer groups) with each key's expiry time:
@@ -59,6 +66,7 @@ ACTIONS = frozenset({"stage_target", "verify_return_target", "start_sync", "paus
 _USER = re.compile(r"[A-Za-z0-9_.:@-]{1,128}")
 _PREFIX = re.compile(r"[!-~]{1,200}")  # printable, no space; checked for globs below
 _BATCH = 500
+_REFUSED_PAYLOAD = "DUMP payload version or checksum are wrong"
 
 
 def user(value):
@@ -378,14 +386,22 @@ class RedisKeyspaceHandoffAdapter:
         return self._fenced("target")
 
     def _copy(self):
+        """Copy every key of the unit; returns (keys, how they were copied)."""
+        import redis
+
         source, target = self._client("source"), self._client("target")
         keys = self._keys("source")
         present = set(self._keys("target"))
         stale = sorted(present - set(keys))
         for i in range(0, len(stale), _BATCH):
             target.delete(*stale[i:i + _BATCH])
+        by_contents = False
         for i in range(0, len(keys), _BATCH):
             batch = keys[i:i + _BATCH]
+            if by_contents:
+                for key in batch:
+                    self._copy_contents(source, target, key)
+                continue
             read = source.pipeline(transaction=False)
             for key in batch:
                 read.dump(key)
@@ -398,13 +414,108 @@ class RedisKeyspaceHandoffAdapter:
                     continue
                 write.execute_command("RESTORE", key, max(expires, 0), payload, "REPLACE",
                                       *(("ABSTTL",) if expires > 0 else ()))
-            write.execute()
-        return len(keys)
+            refused = []
+            for key, result in zip(batch, write.execute(raise_on_error=False)):
+                if isinstance(result, redis.exceptions.ResponseError):
+                    if _REFUSED_PAYLOAD not in str(result):
+                        raise result
+                    refused.append(key)
+            if refused:  # the target reads another serialization: by contents from here
+                by_contents = True
+                for key in refused:
+                    self._copy_contents(source, target, key)
+        return len(keys), "contents" if by_contents else "dump"
+
+    def _copy_contents(self, source, target, key):
+        """One key rebuilt from its contents under a temporary name (outside the
+        unit), its absolute expiry set, then renamed into place whole."""
+        kind = _text(source.type(key))
+        temp = b"__sova:tmp:" + hashlib.sha256(key).hexdigest()[:24].encode()
+        target.delete(temp)
+        if kind == "string":
+            value = source.get(key)
+            if value is not None:
+                target.set(temp, value)
+        elif kind == "list":
+            start = 0
+            while chunk := source.lrange(key, start, start + _BATCH - 1):
+                target.rpush(temp, *chunk)
+                start += len(chunk)
+        elif kind == "set":
+            for chunk in _chunks(source.sscan_iter(key, count=_BATCH)):
+                target.sadd(temp, *chunk)
+        elif kind == "zset":
+            for chunk in _chunks(source.zscan_iter(key, count=_BATCH)):
+                target.zadd(temp, dict(chunk))
+        elif kind == "hash":
+            self._copy_hash(source, target, key, temp)
+        elif kind == "stream":
+            self._copy_stream(source, target, key, temp)
+        elif kind != "none":
+            raise ContractError(f"A {kind} key cannot be rebuilt from its contents, and the "
+                                "target refuses the source's serialization")
+        if not target.exists(temp):  # gone from the source since the scan
+            target.delete(key)
+            return
+        expires = source.execute_command("PEXPIRETIME", key)
+        if expires > 0:
+            target.execute_command("PEXPIREAT", temp, expires)
+        target.rename(temp, key)
+
+    @staticmethod
+    def _copy_hash(source, target, key, temp):
+        fields = []
+        for chunk in _chunks(source.hscan_iter(key, count=_BATCH)):
+            target.hset(temp, mapping=dict(chunk))
+            fields += [f for f, _ in chunk]
+        import redis
+
+        for i in range(0, len(fields), _BATCH):  # each field's own expiry, absolute
+            part = fields[i:i + _BATCH]
+            try:
+                times = source.execute_command("HPEXPIRETIME", key, "FIELDS", len(part), *part)
+            except redis.exceptions.ResponseError as error:
+                if "unknown command" in str(error).lower():
+                    return  # a server before field expiry: no field expires
+                raise
+            for field, at in zip(part, times):
+                if at > 0:
+                    target.execute_command("HPEXPIREAT", temp, at, "FIELDS", 1, field)
+
+    @staticmethod
+    def _copy_stream(source, target, key, temp):
+        low = "-"
+        while entries := source.xrange(key, min=low, max="+", count=_BATCH):
+            for entry_id, fields in entries:
+                target.xadd(temp, fields, id=entry_id)
+            low = b"(" + entries[-1][0]
+        info = source.xinfo_stream(key)
+        if not target.exists(temp):  # an empty stream (its groups may still matter)
+            target.xgroup_create(temp, "__sova_mk", id="0-0", mkstream=True)
+            target.xgroup_destroy(temp, "__sova_mk")
+        target.execute_command("XSETID", temp, info["last-generated-id"],
+                               "ENTRIESADDED", info["entries-added"],
+                               "MAXDELETEDID", info["max-deleted-entry-id"])
+        for group in source.xinfo_groups(key):
+            name = group["name"]
+            target.xgroup_create(temp, name, id=group["last-delivered-id"],
+                                 entries_read=group.get("entries-read"))
+            for consumer in source.xinfo_consumers(key, name):
+                target.xgroup_createconsumer(temp, name, consumer["name"])
+            low = "-"
+            while pending := source.xpending_range(key, name, min=low, max="+",
+                                                   count=_BATCH):
+                for entry in pending:  # owner, idle time and delivery count kept
+                    target.xclaim(temp, name, entry["consumer"], 0, [entry["message_id"]],
+                                  idle=entry["time_since_delivered"],
+                                  retrycount=entry["times_delivered"], force=True,
+                                  justid=True)
+                low = b"(" + pending[-1]["message_id"]
 
     def _start_sync(self):
-        copied = self._copy()
+        copied, how = self._copy()
         self._client("target").set(self.marker, json.dumps(
-            {"at": datetime.now(UTC).isoformat(), "keys": copied}))
+            {"at": datetime.now(UTC).isoformat(), "keys": copied, "copied_by": how}))
 
     def _check_start_sync(self):
         marked = self._client("target").get(self.marker) is not None
@@ -460,6 +571,17 @@ class RedisKeyspaceHandoffAdapter:
     def _check_commit_route(self):
         current = self.route.get()
         return current == self.routes[1], {"route": current}
+
+
+def _chunks(items, size=_BATCH):
+    chunk = []
+    for item in items:
+        chunk.append(item)
+        if len(chunk) >= size:
+            yield chunk
+            chunk = []
+    if chunk:
+        yield chunk
 
 
 def _glob(plain):

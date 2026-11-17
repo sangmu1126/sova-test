@@ -303,3 +303,86 @@ def redis_replicated_business(redis_replicated_servers):
 @pytest.fixture
 def redis_sentinel_business(redis_sentinel_servers):
     yield from _business(redis_sentinel_servers)
+
+
+REDIS = ("docker.io/library/redis:8.2.2@sha256:"
+         "4521b581dbddea6e7d81f8fe95ede93f5648aaa66a9dacd581611bf6fe7527bd")
+PLAIN_CONFIG = f"""port 6379
+save ""
+appendonly no
+user default off
+user {ADMIN[0]} on >{ADMIN[1]} ~* &* +@all
+"""
+
+
+def _plain_server(name, image, command):
+    labels = {"app": name}
+    return {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": name},
+            "spec": {"replicas": 1, "selector": {"matchLabels": labels},
+                     "template": {"metadata": {"labels": labels}, "spec": {
+                         "securityContext": {"runAsNonRoot": True, "runAsUser": 999,
+                                             "runAsGroup": 999,
+                                             "seccompProfile": {"type": "RuntimeDefault"}},
+                         "containers": [{
+                             "name": "server", "image": image, "imagePullPolicy": "IfNotPresent",
+                             "command": [command, "/etc/server/server.conf"],
+                             "ports": [{"containerPort": 6379}],
+                             "readinessProbe": {"tcpSocket": {"port": 6379}, "periodSeconds": 1},
+                             "resources": {"requests": {"cpu": "20m", "memory": "32Mi"}},
+                             "securityContext": {"allowPrivilegeEscalation": False,
+                                                 "readOnlyRootFilesystem": True,
+                                                 "capabilities": {"drop": ["ALL"]}},
+                             "volumeMounts": [{"name": "config", "mountPath": "/etc/server"},
+                                              {"name": "data", "mountPath": "/data"}]}],
+                         "volumes": [{"name": "config", "configMap": {"name": "plain-server"}},
+                                     {"name": "data", "emptyDir": {}}]}}}}
+
+
+@pytest.fixture(scope="module")
+def redis_to_valkey_servers():
+    """A Redis 8 server as the source and a Valkey 9 server as the target: the
+    move many make since Redis changed its license."""
+    pytest.importorskip("redis")
+    import redis
+
+    from kind_support import delete_namespace, kind_namespace, kubectl
+
+    if not os.environ.get("SOVA_TEST_KUBE_CONTEXT"):
+        pytest.skip("SOVA_TEST_KUBE_CONTEXT is required for the Redis-protocol tests")
+    objects = [{"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "plain-server"},
+                "data": {"server.conf": PLAIN_CONFIG}},
+               _plain_server("redis-source", REDIS, "redis-server"),
+               _plain_server("valkey-target", VALKEY, "valkey-server")]
+    context, namespace, _ = kind_namespace([], objects, prefix="redis2valkey")
+    forwards = []
+    try:
+        ports = {}
+        for side, deployment in (("source", "redis-source"), ("target", "valkey-target")):
+            kubectl(context, "-n", namespace, "rollout", "status", f"deployment/{deployment}",
+                    "--timeout=300s")
+            process, ports[side] = _forward(context, namespace, deployment)
+            forwards.append(process)
+        clients = {side: redis.Redis(host="127.0.0.1", port=port, username=ADMIN[0],
+                                     password=ADMIN[1], socket_timeout=10)
+                   for side, port in ports.items()}
+        for client in clients.values():
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    client.ping()
+                    break
+                except redis.ConnectionError:
+                    if time.monotonic() > deadline:
+                        raise
+                    time.sleep(0.3)
+        yield {"ports": ports, "admin": clients, "redis": redis,
+               "replicas": {"source": [], "target": []}}
+    finally:
+        for process in forwards:
+            process.terminate()
+        delete_namespace(context, namespace)
+
+
+@pytest.fixture
+def redis_to_valkey_business(redis_to_valkey_servers):
+    yield from _business(redis_to_valkey_servers)
