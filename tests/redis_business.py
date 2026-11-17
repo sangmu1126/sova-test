@@ -41,6 +41,49 @@ def replica_config(side):
                      f"masterauth {ADMIN[1]}\n")
 
 
+def sentinel_config():
+    """One Sentinel watching both primaries (``sova-source``, ``sova-target``),
+    logging in to them as the administrator; no failover during a test."""
+    lines = ["port 26379", "sentinel resolve-hostnames yes"]
+    for side in ("source", "target"):
+        name = f"sova-{side}"
+        lines += [f"sentinel monitor {name} valkey-{side} 6379 1",
+                  f"sentinel auth-user {name} {ADMIN[0]}",
+                  f"sentinel auth-pass {name} {ADMIN[1]}",
+                  f"sentinel down-after-milliseconds {name} 600000",
+                  f"sentinel failover-timeout {name} 1200000"]
+    return "\n".join(lines) + "\n"
+
+
+def sentinel():
+    labels = {"app": "valkey-sentinel"}
+    return [
+        {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "valkey-sentinel"},
+         "data": {"sentinel.conf": sentinel_config()}},
+        {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "valkey-sentinel"},
+         "spec": {"replicas": 1, "selector": {"matchLabels": labels},
+                  "template": {"metadata": {"labels": labels}, "spec": {
+                      "securityContext": {"runAsNonRoot": True, "runAsUser": 999,
+                                          "runAsGroup": 999,
+                                          "seccompProfile": {"type": "RuntimeDefault"}},
+                      "containers": [{
+                          "name": "sentinel", "image": VALKEY, "imagePullPolicy": "IfNotPresent",
+                          # Sentinel rewrites its configuration: a writable copy
+                          "command": ["sh", "-c", "cp /config/sentinel.conf /data/sentinel.conf"
+                                      " && exec valkey-sentinel /data/sentinel.conf"],
+                          "ports": [{"containerPort": 26379}],
+                          "readinessProbe": {"tcpSocket": {"port": 26379}, "periodSeconds": 1},
+                          "resources": {"requests": {"cpu": "10m", "memory": "16Mi"}},
+                          "securityContext": {"allowPrivilegeEscalation": False,
+                                              "readOnlyRootFilesystem": True,
+                                              "capabilities": {"drop": ["ALL"]}},
+                          "volumeMounts": [{"name": "config", "mountPath": "/config"},
+                                           {"name": "data", "mountPath": "/data"}]}],
+                      "volumes": [{"name": "config",
+                                   "configMap": {"name": "valkey-sentinel"}},
+                                  {"name": "data", "emptyDir": {}}]}}}}]
+
+
 def server(side, role="primary"):
     labels = {"app": "valkey", "side": side, "role": role}
     name = f"valkey-{side}" + ("" if role == "primary" else "-replica")
@@ -87,7 +130,7 @@ def _forward(context, namespace, deployment, port=6379, local=""):
     return process, int(found.group(1))
 
 
-def _servers(tmp_path_factory, *, replicated):
+def _servers(tmp_path_factory, *, replicated, sentinels=False):
     pytest.importorskip("redis")
     import base64
 
@@ -110,6 +153,8 @@ def _servers(tmp_path_factory, *, replicated):
                  "metadata": {"name": f"valkey-replica-{side}"},
                  "data": {"valkey.conf": replica_config(side)}},
                 server(side, "replica")]
+    if sentinels:
+        objects += sentinel()
     context, namespace, _ = kind_namespace([], objects, prefix="valkey")
     forwards = []
     try:
@@ -121,7 +166,7 @@ def _servers(tmp_path_factory, *, replicated):
         ca_file.write_bytes(material["ca.pem"])
         names = {side: [f"valkey-{side}"] + ([f"valkey-{side}-replica"] if replicated else [])
                  for side in ("source", "target")}
-        for deployment in sum(names.values(), []):
+        for deployment in sum(names.values(), []) + (["valkey-sentinel"] if sentinels else []):
             kubectl(context, "-n", namespace, "rollout", "status", f"deployment/{deployment}",
                     "--timeout=180s")
         ports, tls_ports, replica_ports = {}, {}, {}
@@ -160,9 +205,20 @@ def _servers(tmp_path_factory, *, replicated):
                     if time.monotonic() > deadline:
                         raise AssertionError(f"the {side} replica did not reach its primary")
                     time.sleep(0.5)
+        watching = None
+        if sentinels:  # the Sentinel has found each primary's replica
+            process, port = _forward(context, namespace, "valkey-sentinel", 26379)
+            forwards.append(process)
+            watching = redis.Redis(host="127.0.0.1", port=port, socket_timeout=10)
+            deadline = time.monotonic() + 90
+            while not all(len(watching.sentinel_slaves(f"sova-{side}")) >= len(replicas[side])
+                          for side in ("source", "target")):
+                if time.monotonic() > deadline:
+                    raise AssertionError("the Sentinel did not find the replicas")
+                time.sleep(1)
         yield {"ports": ports, "tls_ports": tls_ports, "ca_file": str(ca_file),
                "admin": clients, "redis": redis, "replica_ports": replica_ports,
-               "replicas": replicas}
+               "replicas": replicas, "sentinel": watching}
     finally:
         for process in forwards:
             process.terminate()
@@ -178,6 +234,12 @@ def redis_servers(tmp_path_factory):
 def redis_replicated_servers(tmp_path_factory):
     """As ``redis_servers``, and each primary with a replica following it."""
     yield from _servers(tmp_path_factory, replicated=True)
+
+
+@pytest.fixture(scope="module")
+def redis_sentinel_servers(tmp_path_factory):
+    """As ``redis_replicated_servers``, and a Sentinel watching both primaries."""
+    yield from _servers(tmp_path_factory, replicated=True, sentinels=True)
 
 
 def as_user(servers, side, name):
@@ -236,3 +298,8 @@ def redis_business(redis_servers):
 @pytest.fixture
 def redis_replicated_business(redis_replicated_servers):
     yield from _business(redis_replicated_servers)
+
+
+@pytest.fixture
+def redis_sentinel_business(redis_sentinel_servers):
+    yield from _business(redis_sentinel_servers)

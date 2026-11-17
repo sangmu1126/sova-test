@@ -394,6 +394,20 @@ def test_a_redis_entry_registers_each_sides_replicas(tmp_path):
     close()
 
 
+def test_a_redis_entry_names_each_sides_sentinels(tmp_path):
+    pytest.importorskip("redis")
+    watcher = write(tmp_path, "sentinel.json", json.dumps({"host": "10.0.0.9", "port": 26379}))
+    app = redis_application(tmp_path, **{"redis.sentinels": {
+        "source": {"servers": [watcher], "master": "board"}}})
+    catalog, close = catalog_from({"version": 1, "applications": [app]},
+                                  route_for=lambda spec: FakeRoute())
+    adapter = catalog.build("tenant-a", "board", "redis-keyspace", None).adapter
+    clients, master = adapter.sentinel("source")
+    assert master == "board" and clients[0].connection_pool.connection_kwargs["port"] == 26379
+    assert adapter.sentinel("target") is None
+    close()
+
+
 @pytest.mark.parametrize("changes", [
     {"redis.prefixes": ["board:*:sessions"]},  # a glob, not a prefix
     {"redis.app_user": "someone-else"},
@@ -401,6 +415,8 @@ def test_a_redis_entry_registers_each_sides_replicas(tmp_path):
     {"redis.unexpected": True},
     {"redis.replicas": {"source": "one.json"}},  # a list per side
     {"redis.replicas": {"elsewhere": []}},
+    {"redis.sentinels": {"source": {"servers": [], "master": "board"}}},
+    {"redis.sentinels": {"source": {"servers": ["s.json"]}}},
     {"mode": "logical_replication"},
 ])
 def test_a_redis_entry_that_does_not_add_up_is_refused(tmp_path, changes):

@@ -31,7 +31,13 @@ by a failover, take the writer's writes again. So every ACL change goes to
 the primary and to each registered replica (``replicas(side)``), and every
 access postcondition holds on all of them. Besides, the primary must report
 exactly the registered replicas, each following it (same replication ID):
-an unregistered replica reads back UNKNOWN.
+an unregistered replica reads back UNKNOWN. A primary counts only the
+replicas connected now; one cut off while the fence ran would come back
+with its old ACLs. Where Sentinel manages the side (``sentinel(side)``), its
+view - which remembers replicas that are cut off - must agree too: every
+Sentinel names this primary as the master, and the replicas it knows are
+exactly the registered ones (matched by run ID, as the addresses each sees
+differ).
 
 Key prefixes are plain (``board:`` or ``board:*``); a glob with classes or
 escapes is refused rather than guessed at. Every action is idempotent; a
@@ -109,7 +115,7 @@ def _value(v):
 
 class RedisKeyspaceHandoffAdapter:
     def __init__(self, adapter_id, *, connect, prefixes, writers, app_user, admin_user, route,
-                 routes, db=0, kill_wait_seconds=5.0, replicas=None):
+                 routes, db=0, kill_wait_seconds=5.0, replicas=None, sentinel=None):
         """``connect(side)`` gives an administrative client (redis-py, bytes
         responses) on that side's primary, ``db`` selected; ``replicas(side)``
         administrative clients on each of its registered replicas."""
@@ -118,7 +124,10 @@ class RedisKeyspaceHandoffAdapter:
             raise ContractError("Administrative connect and a route store required")
         if replicas is not None and not callable(replicas):
             raise ContractError("replicas(side) must give the side's replica clients")
+        if sentinel is not None and not callable(sentinel):
+            raise ContractError("sentinel(side) must give (Sentinel clients, master name)")
         self.replicas = replicas or (lambda side: ())
+        self.sentinel = sentinel or (lambda side: None)
         if type(prefixes) is not tuple or not prefixes:
             raise ContractError("Key prefixes required")
         if type(writers) is not tuple or app_user not in writers:
@@ -185,8 +194,32 @@ class RedisKeyspaceHandoffAdapter:
                      for name, info in followers.items()}
         holds = primary.get("role") == "master" and reported == len(followers) and all(
             following.values())
-        return holds, {"role": primary.get("role"), "replicas_reported": reported,
-                       "replicas_registered": len(followers), "following": following}
+        detail = {"role": primary.get("role"), "replicas_reported": reported,
+                  "replicas_registered": len(followers), "following": following}
+        watched = self.sentinel(side)
+        if watched:
+            agrees, detail["sentinel"] = self._sentinel_view(nodes, *watched)
+            holds = holds and agrees
+        return holds, detail
+
+    @staticmethod
+    def _sentinel_view(nodes, sentinels, master):
+        """Whether every Sentinel names this primary the master and knows exactly
+        the registered replicas (cut-off ones included), by run ID."""
+        primary = nodes[0][1].info("server").get("run_id")
+        registered = {client.info("server").get("run_id") for _, client in nodes[1:]}
+        views, agrees = [], bool(sentinels)
+        for watcher in sentinels:
+            found = watcher.sentinel_master(master)
+            known = {r.get("runid") for r in watcher.sentinel_slaves(master)}
+            same_master = found.get("runid") == primary
+            unregistered = sorted(f"{r.get('ip')}:{r.get('port')}"
+                                  for r in watcher.sentinel_slaves(master)
+                                  if r.get("runid") not in registered)
+            agrees = agrees and same_master and known == registered
+            views.append({"master_is_this_primary": same_master,
+                          "replicas_known": len(known), "unregistered": unregistered[:20]})
+        return agrees, views
 
     @staticmethod
     def _on(rules):
