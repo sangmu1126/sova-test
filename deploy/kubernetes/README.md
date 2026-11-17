@@ -126,8 +126,8 @@ rules:
 | engine | 모듈 | 비밀 파일 | 비고 |
 |---|---|---|---|
 | `postgresql` | `sova.service.catalog` | DB DSN, 역할 비밀번호 | `mode: offline_copy` 또는 `logical_replication` |
-| `mysql` | 같음 | 연결 설정(JSON), 계정 비밀번호, 복제 계정 비밀번호 | `mode: replication`은 서버 복제 변경 캡처. 원본 계정이 전역 읽기 잠금을 못 걸면 `replication.snapshot: lockless`(모든 단위 테이블에 기본 키 필요, 그동안 목적지 서버는 다른 채널을 두지 않아야 함). TLS는 `ssl_ca`(호스트 검증 기본 켬) |
-| `redis` | `sova.service.redis_execution` | 서버 설정(JSON), 사용자 비밀번호 | TLS는 `ssl_ca`. replica가 있으면 `replicas`에 모두 등록해야 한다(ACL은 노드마다 따로이고, 등록되지 않은 replica가 있으면 차단이 확정되지 않음). Sentinel이 지키면 `sentinels`(Sentinel 설정 파일들, master 이름). 클러스터면 서버 설정에 `"cluster": true`(워커가 모든 노드 주소에 닿아야 함) |
+| `mysql` | 같음 | 연결 설정(JSON), 계정 비밀번호, 복제 계정 비밀번호 | `mode: replication`은 서버 복제 변경 캡처. 원본 계정이 전역 읽기 잠금을 못 걸면 `replication.snapshot: lockless`(모든 단위 테이블에 기본 키 필요, 그동안 목적지 서버는 다른 채널을 두지 않아야 함). TLS는 `ssl_ca`(호스트 검증 기본 켬). 두 서버의 `gtid_mode`가 달라도 됨(GTID를 켠 목적지에는 채널이 GTID를 붙임). GTID를 쓰는 원본을 GTID를 끈 목적지로는 옮기지 않음(목적지를 PERMISSIVE 모드로) |
+| `redis` | `sova.service.redis_execution` | 서버 설정(JSON), 사용자 비밀번호 | TLS는 `ssl_ca`. replica가 있으면 `replicas`에 모두 등록해야 한다(ACL은 노드마다 따로이고, 등록되지 않은 replica가 있으면 차단이 확정되지 않음). Sentinel이 지키면 `sentinels`(Sentinel 설정 파일들, master 이름). 클러스터면 서버 설정에 `"cluster": true`(워커가 모든 노드 주소에 닿아야 함). 만료가 임박한 키·해시 필드를 비교에서 빼는 여유는 `expiry_margin_seconds`(기본 120초, 단위 전체 비교 시간 + 서버 시계 차보다 길게) |
 | `kafka` | `sova.service.kafka_execution` | 관리자·principal별 클라이언트 설정(JSON) | 연결 관련 키만 받는다. probe용 트랜잭션 ID 접두어(`probe_prefix`)를 각 producer에 허용해야 한다. TLS는 `security.protocol: SASL_SSL`과 `ssl.ca.location` |
 | `rabbitmq` | `sova.service.rabbitmq_execution` | 브로커 설정(JSON), 사용자 비밀번호 | TLS는 `ssl_ca`. 관리자 자격 증명이 오가는 두 경로(AMQP, 관리 API)에 모두 쓰이므로, 관리 API 주소는 `https://`여야 한다 |
 | `mongodb` | `sova.service.mongodb_execution` | 서버 설정(JSON), 사용자 비밀번호 | `mode: change_stream`은 change stream 변경 캡처(원본이 레플리카셋이어야 함, `catch_up_seconds`). TLS는 `tls_ca` |
