@@ -6,6 +6,7 @@ coordinator. The application is the SQLite-and-uploads board of
 ``volume_business``; another tenant's volume lives in a namespace of its own."""
 
 import json
+import threading
 
 from control_plane_support import board_contract, prepared, signed_results, worker_for
 import pytest
@@ -34,14 +35,26 @@ def board_settings(board, controls, other):
             "other": (other, "records"), "scratch_claim": "sova-restore"}
 
 
-@pytest.fixture
-def volume_handoff(postgres_database, now, volume_business, other_tenant, tmp_path):
-    h = prepared(postgres_database, now, tmp_path, board_contract(), engine="kubernetes-volume")
+def _handoff(postgres_database, now, volume_business, other_tenant, tmp_path, strategy):
+    h = prepared(postgres_database, now, tmp_path, board_contract(), engine="kubernetes-volume",
+                 strategy=strategy)
     board = VolumeWorld(volume_business)
     settings = board_settings(board, volume_business["controls"](), other_tenant)
     h["worker"] = worker_for(h, volume_factory(h["adapter_id"], lambda t, a: settings),
                              owner="worker-volume")
     return {**h, "board": board, "route": settings["route"]}
+
+
+@pytest.fixture
+def volume_handoff(postgres_database, now, volume_business, other_tenant, tmp_path):
+    return _handoff(postgres_database, now, volume_business, other_tenant, tmp_path,
+                    "offline-copy")
+
+
+@pytest.fixture
+def volume_cdc_handoff(postgres_database, now, volume_business, other_tenant, tmp_path):
+    return _handoff(postgres_database, now, volume_business, other_tenant, tmp_path,
+                    "snapshot-cdc")
 
 
 def test_a_volume_unit_is_handed_off_by_the_control_plane(volume_handoff):
@@ -74,3 +87,68 @@ def test_a_volume_unit_is_handed_off_by_the_control_plane(volume_handoff):
     assert seen["fence.source_writes_denied"]["unchanged"] is True
     print("measured:", json.dumps({k: seen[k] for k in sorted(seen)
                                    if k.startswith(("availability.", "operations."))}))
+
+
+def test_a_volume_unit_is_copied_before_the_stop_on_the_snapshot_cdc_template(
+        volume_cdc_handoff):
+    """The bulk reaches the target while the board serves (``start_sync``); the
+    stop carries only what changed since, and the restore drill, which needs
+    the data on the target, is measured before the stop (ADR-0003)."""
+    h, board = volume_cdc_handoff, volume_cdc_handoff["board"]
+    assert h["adapter_id"] == "volume-snapshot-cdc"
+    board.business_write(2)
+    before = board.posts("source")
+    record = h["worker"].drive(h["tenant"], h["app"], h["unit"])
+    assert record.state == HandoffState.HANDOFF_COMPLETE, (record.reason, record.held_from)
+    assert h["route"].get() == "board_tgt"
+    assert board.posts("target") == before
+    assert not board.can_write("source", "app") and not board.can_write("source", "other")
+    results = signed_results(h)
+    assert results and set(results.values()) == {"pass"}, {
+        k: v for k, v in results.items() if v != "pass"}
+    measured = {o.obligation_id for o in h["plan"].obligations}
+    assert measured <= set(results), sorted(measured - set(results))
+    seen = h["observations"]
+    order = list(seen)  # in the order they were first measured
+    assert order.index("security.tested_restore") < order.index("fence.source_writes_denied")
+    assert seen["fence.source_writes_denied"]["unchanged"] is True
+    print("measured:", json.dumps({k: seen[k] for k in sorted(seen)
+                                   if k.startswith(("availability.", "operations."))}))
+
+
+def test_a_board_written_throughout_the_sync_is_handed_off(volume_cdc_handoff):
+    """Posts keep coming while the files are copied before the stop: the
+    target's database then is a copy of a file in use (SQLite checkpoints and
+    removes its log as each request's connection closes). The plan neither
+    fails on it before the stop nor loses a post acknowledged before it."""
+    h, board = volume_cdc_handoff, volume_cdc_handoff["board"]
+    done, acknowledged = threading.Event(), []
+
+    def keep_posting():
+        while not done.is_set():
+            try:
+                board.business_write(1)
+            except Exception:  # the board stopped serving: the write stop began
+                if acknowledged:
+                    return
+                continue
+            acknowledged.append(1)
+
+    writer = threading.Thread(target=keep_posting, daemon=True)
+    writer.start()
+    try:
+        record = h["worker"].drive(h["tenant"], h["app"], h["unit"])
+    finally:
+        done.set()
+        writer.join(60)
+    drill = h["observations"].get("security.tested_restore")
+    print("restore drill:", json.dumps(drill)[:1500])
+    assert record.state == HandoffState.HANDOFF_COMPLETE, (record.reason, record.held_from)
+    assert len(acknowledged) >= 3, len(acknowledged)  # the board was written during the sync
+    target = board.posts("target")
+    assert target["integrity"] == "ok"
+    assert len(target["posts"]) >= 20 + len(acknowledged), (len(target["posts"]),
+                                                            len(acknowledged))
+    results = signed_results(h)
+    assert results and set(results.values()) == {"pass"}, {
+        k: v for k, v in results.items() if v != "pass"}

@@ -23,10 +23,13 @@ from sova.service.volume_execution import volume_factory
 pytestmark = [pytest.mark.postgres, pytest.mark.kubernetes]
 
 
-@pytest.fixture
-def application(postgres_database, now, volume_business, session_business, other_tenant,
-                tmp_path):
-    h = prepared(postgres_database, now, tmp_path, board_contract(), engine="kubernetes-volume")
+@pytest.fixture(params=["offline-copy", "snapshot-cdc"])
+def application(request, postgres_database, now, volume_business, session_business,
+                other_tenant, tmp_path):
+    """On snapshot-cdc the board's files reach the target while it serves, and
+    the stop carries only what changed since."""
+    h = prepared(postgres_database, now, tmp_path, board_contract(), engine="kubernetes-volume",
+                 strategy=request.param)
     board = VolumeWorld(volume_business)
     board_part = board_settings(board, volume_business["controls"](), other_tenant)
     game_controls = session_business["controls"]()
@@ -72,5 +75,9 @@ def test_the_whole_application_is_handed_off_without_cutting_a_match(application
     seen = h["observations"]
     fence = seen["fence.source_writes_denied"]["components"]
     assert fence["game"]["passed"] and fence["board"]["passed"]
+    if h["adapter_id"].endswith("snapshot-cdc"):  # the drill needs no stop (ADR-0003)
+        order = list(seen)
+        assert order.index("security.tested_restore") < order.index(
+            "fence.source_writes_denied")
     print("measured:", json.dumps({k: seen[k] for k in sorted(seen)
                                    if k.startswith("availability.")}))

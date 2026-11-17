@@ -18,7 +18,8 @@ adapter's own readback:
   the unit: either rows that violate it (none allowed) or file names it
   refers to (each must exist on the target).
 * The restore drill copies the target into a fresh scratch claim with its own
-  agents and compares the copy with the target, databases logically.
+  agents and compares the copy with the target: every entry, and what SQLite
+  reads from each database, whatever state the target holds it in.
 * Cross-tenant isolation: no claim of the target namespace is bound to the
   volume of another tenant's registered claim (the way a released volume is
   taken over), read from both namespaces with their own registrations.
@@ -251,7 +252,14 @@ class KubernetesVolumeProbes:
 
     # -- restore -----------------------------------------------------------------------
     def restore_drill(self, scratch):
-        """Copy the target into fresh scratch claims and compare the copy with it."""
+        """Copy the target into fresh scratch claims and compare the copy with it:
+        every entry, and what SQLite reads from each registered database.
+
+        The question is whether a restore reproduces what the target holds,
+        not whether that is consistent: inside the write stop the content
+        comparison requires an intact database on both sides. Before the stop
+        (snapshot-cdc) the target may hold a copy of a database still in use,
+        torn or not there yet; the evidence shows its integrity as found."""
         t = self.sides["target"]
         names = tuple(f"{scratch}-{i}" for i in range(len(t.claims)))
         try:
@@ -274,12 +282,16 @@ class KubernetesVolumeProbes:
                     sets.append({"claim": t.claims[i], "manifest": manifest_digest(want),
                                  "restored": manifest_digest(have)})
                 databases = {}
-                for database in self.databases:
+                for database in self.databases:  # what SQLite reads, on both
                     claim, path = self._locate(database)
-                    same, detail = self._database_equal(target, copy, claim, path)
+                    held, restored = _held(target, claim, path), _held(copy, claim, path)
+                    same = held == restored
                     equal = equal and same
-                    databases[database] = {"equal": same,
-                                           "restored_integrity": detail["target"]["integrity"]}
+                    databases[database] = {
+                        "equal": same, "present": held is not None,
+                        "target_integrity": None if held is None else held["integrity"],
+                        "restored_integrity": None if restored is None else
+                        restored["integrity"]}
         except ContractError as error:
             return False, {"probe": "restore_drill", "reason": str(error)[:300]}
         finally:
@@ -288,3 +300,14 @@ class KubernetesVolumeProbes:
         return equal, {"probe": "restore_drill", "claims": sets, "databases": databases,
                        "copied_files": report["copied_files"],
                        "copied_bytes": report["copied_bytes"]}
+
+
+def _held(agent, claim, path):
+    """A database's logical content on one claim, or None where it is absent."""
+    try:
+        report = agent.sqlite(claim, path)
+    except KubernetesRequestRefused as error:
+        if error.status == 409 and error.reason == "missing":
+            return None
+        raise
+    return {key: report[key] for key in ("integrity", "schema", "tables")}

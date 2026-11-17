@@ -2,8 +2,10 @@
 
 import base64
 import hashlib
+import json
 import http.client
 import os
+import re
 import socket
 import ssl
 import stat
@@ -110,10 +112,25 @@ def private_text(path, *, limit=65536):
         raise ContractError("Unreadable private operator file") from exc
 
 
+_REASON = re.compile(r"[A-Za-z_]{1,40}")
+
+
+def refusal_reason(body):
+    """The reason token of a refused answer: an agent's ``error`` or the API
+    server's ``Status.reason`` (``Forbidden``, ``NotFound``), never free text."""
+    try:
+        found = json.loads(body[:4096])
+    except (ValueError, UnicodeDecodeError):
+        return None
+    reason = found.get("error", found.get("reason")) if type(found) is dict else None
+    return reason if type(reason) is str and _REASON.fullmatch(reason) else None
+
+
 class KubernetesRequestRefused(ContractError):
-    def __init__(self, status):
-        self.status = status
-        super().__init__("Registered Kubernetes request refused")
+    def __init__(self, status, reason=None):
+        self.status, self.reason = status, reason
+        super().__init__(f"Registered Kubernetes request refused: HTTP {status}"
+                         + (f" {reason}" if reason else ""))
 
 
 class KubernetesHTTPS:
@@ -376,7 +393,8 @@ class KubernetesHTTPS:
             )
             response = connection.getresponse()
             if response.status not in accept:
-                raise KubernetesRequestRefused(response.status)
+                raise KubernetesRequestRefused(response.status,
+                                               refusal_reason(response.read(4096)))
             if response.getheader("Content-Encoding", "identity") != "identity":
                 raise ContractError("Unsupported Kubernetes response encoding")
             body = response.read(limit + 1)

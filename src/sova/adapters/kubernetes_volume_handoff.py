@@ -33,10 +33,14 @@ it, and every postcondition about writing is a statement about Pods:
   Ownership is not changed by the agent (it never runs as root): it writes as
   the registered user and group, the application's own, and a source whose
   files belong to someone else reads back as different, not as copied.
-* ``start_sync`` copies while the source still serves (a SQLite file copied
-  mid-write may be torn; the final copy after the fence replaces it), so the
-  final copy inside the write stop moves only what changed since. It is
-  recorded as an annotation on each target claim.
+* ``start_sync`` copies while the source still serves, so the final copy
+  inside the write stop moves only what changed since. A file that changes
+  while it is copied is not written (a database in use often is: SQLite
+  rewrites it as each connection closes); up to ``sync_passes`` passes copy
+  what changed again, each only that. What still changed is left to the
+  final copy, after the fence, so before the stop the target may lack a file
+  or hold one older than its neighbours. It is recorded, with the passes and
+  what was left, as an annotation on each target claim.
 * Activation scales the target application writer to its registered replicas
   and waits, bounded, until a Pod of it is ready. Every other target writer
   stays stopped, and no Pod but the application's mounts a target claim
@@ -113,7 +117,8 @@ class VolumeSide:
 class KubernetesVolumeHandoffAdapter:
     def __init__(self, adapter_id, *, source, target, route, routes, agent_key, image, run_as,
                  fs_group=None, storage_class=None, app_replicas=1, settle_seconds=60.0,
-                 start_seconds=120.0, chunk_bytes=4 << 20, agent_transport="proxy"):
+                 start_seconds=120.0, chunk_bytes=4 << 20, agent_transport="proxy",
+                 sync_passes=3):
         """``routes`` is the route value of (source, target); ``agent_key`` (at
         least 32 bytes, from the worker's secrets) derives each agent's token, so
         any worker instance can talk to an agent another one started."""
@@ -128,6 +133,9 @@ class KubernetesVolumeHandoffAdapter:
             raise ContractError("Bounded application replicas required")
         if type(chunk_bytes) is not int or not 64 << 10 <= chunk_bytes <= 16 << 20:
             raise ContractError("A chunk between 64 KiB and 16 MiB required")
+        if type(sync_passes) is not int or not 1 <= sync_passes <= 10:
+            raise ContractError("Between 1 and 10 sync passes")
+        self.sync_passes = sync_passes
         self.adapter_id, self.route, self.routes = adapter_id, route, routes
         self.sides = {"source": source, "target": target}
         self.storage_class = storage_class
@@ -336,6 +344,13 @@ class KubernetesVolumeHandoffAdapter:
     def _start_sync(self):
         with self._agents(("source", False), ("target", True)) as (source, target):
             report = self._sync(source, target, live=True)
+            report["passes"] = 1
+            while report["changed_later"] and report["passes"] < self.sync_passes:
+                again = self._sync(source, target, live=True)  # only what changed
+                report = {**{k: report[k] + again[k] for k in ("copied_files", "copied_bytes",
+                                                              "removed")},
+                          "changed_later": again["changed_later"],
+                          "passes": report["passes"] + 1}
         stamp = json.dumps({"from": [self.sides["source"].namespace,
                                      list(self.sides["source"].claims)],
                             "at": datetime.now(UTC).isoformat(), **report},

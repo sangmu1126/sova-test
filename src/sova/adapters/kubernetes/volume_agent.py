@@ -377,37 +377,48 @@ def sqlite_report(claim, path, queries):
             _copy_out(fd, name + companion, copy + companion)
         connection = sqlite3.connect(copy, isolation_level=None)
         try:
-            integrity = [r[0] for r in connection.execute("PRAGMA integrity_check")][:20]
-            master = sorted(_row_text(r) for r in connection.execute(
-                "SELECT type, name, tbl_name, sql FROM sqlite_master"))
-            tables = {}
-            for (table,) in connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall():
-                quoted = '"' + table.replace('"', '""') + '"'
-                texts = sorted(_row_text(r) for r in connection.execute(
-                    f"SELECT * FROM {quoted}"))
-                digest = hashlib.sha256()
-                for text in texts:
-                    digest.update(text.encode() + b"\n")
-                tables[table] = {"rows": len(texts), "digest": digest.hexdigest()}
-            connection.execute("PRAGMA query_only=ON")
-            results = {}
-            for key, sql in sorted(queries.items()):
-                try:
-                    rows = connection.execute(sql).fetchmany(10001)
-                except sqlite3.Error as error:
-                    results[key] = {"error": str(error)[:200]}
-                    continue
-                results[key] = {"rows": [[_value(v) for v in r] for r in rows[:10000]],
-                                "truncated": len(rows) > 10000}
+            return _sqlite_content(connection, queries)
+        except sqlite3.DatabaseError as error:  # a file SQLite cannot read is a finding
+            return {"integrity": ["unreadable: " + str(error)[:200]], "schema": None,
+                    "tables": {}, "results": {}}
         finally:
             connection.close()
-        return {"integrity": integrity,
-                "schema": hashlib.sha256("\n".join(master).encode()).hexdigest(),
-                "tables": tables, "results": results}
     finally:
         os.close(fd)
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _sqlite_content(connection, queries):
+    """Integrity, schema digest, row digests per table and the registered
+    queries' answers, from an open copy."""
+    import sqlite3
+
+    integrity = [r[0] for r in connection.execute("PRAGMA integrity_check")][:20]
+    master = sorted(_row_text(r) for r in connection.execute(
+        "SELECT type, name, tbl_name, sql FROM sqlite_master"))
+    tables = {}
+    for (table,) in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall():
+        quoted = '"' + table.replace('"', '""') + '"'
+        texts = sorted(_row_text(r) for r in connection.execute(
+            f"SELECT * FROM {quoted}"))
+        digest = hashlib.sha256()
+        for text in texts:
+            digest.update(text.encode() + b"\n")
+        tables[table] = {"rows": len(texts), "digest": digest.hexdigest()}
+    connection.execute("PRAGMA query_only=ON")
+    results = {}
+    for key, sql in sorted(queries.items()):
+        try:
+            rows = connection.execute(sql).fetchmany(10001)
+        except sqlite3.Error as error:
+            results[key] = {"error": str(error)[:200]}
+            continue
+        results[key] = {"rows": [[_value(v) for v in r] for r in rows[:10000]],
+                        "truncated": len(rows) > 10000}
+    return {"integrity": integrity,
+            "schema": hashlib.sha256("\n".join(master).encode()).hexdigest(),
+            "tables": tables, "results": results}
 
 
 def _int(query, key, low=0, high=1 << 62):

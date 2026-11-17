@@ -87,3 +87,32 @@ def test_a_pod_nobody_registered_keeps_writes_possible(world):
 def test_transport_is_reported_as_not_verified(world):
     passed, observation = probes(world).transport_encrypted("target")
     assert not passed and observation["encrypted"] is False
+
+
+def test_the_restore_drill_reproduces_what_the_target_holds(world):
+    """Before the write stop (snapshot-cdc) the target may hold a copy of a
+    database in use, or none yet. The drill asks whether a restore reproduces
+    the target, so it passes on what is there and shows it; whether the
+    database is intact is the content comparison's question, inside the stop."""
+    p = probes(world)
+    for action in ("stage_target", "pause_admission", "fence_source_writes", "copy_content"):
+        apply(world.adapter(), action)
+    passed, drill = p.restore_drill("sova-restore")
+    assert passed, drill
+    assert drill["databases"]["board.db"] == {"equal": True, "present": True,
+                                              "target_integrity": ["ok"],
+                                              "restored_integrity": ["ok"]}
+    # Torn: SQLite cannot read the first page.
+    on_target(world, "tear", "f = open('/data/board.db', 'r+b'); f.seek(16); "
+                             "f.write(bytes(range(256)) * 8); f.close()")
+    passed, drill = p.restore_drill("sova-restore")
+    assert passed, drill
+    seen = drill["databases"]["board.db"]
+    assert seen["equal"] and seen["target_integrity"] == seen["restored_integrity"] != ["ok"]
+    passed, compared = p.content_equal("board.db")  # inside the stop this holds the plan
+    assert not passed and compared["target"]["integrity"] != ["ok"]
+    # Not there yet.
+    on_target(world, "drop-db", "import os; os.unlink('/data/board.db')")
+    passed, drill = p.restore_drill("sova-restore")
+    assert passed, drill
+    assert drill["databases"]["board.db"]["present"] is False

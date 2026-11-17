@@ -18,7 +18,7 @@ from sova.adapters.kubernetes.handoff_controls import (
     _name,
     _selector,
 )
-from sova.adapters.kubernetes.https import KubernetesRequestRefused
+from sova.adapters.kubernetes.https import KubernetesRequestRefused, refusal_reason
 from sova.domain.contracts import ContractError
 
 KINDS = frozenset({"deployment", "statefulset", "cronjob"})
@@ -293,7 +293,7 @@ class KubernetesVolumeControls(KubernetesHandoffControls):
         fields = {n.strip().lower(): v.strip() for n, _, v in
                   (line.partition(":") for line in lines[1:])}
         if status != 200:
-            raise KubernetesRequestRefused(status)
+            raise KubernetesRequestRefused(status, refusal_reason(rest))
         if "content-length" not in fields or fields.get("transfer-encoding"):
             raise ContractError("Agent answer without a length")
         length = int(fields["content-length"])

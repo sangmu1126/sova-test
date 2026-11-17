@@ -151,3 +151,19 @@ def test_a_whole_answer_ends_the_exchange_before_the_pod_side_closes():
     peer = Peer(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello", closes=False)
     assert controls(peer).forward("GET", "agent-1", 8080, "/healthz", {},
                                   headers={}) == b"hello"
+
+
+def test_a_refusal_names_its_status_and_only_a_reason_token():
+    from sova.adapters.kubernetes.https import refusal_reason
+
+    assert refusal_reason(b'{"error":"missing"}') == "missing"  # an agent's
+    assert refusal_reason(b'{"kind":"Status","reason":"Forbidden","message":"pods is '
+                          b'forbidden: User \\"system:serviceaccount:x:y\\""}') == "Forbidden"
+    for body in (b'{"error":"two words"}', b'{"error":"../x"}', b"not json", b"[1]",
+                 b'{"error":1}', b"\xff\xfe"):
+        assert refusal_reason(body) is None  # never free text
+    peer = Peer(b'HTTP/1.1 409 Conflict\r\nContent-Length: 19\r\n\r\n{"error":"missing"}')
+    with pytest.raises(KubernetesRequestRefused) as refused:
+        controls(peer).forward("POST", "agent-1", 8080, "/sqlite", {}, headers={})
+    assert (refused.value.status, refused.value.reason) == (409, "missing")
+    assert str(refused.value) == "Registered Kubernetes request refused: HTTP 409 missing"
