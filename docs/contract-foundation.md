@@ -1578,9 +1578,17 @@ MySQL은 지금까지 offline copy만 있어서, 쓰기 정지가 데이터 크�
 - sync의 읽기는 마지막 안정 오프셋(열린 트랜잭션이 없는 지점)에서 멈춘다. 그래서 뒤에 커밋되는 레코드는 항상 그 뒤에 온다.
 - 실측(630 레코드): 쓰기 정지 동안 목적지에 쓰인 오프셋은 증분 **11**, offline copy **636**이다. 11은 레코드 5개와, 파티션마다 commit 마커 1개와 fence 배치 1개다. fence 배치는 Redpanda가 트랜잭션이 파티션을 처음 건드릴 때 쓴다. 목적지가 앞부분이 아니면 전체 복사로 맞춰지는 것도 시험했다.
 
+**서로 다른 두 클러스터 사이(추가).** 지금까지는 한 브로커의 두 토픽·두 vhost 사이만 시험했다. 이제 원본은 kind 클러스터 A의 공유 브로커(평문), 목적지는 클러스터 B에 띄운 모듈 전용 브로커(TLS만)로 control plane 전체 흐름을 돌렸다. 목적지에는 운영자가 하듯 단위의 계정을 미리 만들었다. Kafka는 probe용 트랜잭션 ID 접두어 권한도 함께 만들었다.
+
+| 시험 | 결과 |
+|---|---|
+| Kafka: 클러스터 사이 전체 흐름 | PASS. 오프셋이 다른 클러스터에서 consumer group이 읽지 않은 18건부터 이어 읽음. 쓰기 정지 8.96초 |
+| RabbitMQ: 브로커 사이 전체 흐름 | PASS. 정의와 대기 메시지 22건. 쓰기 정지 1.56초 |
+
+adapter는 바꾸지 않았다.
+
 **한계.**
 
-- 두 브로커 모두 한 클러스터·한 브로커 안에서만 시험했다.
 - RabbitMQ의 내용 비교는 개수 수준이다. 메시지 단위 동일성은 복사 시점의 confirm으로 확보한다(adapter 설명 참고).
 
 ## MongoDB (2026-11-17)
@@ -1737,8 +1745,8 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 | control plane 이중화(API ×2, 워커 ×2)·워커 장애 복구 | 모의 시험 통과 | 로컬 kind에 실제 배포. 경로 전환 중 워커 Pod 삭제 뒤 증명·readback으로 완료. 관리형 클러스터 배포는 미시험 |
 | MySQL 간 offline copy adapter·probe | 모의 시험 통과 | 로컬 MySQL 8.4.13. 적합성 키트와 control plane 전체 흐름. TLS probe는 시험용 서버 두 대에서 실측 |
 | MySQL 변경 캡처(서버 복제, snapshot-cdc) | 모의 시험 통과 | 시험용 MySQL 8.4.13 두 대. 적합성 키트, 정지 구간 쓰기 0행(offline 20,158행), control plane 전체 흐름 |
-| Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL), 한 클러스터의 두 토픽. control plane 전체 흐름 연결(2026-11-17). TLS 리스너만 연 Redpanda에서 검증된 TLS로 전체 흐름. snapshot-cdc 최종 단계는 sync 이후 레코드만 씀(정지 중 오프셋 11, offline 636) |
-| RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8, 한 브로커의 두 vhost. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 전체 흐름 연결(2026-11-17). TLS만 받는 브로커에서 AMQP·관리 API 모두 검증된 TLS로 전체 흐름 |
+| Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL). 한 브로커의 두 토픽과, 서로 다른 kind 클러스터의 두 브로커 사이. control plane 전체 흐름 연결(2026-11-17). TLS 리스너만 연 Redpanda에서 검증된 TLS로 전체 흐름. snapshot-cdc 최종 단계는 sync 이후 레코드만 씀(정지 중 오프셋 11, offline 636) |
+| RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8. 한 브로커의 두 vhost와, 서로 다른 kind 클러스터의 두 브로커 사이. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 전체 흐름 연결(2026-11-17). TLS만 받는 브로커에서 AMQP·관리 API 모두 검증된 TLS로 전체 흐름 |
 | Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). 관리형 미실측 |
 | 메모리 세션 drain adapter | 모의 시험 통과 | 로컬 kind, WebSocket 시험 서버. 커널 TCP 테이블로 세션 계수, drain 상한 hold·terminate |
 | 애플리케이션 한 단위(볼륨 + 세션) | 모의 시험 통과 | 로컬 kind, 게시판 + 게임 서버를 control plane 전체 흐름으로. 쓰기 정지 32.5초 1회 |
