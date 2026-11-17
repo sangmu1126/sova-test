@@ -367,4 +367,8 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
   - 함께 찾은 문서와 구현의 불일치: ADR-0007은 Redis probe가 `ACL DRYRUN`을 서버 관점으로 쓴다고 적었지만, 실제 쓰기 거부 probe는 시도만 봤다. 고치고 시험으로 고정했다.
   - 시험 쪽 수정 셋: redis-py가 `INFO`·`ACL GETUSER` 응답을 dict로 파싱하는 것을 문자열로 다뤘다(어댑터의 복제 정보 읽기에도 같은 실수가 있었고, 시험이 먼저 드러냈다). 승격 시험 뒤 replica가 다시 따라잡기 전에 다음 시험이 시작됐다.
   - replica 시험 3 PASS, 결함 주입 2건 검출, Redis 전체 20 PASS, 단위 900 PASS.
+- probe 전체 점검(ADR-0007 이후). Redis에서 문서와 구현의 불일치를 찾은 뒤 모든 probe를 다시 읽었다. 내용은 [구현 안내](../contract-foundation.md#probe-설계-원칙-adr-0007)에 있다.
+  - PostgreSQL 쓰기 거부·다른 테넌트 probe가 어떤 연결 오류든 거부로 센 결함을 고쳤다. 실측해 보니 psycopg가 연결 단계 오류에 SQLSTATE를 주지 않아, 관리자 연결이 닿는지로 가른다.
+  - PostgreSQL·MySQL에 서버 관점(권한·세션)을 더했다. 새 시험 4 PASS, 결함 주입 3건 검출.
+  - 볼륨(앱 쓰기 시도 + 클러스터의 RW mount 목록 + 내용 불변)과 세션(쓰기가 아니라 서버가 없음을 봄)은 이미 원칙에 맞아 바꾸지 않았다.
 
