@@ -58,6 +58,18 @@ class MongoWorld:
         return self._adapter("target", "source")
 
     # -- observation -------------------------------------------------------------
+    def _places(self, collection, index):
+        """An index that only serves a shard key (on either side) places
+        documents; it is not business content."""
+        if index["name"] == "_id_":
+            return False
+        for side in ("source", "target"):
+            entry = self.b["admin"][side]["config"]["collections"].find_one(
+                {"_id": f"{self._db(side)}.{collection}"})
+            if entry and dict(entry["key"]) == dict(index["key"]):
+                return True
+        return False
+
     def content(self, side):
         db = self.b["admin"][self._side(side)][self._db(side)]
         if not set(COLLECTIONS) <= set(db.list_collection_names()):
@@ -68,7 +80,8 @@ class MongoWorld:
                 h.update(json_util.dumps(document, json_options=json_util.CANONICAL_JSON_OPTIONS)
                          .encode())
             h.update(repr(sorted((ix["name"], sorted(ix["key"].items()), ix.get("unique"))
-                                 for ix in db[collection].list_indexes())).encode())
+                                 for ix in db[collection].list_indexes()
+                                 if not self._places(collection, ix))).encode())
         return h.hexdigest()
 
     def _access(self, side):

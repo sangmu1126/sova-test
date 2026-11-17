@@ -327,3 +327,21 @@ def mongo_sharded_servers(tmp_path_factory):
 @pytest.fixture
 def mongo_sharded_business(mongo_sharded_servers):
     yield from _business(mongo_sharded_servers, shard=True)
+
+
+
+@pytest.fixture
+def mongo_sharded_target_business(mongo_sharded_servers):
+    """The roles turned round: a replica set as the source and the sharded
+    cluster as the target, whose operator shards the results before the
+    handoff (by a hashed key; the business there has no such index)."""
+    servers = mongo_sharded_servers
+    turned = {**servers, "admin": {"source": servers["admin"]["target"],
+                                   "target": servers["admin"]["source"]},
+              "ports": {"source": servers["ports"]["target"],
+                        "target": servers["ports"]["source"]}}
+    for business in _business(turned):
+        turned["admin"]["target"].admin.command(
+            "shardCollection", f"{business['names']['tgt']}.idempotency_results",
+            key={"_id": "hashed"})
+        yield business

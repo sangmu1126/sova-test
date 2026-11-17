@@ -2,7 +2,9 @@
 results spread over both by a hashed key) brought onto a replica set: the
 conformance kit holds for the copy, and for change capture through the
 mongos's change stream - writes made on both shards while the copy runs
-included."""
+included. And the other way round: a replica set onto the sharded cluster,
+its results sharded there before the handoff (the shard key's own index is
+placement, not business, and is left out of comparisons)."""
 
 from datetime import UTC, datetime
 import threading
@@ -37,6 +39,12 @@ def world(mongo_sharded_business):
 
 class TestShardedSourceConformance(HandoffAdapterConformance):
     pass
+
+
+class TestShardedTargetConformance(HandoffAdapterConformance):
+    @pytest.fixture
+    def world(self, mongo_sharded_target_business):
+        return MongoWorld(mongo_sharded_target_business)
 
 
 class TestShardedChangeCaptureConformance(HandoffAdapterConformance):

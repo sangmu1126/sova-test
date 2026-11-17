@@ -26,7 +26,7 @@ Each probe returns ``(passed, observation)``.
 from datetime import UTC, datetime
 import hashlib
 
-from sova.adapters.mongodb_handoff import may_write, ttl_live
+from sova.adapters.mongodb_handoff import may_write, placement_index, shard_keys, ttl_live
 from sova.domain.contracts import ContractError
 
 
@@ -98,8 +98,14 @@ class MongoDatabaseProbes:
                                   "source": source["outcomes"]}
 
     # -- content -----------------------------------------------------------------
+    def _placement(self, collection):
+        """The shard keys either side shards ``collection`` by."""
+        return [key for side in ("source", "target")
+                for key in shard_keys(self.connect(side), self.databases[side],
+                                      (collection,)).values()]
+
     @staticmethod
-    def _digest(database, collection, now=None):
+    def _digest(database, collection, now=None, placement=()):
         """Canonical extended JSON in ``_id`` order, the documents a TTL index
         removes before ``now`` plus a margin left out (each server removes them
         on its own schedule)."""
@@ -113,16 +119,19 @@ class MongoDatabaseProbes:
             count += 1
         indexes = sorted(repr((ix["name"], sorted(ix["key"].items()), ix.get("unique"),
                                ix.get("expireAfterSeconds")))
-                         for ix in database[collection].list_indexes())
+                         for ix in database[collection].list_indexes()
+                         if not placement_index(ix, placement))
         h.update(repr(indexes).encode())
         return count, h.hexdigest()
 
     def content_equal(self, name):
         if name not in self.collections:
             raise ContractError("Unregistered protected set")
-        now = datetime.now(UTC)  # one cut for both sides
-        source = self._digest(self.connect("source")[self.databases["source"]], name, now)
-        target = self._digest(self.connect("target")[self.databases["target"]], name, now)
+        now, placement = datetime.now(UTC), self._placement(name)  # one cut for both sides
+        source = self._digest(self.connect("source")[self.databases["source"]], name, now,
+                              placement)
+        target = self._digest(self.connect("target")[self.databases["target"]], name, now,
+                              placement)
         return source == target and source[0] > 0, {
             "probe": "content_equal", "set": name,
             "source": {"documents": source[0], "digest": source[1]},
@@ -204,9 +213,9 @@ class MongoDatabaseProbes:
                     {}, sort=[("_id", 1)]))
                 if documents:
                     copy[collection].insert_many(documents, ordered=True)
-                now = datetime.now(UTC)
-                sets[collection] = self._digest(target, collection, now) == \
-                    self._digest(copy, collection, now)
+                now, placement = datetime.now(UTC), self._placement(collection)
+                sets[collection] = self._digest(target, collection, now, placement) == \
+                    self._digest(copy, collection, now, placement)
         finally:
             client.drop_database(name)
         return all(sets.values()) and bool(sets), {"probe": "restore_drill",

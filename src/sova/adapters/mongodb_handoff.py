@@ -95,6 +95,21 @@ def ttl_live(collection, now):
     return {"$nor": expiring}, {"$or": expiring}
 
 
+def shard_keys(client, database, collections):
+    """collection -> its shard key, for the sharded ones (read from the cluster's
+    own catalogue; a replica set has none)."""
+    names = [f"{database}.{c}" for c in collections]
+    found = client["config"]["collections"].find({"_id": {"$in": names}, "dropped": {"$ne": True}})
+    return {entry["_id"].split(".", 1)[1]: dict(entry["key"]) for entry in found}
+
+
+def placement_index(index, keys):
+    """Whether an index exists to place documents on shards (it serves the
+    collection's shard key on either side) rather than to serve the business:
+    such an index is left out of comparisons."""
+    return index["name"] != "_id_" and dict(index["key"]) in keys
+
+
 def may_write(privileges, database):
     """Whether a privilege list lets its holder change ``database``."""
     for privilege in privileges or ():
@@ -192,8 +207,20 @@ class MongoDatabaseHandoffAdapter:
                 for u in op.get("effectiveUsers") or () if u.get("user") in names]
 
     # -- content -----------------------------------------------------------------
-    def _spec(self, side):
-        """collection -> (options, index specs) of the unit, or None if missing."""
+    def _shard_keys(self):
+        """collection -> the shard keys either side shards it by."""
+        out = {}
+        for side in ("source", "target"):
+            for collection, key in shard_keys(self.connect(side), self._db(side),
+                                              self.collections).items():
+                out.setdefault(collection, []).append(key)
+        return out
+
+    def _spec(self, side, keys=None):
+        """collection -> (options, index specs) of the unit, or None if missing;
+        an index that serves a shard key (``keys``) on either side is placement,
+        not business, and left out."""
+        keys = self._shard_keys() if keys is None else keys
         database = self.connect(side)[self._db(side)]
         listed = {c["name"]: c.get("options") or {}
                   for c in database.list_collections(filter={"name": {"$in": list(
@@ -205,7 +232,8 @@ class MongoDatabaseHandoffAdapter:
                 continue
             indexes = sorted(json.dumps({k: v for k, v in ix.items() if k not in ("v", "ns")},
                                         sort_keys=True, default=str)
-                             for ix in database[collection].list_indexes())
+                             for ix in database[collection].list_indexes()
+                             if not placement_index(ix, keys.get(collection, ())))
             out[collection] = (json.dumps(listed[collection], sort_keys=True, default=str),
                                indexes)
         return out
@@ -260,7 +288,8 @@ class MongoDatabaseHandoffAdapter:
         return self._staged("target", "source")
 
     def _staged(self, side, other):
-        mine, theirs = self._spec(side), self._spec(other)
+        keys = self._shard_keys()
+        mine, theirs = self._spec(side, keys), self._spec(other, keys)
         present = all(v is not None for v in mine.values())
         writers = {w: (self._user(side, w) or {}).get("inheritedPrivileges") for w in self.writers}
         writing = sorted(w for w, privileges in writers.items()
@@ -351,7 +380,8 @@ class MongoDatabaseHandoffAdapter:
         same = all({k: v for k, v in source[c].items() if k != "ttl_expiring"} ==
                    {k: v for k, v in target[c].items() if k != "ttl_expiring"}
                    for c in self.collections)
-        return same and self._spec("source") == self._spec("target"), {
+        keys = self._shard_keys()
+        return same and self._spec("source", keys) == self._spec("target", keys), {
             "source": source, "target": target}
 
     def _apply_final_changes(self):
