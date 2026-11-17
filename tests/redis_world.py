@@ -64,11 +64,24 @@ class RedisWorld:
                     "list": lambda k: client.lrange(k, 0, -1),
                     "set": lambda k: sorted(client.smembers(k)),
                     "zset": lambda k: client.zrange(k, 0, -1, withscores=True),
-                    "hash": lambda k: sorted(client.hgetall(k).items()),
+                    "hash": lambda k: self._hash(client, k),
                     "stream": lambda k: [client.xrange(k), client.xinfo_groups(k)]}[kind]
             h.update(repr((key, kind, read(key),
                            client.execute_command("PEXPIRETIME", key))).encode())
         return h.hexdigest()
+
+    @staticmethod
+    def _hash(client, key):
+        """Fields, values and each field's own expiry time."""
+        import redis
+
+        pairs = sorted(client.hgetall(key).items())
+        try:
+            times = client.execute_command("HPEXPIRETIME", key, "FIELDS", len(pairs),
+                                           *(f for f, _ in pairs)) if pairs else []
+        except redis.exceptions.ResponseError:
+            times = [None] * len(pairs)  # a server without field expiry
+        return [(f, v, t) for (f, v), t in zip(pairs, times)]
 
     def _access(self, side):
         lines = [line.decode() for line in

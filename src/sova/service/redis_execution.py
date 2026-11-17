@@ -17,8 +17,13 @@ An execution-file entry (``engine: redis``)::
                "zone_of": {"source": "<zone>", "target": "<zone>"},
                "replicas": {"source": ["<settings file>"], "target": []},
                "sentinels": {"source": {"servers": ["<settings file>"],
-                                        "master": "orders"}}},
+                                        "master": "orders"}},
+               "expiry_margin_seconds": 120},
      "route": {...}}
+
+``expiry_margin_seconds`` (default 120) is how close to its expiry a key or
+hash field is left out of the comparisons, on both sides: longer than a
+comparison of the whole unit takes, plus the servers' clock skew.
 
 ``replicas`` registers each side's replicas (a settings file each, reached
 directly): ACL users are kept per node, so the fence and activation go to
@@ -48,7 +53,7 @@ from sova.service.worker import Execution
 
 _KEYS = {"servers", "prefixes", "writers", "app_user", "admin_user", "user_password_files",
          "sets", "invariants", "scratch_db", "other_prefix", "routes", "zone_of", "replicas",
-         "sentinels"}
+         "sentinels", "expiry_margin_seconds"}
 _SERVER_KEYS = {"host", "port", "username", "password", "db", "ssl_ca", "socket_timeout",
                 "cluster"}
 
@@ -69,12 +74,14 @@ def redis_factory(adapter_id, resolve):
         adapter = RedisKeyspaceHandoffAdapter(
             adapter_id, connect=d["connect"], prefixes=d["prefixes"], writers=d["writers"],
             app_user=d["app_user"], admin_user=d["admin_user"], route=d["route"],
-            routes=d["routes"], replicas=d.get("replicas"), sentinel=d.get("sentinel"))
+            routes=d["routes"], replicas=d.get("replicas"), sentinel=d.get("sentinel"),
+            expiry_margin_seconds=d.get("expiry_margin_seconds", 120))
         probes = RedisKeyspaceProbes(
             connect=d["connect"], connect_as=d["connect_as"], writers=d["writers"],
             app_user=d["app_user"], sets=d["sets"], invariants=d.get("invariants"),
             scratch_db=d.get("scratch_db", 15), other_prefix=d.get("other_prefix"),
-            zone_of=d.get("zone_of"), replicas=d.get("replicas"))
+            zone_of=d.get("zone_of"), replicas=d.get("replicas"),
+            expiry_margin_seconds=d.get("expiry_margin_seconds", 120))
         return Execution(adapter, redis_measure(probes, scratch_db=d.get("scratch_db", 15),
                                                 other_prefix=d.get("other_prefix")))
     return factory
@@ -176,6 +183,7 @@ def redis_resolver(app, *, route_for):
         "routes": tuple(routes), "sets": entry["sets"], "invariants": entry.get("invariants"),
         "scratch_db": entry.get("scratch_db", 15), "other_prefix": entry.get("other_prefix"),
         "replicas": replicas, "sentinel": sentinel,
+        "expiry_margin_seconds": entry.get("expiry_margin_seconds", 120),
         "zone_of": (lambda side: zones.get(side)) if zones else None}
 
     def resolve(tenant_id, application_id):

@@ -11,7 +11,8 @@ Made apart from the adapter that moved the keys:
   promoted, would take the writer's writes. A refused login or command that
   no node would permit is a denial;
 * each protected set is a key prefix of the unit, compared value by value
-  with its expiry time;
+  with its expiry time and each hash field's; what falls due within
+  ``expiry_margin_seconds`` is left out of both sides, and counted;
 * a business invariant is a registered reference: every hash under one prefix
   names, in one field, a key that exists under another prefix (a session's
   cart);
@@ -28,6 +29,7 @@ Each probe returns ``(passed, observation)``.
 
 import hashlib
 import json
+import time
 from uuid import uuid4
 
 from sova.adapters.redis_keyspace_handoff import (
@@ -43,9 +45,33 @@ def _text(value):
     return value.decode() if isinstance(value, bytes) else value
 
 
+def _soon(expires, cut):
+    return expires == -2 or 0 < expires <= cut
+
+
+def _fields_with_expiry(client, key, cut):
+    """(field, value, expiry) of a hash, without the fields due by ``cut``;
+    None if every field is. A server without field expiry: none expire."""
+    import redis
+
+    pairs = sorted(client.hgetall(key).items())
+    if not pairs:
+        return []
+    try:
+        times = client.execute_command("HPEXPIRETIME", key, "FIELDS", len(pairs),
+                                       *(f for f, _ in pairs))
+    except redis.exceptions.ResponseError as error:
+        if "unknown command" not in str(error).lower():
+            raise
+        times = [-1] * len(pairs)
+    kept = [(f, v, t) for (f, v), t in zip(pairs, times) if not _soon(t, cut)]
+    return kept or None
+
+
 class RedisKeyspaceProbes:
     def __init__(self, *, connect, connect_as, writers, app_user, sets, invariants=None,
-                 scratch_db=15, other_prefix=None, zone_of=None, replicas=None):
+                 scratch_db=15, other_prefix=None, zone_of=None, replicas=None,
+                 expiry_margin_seconds=120):
         """``connect(side)`` is an administrative client (a cluster client for a
         cluster), ``connect_as(side, user, node=None)`` a client logged in as
         ``user`` (on one ``(host, port)`` node of a cluster); ``sets`` maps each
@@ -53,6 +79,10 @@ class RedisKeyspaceProbes:
         clients on the side's registered replicas."""
         if not callable(connect) or not callable(connect_as):
             raise ContractError("Administrative and per-user connections required")
+        if type(expiry_margin_seconds) not in (int, float) or \
+                not 0 <= expiry_margin_seconds <= 3600:
+            raise ContractError("expiry_margin_seconds: 0 to 3600")
+        self.expiry_margin = expiry_margin_seconds
         self.replicas = replicas or (lambda side: ())
         if type(sets) is not dict or not sets:
             raise ContractError("A key prefix for each protected set required")
@@ -135,38 +165,51 @@ class RedisKeyspaceProbes:
                                   "source": source["outcomes"]}
 
     # -- content -----------------------------------------------------------------
+    def _cut(self):
+        """Expiry times (ms) up to which keys and fields are left out."""
+        return int((time.time() + self.expiry_margin) * 1000)
+
     @staticmethod
-    def _read(client, key):
+    def _read(client, key, cut):
+        """(kind, value) of a key; ``None`` value if it is due by ``cut``."""
         kind = _text(client.type(key))
+        if kind == "none" or _soon(client.execute_command("PEXPIRETIME", key), cut):
+            return kind, None
         value = {"string": lambda: client.get(key),
                  "list": lambda: client.lrange(key, 0, -1),
                  "set": lambda: sorted(client.smembers(key)),
                  "zset": lambda: client.zrange(key, 0, -1, withscores=True),
-                 "hash": lambda: sorted(client.hgetall(key).items()),
+                 "hash": lambda: _fields_with_expiry(client, key, cut),
                  "stream": lambda: [client.xrange(key), client.xinfo_groups(key)],
                  }.get(kind, lambda: client.dump(key))()
         return kind, value
 
-    def _digest(self, client, prefix):
-        h, count = hashlib.sha256(), 0
+    def _digest(self, client, prefix, cut):
+        """(keys, digest, keys left out as due)."""
+        h, count, soon = hashlib.sha256(), 0, 0
         for key in sorted(client.scan_iter(match=prefix + "*", count=500)):
-            kind, value = self._read(client, key)
+            kind, value = self._read(client, key, cut)
             if kind == "none":
+                continue
+            if value is None:
+                soon += 1
                 continue
             h.update(repr((key, kind, value,
                            client.execute_command("PEXPIRETIME", key))).encode())
             count += 1
-        return count, h.hexdigest()
+        return count, h.hexdigest(), soon
 
     def content_equal(self, name):
         if name not in self.sets:
             raise ContractError("Unregistered protected set")
-        source = self._digest(self.connect("source"), self.sets[name])
-        target = self._digest(self.connect("target"), self.sets[name])
-        return source == target and source[0] > 0, {
+        cut = self._cut()
+        source = self._digest(self.connect("source"), self.sets[name], cut)
+        target = self._digest(self.connect("target"), self.sets[name], cut)
+        return source[:2] == target[:2] and source[0] > 0, {
             "probe": "content_equal", "set": name, "prefix": self.sets[name],
-            "source": {"keys": source[0], "digest": source[1]},
-            "target": {"keys": target[0], "digest": target[1]}}
+            "expiry_margin_seconds": self.expiry_margin,
+            "source": {"keys": source[0], "digest": source[1], "left_out_expiring": source[2]},
+            "target": {"keys": target[0], "digest": target[1], "left_out_expiring": target[2]}}
 
     def invariant(self, invariant_id):
         spec = self.invariants.get(invariant_id)
@@ -218,11 +261,13 @@ class RedisKeyspaceProbes:
     def _restore_in_cluster(self, target):
         """A cluster has one database: each key restored under a name in its own
         slot, compared with the original, and removed."""
-        restored, made = {}, []
+        restored, made, cut = {}, [], self._cut()
         try:
             for name, prefix in self.sets.items():
                 keys, equal = 0, True
                 for key in target.scan_iter(match=prefix + "*", count=500):
+                    if _soon(target.execute_command("PEXPIRETIME", key), cut):
+                        continue  # may be gone before it is compared
                     payload = target.dump(key)
                     if payload is None:
                         continue
@@ -232,7 +277,8 @@ class RedisKeyspaceProbes:
                                            "REPLACE", *(("ABSTTL",) if expires > 0 else ()))
                     made.append(copy)
                     keys += 1
-                    equal = equal and self._read(target, key) == self._read(target, copy) and \
+                    equal = equal and self._read(target, key, cut) == \
+                        self._read(target, copy, cut) and \
                         expires == target.execute_command("PEXPIRETIME", copy)
                 restored[name] = {"keys": keys, "equal": equal}
         finally:
@@ -265,8 +311,9 @@ class RedisKeyspaceProbes:
                     scratch_client.execute_command(
                         "RESTORE", key, max(expires, 0), payload, "REPLACE",
                         *(("ABSTTL",) if expires > 0 else ()))
-                restored[name] = (self._digest(target, prefix),
-                                  self._digest(scratch_client, prefix))
+                cut = self._cut()
+                restored[name] = (self._digest(target, prefix, cut)[:2],
+                                  self._digest(scratch_client, prefix, cut)[:2])
         finally:
             scratch_client.flushdb()
             scratch_client.close()

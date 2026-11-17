@@ -29,8 +29,15 @@ postconditions as the other data adapters, read back from the servers:
   it cannot rebuild (a module's) is refused. ``start_sync`` copies while
   the source still serves and leaves a marker key outside the unit.
 * Content is compared logically, per type (strings, lists, sets, sorted sets,
-  hashes, streams with their consumer groups) with each key's expiry time:
-  two servers' encodings of the same value may differ, its content may not.
+  hashes with each field's expiry, streams with their consumer groups) with
+  each key's expiry time: two servers' encodings of the same value may
+  differ, its content may not. A key or hash field due to expire within
+  ``expiry_margin_seconds`` of the comparison is left out of both sides,
+  and counted: one comparison reads the source, then the target, and a
+  session store has keys falling due all the time (each server expires them
+  at the same absolute time, but the reads are not at the same time). The
+  rest must be equal, and is read within the margin unless the comparison
+  outlasts it, which the evidence shows.
 
 Replicas: a Redis-protocol server keeps its ACL users per node; replication
 carries data, not ACLs. A replica the fence did not reach would, promoted
@@ -137,6 +144,28 @@ def slot_mate(key, label):
     return b"{" + tag + b"}__sova:" + label + b":" + hashlib.sha256(key).hexdigest()[:16].encode()
 
 
+def field_expiries(client, key, fields):
+    """Each field's absolute expiry (ms; -1 none, -2 gone since), or every one
+    -1 on a server without field expiry (before Redis 7.4, Valkey 9)."""
+    import redis
+
+    out = []
+    for i in range(0, len(fields), _BATCH):
+        part = fields[i:i + _BATCH]
+        try:
+            out += client.execute_command("HPEXPIRETIME", key, "FIELDS", len(part), *part)
+        except redis.exceptions.ResponseError as error:
+            if "unknown command" in str(error).lower():
+                return [-1] * len(fields)
+            raise
+    return out
+
+
+def due(expires, cut):
+    """Whether an expiry time (ms) falls before ``cut``, or has passed (-2)."""
+    return expires == -2 or 0 < expires <= cut
+
+
 def _value(v):
     if isinstance(v, bytes):
         try:
@@ -154,10 +183,15 @@ def _value(v):
 
 class RedisKeyspaceHandoffAdapter:
     def __init__(self, adapter_id, *, connect, prefixes, writers, app_user, admin_user, route,
-                 routes, db=0, kill_wait_seconds=5.0, replicas=None, sentinel=None):
+                 routes, db=0, kill_wait_seconds=5.0, replicas=None, sentinel=None,
+                 expiry_margin_seconds=120):
         """``connect(side)`` gives an administrative client (redis-py, bytes
         responses) on that side's primary, ``db`` selected; ``replicas(side)``
         administrative clients on each of its registered replicas."""
+        if type(expiry_margin_seconds) not in (int, float) or \
+                not 0 <= expiry_margin_seconds <= 3600:
+            raise ContractError("expiry_margin_seconds: 0 to 3600")
+        self.expiry_margin = expiry_margin_seconds
         if not callable(connect) or not all(callable(getattr(route, n, None))
                                             for n in ("get", "set")):
             raise ContractError("Administrative connect and a route store required")
@@ -331,14 +365,19 @@ class RedisKeyspaceHandoffAdapter:
                 found.add(key)
         return sorted(found)
 
-    def _digest(self, side):
-        """(key count, digest) of the unit's logical content with expiry times."""
+    def _digest(self, side, cut):
+        """(key count, digest, keys and fields left out) of the unit's logical
+        content with expiry times; what is due by ``cut`` (ms) is left out."""
         client = self._client(side)
-        h, count = hashlib.sha256(), 0
+        h, count, left_out = hashlib.sha256(), 0, 0
         for key in self._keys(side):
             kind = _text(client.type(key))
             if kind == "none":
                 continue  # expired between the scan and now
+            expires = client.execute_command("PEXPIRETIME", key)
+            if due(expires, cut):
+                left_out += 1
+                continue
             if kind == "string":
                 value = client.get(key)
             elif kind == "list":
@@ -348,7 +387,15 @@ class RedisKeyspaceHandoffAdapter:
             elif kind == "zset":
                 value = [[m, repr(s)] for m, s in client.zrange(key, 0, -1, withscores=True)]
             elif kind == "hash":
-                value = client.hgetall(key)
+                pairs = client.hgetall(key)
+                names = sorted(pairs)
+                value = [[f, pairs[f], t] for f, t in zip(names,
+                                                         field_expiries(client, key, names))]
+                kept = [v for v in value if not due(v[2], cut)]
+                left_out += len(value) - len(kept)
+                if value and not kept:  # gone with its last field, or about to be
+                    continue
+                value = kept
             elif kind == "stream":
                 entries = client.xrange(key, "-", "+")
                 groups = [{k: g.get(k) for k in ("name", "last-delivered-id", "pending")}
@@ -356,11 +403,10 @@ class RedisKeyspaceHandoffAdapter:
                 value = [[e[0], e[1]] for e in entries] + [sorted(map(str, groups))]
             else:  # a module type: its serialization, which the same version shares
                 value = client.dump(key)
-            expires = client.execute_command("PEXPIRETIME", key)
             h.update(json.dumps([_value(key), kind, _value(value), expires],
                                 separators=(",", ":")).encode() + b"\n")
             count += 1
-        return count, h.hexdigest()
+        return count, h.hexdigest(), left_out
 
     # -- actions ---------------------------------------------------------------
     def _stage_target(self):
@@ -584,9 +630,15 @@ class RedisKeyspaceHandoffAdapter:
         return self._compare()
 
     def _compare(self):
-        source, target = self._digest("source"), self._digest("target")
-        return source == target, {"source": {"keys": source[0], "digest": source[1]},
-                                  "target": {"keys": target[0], "digest": target[1]}}
+        started = time.monotonic()
+        cut = int((time.time() + self.expiry_margin) * 1000)
+        source, target = self._digest("source", cut), self._digest("target", cut)
+        took = time.monotonic() - started
+        return source[:2] == target[:2], {
+            "source": {"keys": source[0], "digest": source[1], "left_out_expiring": source[2]},
+            "target": {"keys": target[0], "digest": target[1], "left_out_expiring": target[2]},
+            "expiry_margin_seconds": self.expiry_margin, "seconds": round(took, 3),
+            "outlasted_margin": took >= self.expiry_margin}
 
     def _apply_final_changes(self):
         self._copy()
