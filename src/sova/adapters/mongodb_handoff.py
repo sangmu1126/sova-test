@@ -24,7 +24,12 @@ postconditions as the other data adapters, read back from the servers:
   for MySQL) and hold no role on the target database. Activation grants the
   application user ``readWrite`` there and lifts its restriction.
 * Documents are copied as raw BSON in ``_id`` order and compared as raw BSON:
-  equal bytes are equal documents, field order and types included.
+  equal bytes are equal documents, field order and types included. A TTL
+  index's expired documents are removed by each server on its own schedule
+  (every 60 seconds), so the two sides may differ in them for a while: a
+  comparison leaves out, on both sides alike, the documents a TTL index
+  removes before the comparison's time plus a margin (``ttl_live``), and
+  says how many.
   ``start_sync`` copies while the source still serves and leaves a marker
   collection outside the unit.
 
@@ -32,7 +37,7 @@ Database and collection names are plain identifiers. Every action is
 idempotent; a postcondition that does not hold reads back UNKNOWN.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 import re
@@ -51,6 +56,7 @@ MARKER = "__sova_sync"
 _NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _USER = re.compile(r"[A-Za-z0-9_.@-]{1,128}")
 _BATCH = 1000
+TTL_MARGIN_SECONDS = 120  # the TTL monitor's 60 s cycle, and the clocks' skew
 
 
 def name(value):
@@ -67,6 +73,26 @@ def account(value):
     if not _USER.fullmatch(user):
         raise ContractError("Plain MongoDB user name required")
     return user, name(db)
+
+
+def ttl_live(collection, now):
+    """(filter, expiring): the documents of ``collection`` no TTL index removes
+    before ``now`` plus the margin, and the filter for the ones it may. A
+    document expires when its indexed date is older than ``expireAfterSeconds``
+    (the earliest, for an array) and it matches the index's partial filter;
+    ``$lt`` compares dates with dates only, and any element of an array."""
+    expiring = []
+    for index in collection.list_indexes():
+        expire = index.get("expireAfterSeconds")
+        if expire is None or len(index["key"]) != 1:
+            continue
+        field = next(iter(index["key"]))
+        rule = {field: {"$lt": now - timedelta(seconds=float(expire) - TTL_MARGIN_SECONDS)}}
+        partial = index.get("partialFilterExpression")
+        expiring.append({"$and": [dict(partial), rule]} if partial else rule)
+    if not expiring:
+        return {}, None
+    return {"$nor": expiring}, {"$or": expiring}
 
 
 def may_write(privileges, database):
@@ -184,20 +210,25 @@ class MongoDatabaseHandoffAdapter:
                                indexes)
         return out
 
-    def _digest(self, side):
+    def _digest(self, side, now=None):
         from bson.raw_bson import RawBSONDocument
 
         database = self.connect(side)[self._db(side)]
+        now = now or datetime.now(UTC)
         out = {}
         for collection in self.collections:
             h, count = hashlib.sha256(), 0
+            live, expiring = ttl_live(database[collection], now)
             raw = database.get_collection(collection).with_options(
                 codec_options=database.codec_options.with_options(
                     document_class=RawBSONDocument))
-            for document in raw.find({}, sort=[("_id", 1)], batch_size=_BATCH):
+            for document in raw.find(live, sort=[("_id", 1)], batch_size=_BATCH):
                 h.update(document.raw)
                 count += 1
             out[collection] = {"documents": count, "digest": h.hexdigest()}
+            if expiring is not None:  # left out alike on both sides
+                out[collection]["ttl_expiring"] = database[collection].count_documents(
+                    expiring)
         return out
 
     # -- actions ---------------------------------------------------------------
@@ -315,8 +346,12 @@ class MongoDatabaseHandoffAdapter:
         return self._compare()
 
     def _compare(self):
-        source, target = self._digest("source"), self._digest("target")
-        return source == target and self._spec("source") == self._spec("target"), {
+        now = datetime.now(UTC)  # one cut for both sides
+        source, target = self._digest("source", now), self._digest("target", now)
+        same = all({k: v for k, v in source[c].items() if k != "ttl_expiring"} ==
+                   {k: v for k, v in target[c].items() if k != "ttl_expiring"}
+                   for c in self.collections)
+        return same and self._spec("source") == self._spec("target"), {
             "source": source, "target": target}
 
     def _apply_final_changes(self):

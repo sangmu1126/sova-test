@@ -23,9 +23,10 @@ Made apart from the adapter that moved the documents, by other means:
 Each probe returns ``(passed, observation)``.
 """
 
+from datetime import UTC, datetime
 import hashlib
 
-from sova.adapters.mongodb_handoff import may_write
+from sova.adapters.mongodb_handoff import may_write, ttl_live
 from sova.domain.contracts import ContractError
 
 
@@ -98,11 +99,15 @@ class MongoDatabaseProbes:
 
     # -- content -----------------------------------------------------------------
     @staticmethod
-    def _digest(database, collection):
+    def _digest(database, collection, now=None):
+        """Canonical extended JSON in ``_id`` order, the documents a TTL index
+        removes before ``now`` plus a margin left out (each server removes them
+        on its own schedule)."""
         from bson import json_util
 
+        live, _ = ttl_live(database[collection], now or datetime.now(UTC))
         h, count = hashlib.sha256(), 0
-        for document in database[collection].find({}, sort=[("_id", 1)]):
+        for document in database[collection].find(live, sort=[("_id", 1)]):
             h.update(json_util.dumps(document, json_options=json_util.CANONICAL_JSON_OPTIONS)
                      .encode() + b"\n")
             count += 1
@@ -115,8 +120,9 @@ class MongoDatabaseProbes:
     def content_equal(self, name):
         if name not in self.collections:
             raise ContractError("Unregistered protected set")
-        source = self._digest(self.connect("source")[self.databases["source"]], name)
-        target = self._digest(self.connect("target")[self.databases["target"]], name)
+        now = datetime.now(UTC)  # one cut for both sides
+        source = self._digest(self.connect("source")[self.databases["source"]], name, now)
+        target = self._digest(self.connect("target")[self.databases["target"]], name, now)
         return source == target and source[0] > 0, {
             "probe": "content_equal", "set": name,
             "source": {"documents": source[0], "digest": source[1]},
@@ -198,8 +204,9 @@ class MongoDatabaseProbes:
                     {}, sort=[("_id", 1)]))
                 if documents:
                     copy[collection].insert_many(documents, ordered=True)
-                sets[collection] = self._digest(target, collection) == \
-                    self._digest(copy, collection)
+                now = datetime.now(UTC)
+                sets[collection] = self._digest(target, collection, now) == \
+                    self._digest(copy, collection, now)
         finally:
             client.drop_database(name)
         return all(sets.values()) and bool(sets), {"probe": "restore_drill",
