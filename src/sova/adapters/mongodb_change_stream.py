@@ -38,7 +38,13 @@ the data:
   (``$changeStreamSplitLargeEvent``); the fragments are joined and applied
   as one event, and a rerun resumes only from a whole event.
 
-The source must be a replica set; a standalone server has no change stream.
+The source is a replica set or a sharded cluster (reached through a
+mongos); a standalone server has no change stream. A sharded cluster gives no
+one "last write": the stream starts at the high-water mark of a stream opened
+before the copy (on a mongos, a point every shard's majority has passed, so
+the copy and the stream together miss nothing), and the catch-up targets the
+mongos's cluster time - after the fence, which asked every shard for its
+operations, it is past every shard's writes.
 The stream only reads the oplog and keeps nothing on the source, so an abort
 has nothing to release.
 """
@@ -82,11 +88,39 @@ class MongoChangeStreamHandoffAdapter(MongoDatabaseHandoffAdapter):
 
         return ReadConcern("majority")  # never copy what a failover could roll back
 
-    def _hello(self):
+    def _source_kind(self):
+        """("replica_set" | "sharded", hello) of the source."""
         hello = self.connect("source").admin.command("hello")
-        if not hello.get("setName"):
-            raise ContractError("Change capture needs the source to be a replica set")
+        if hello.get("msg") == "isdbgrid":
+            return "sharded", hello
+        if hello.get("setName"):
+            return "replica_set", hello
+        raise ContractError("Change capture needs the source to be a replica set or a "
+                            "sharded cluster")
+
+    def _hello(self):
+        kind, hello = self._source_kind()
+        if kind != "replica_set":
+            raise ContractError("A replica set's own last write asked of a sharded cluster")
         return hello
+
+    def _cluster_time(self):
+        """The mongos's cluster time: past every write it has heard of."""
+        ts = self.connect("source").admin.command("ping")["$clusterTime"]["clusterTime"]
+        return ts.time, ts.inc
+
+    def _merged_start(self):
+        """A sharded stream's starting point: the high-water mark of a stream
+        opened now (absent while its first batch holds events: opened again)."""
+        deadline = time.monotonic() + self.catch_up_seconds
+        while True:
+            with self._stream() as stream:
+                token = stream.resume_token
+            if token is not None:
+                return token
+            if time.monotonic() > deadline:
+                raise ContractError("No starting point from the source's change stream")
+            time.sleep(0.2)
 
     def _committed_at(self):
         """The source's majority-committed point (a BSON timestamp)."""
@@ -200,9 +234,15 @@ class MongoChangeStreamHandoffAdapter(MongoDatabaseHandoffAdapter):
         # events, as on a busy source: a start of "now" would then lose the
         # changes made during the copy.) Changes at the point itself are
         # applied again; applying is idempotent.
-        start = self._committed_at()
-        self._copy()
-        token, applied = self._drain(None, self._committed(), at=start)
+        kind, hello = self._source_kind()
+        if kind == "sharded":
+            begin = self._merged_start()
+            self._copy()
+            token, applied = self._drain(begin, self._cluster_time())
+        else:
+            start = hello["lastWrite"]["majorityOpTime"]["ts"]
+            self._copy()
+            token, applied = self._drain(None, self._committed(), at=start)
         self._keep(token, "change_stream", applied_at_sync=applied)
 
     def _check_start_sync(self):
@@ -220,7 +260,8 @@ class MongoChangeStreamHandoffAdapter(MongoDatabaseHandoffAdapter):
             self._copy()
             self._keep(None, "full_copy", reason="sync_not_run")
             return
-        until = self._last_write_committed()
+        until = self._last_write_committed() if self._source_kind()[0] == "replica_set" \
+            else self._cluster_time()
         try:
             token, applied = self._drain(token, until)
         except pymongo.errors.OperationFailure as error:
