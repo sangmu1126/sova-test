@@ -1496,10 +1496,28 @@ Kubernetes 진입점의 표준은 Ingress에서 Gateway API로 옮겨 갔다(ing
 
 - **TLS(추가 실측).** 시험용 Valkey 두 대에 자체 CA의 TLS 포트를 열었다. 워커 실행 설정의 `ssl_ca`로 만든 연결이 서버 인증서와 호스트 이름을 검증하고, 전송 probe가 이를 pass로 잰다. 그 연결로 인계 전체를 수행했고, 서버를 보증하지 않는 CA는 거부됐다.
 - Redis Cluster(슬롯 분산)는 다루지 않는다. replica는 아래 절처럼 등록해서 다루고, Sentinel의 자동 발견은 쓰지 않는다.
-- `DUMP` 형식은 같은 계열·호환 버전 사이에서만 복원된다. 예를 들어 Redis 7.4 이후 형식을 Valkey가 읽는지는 버전마다 다르다.
+- ~~`DUMP` 형식 호환성~~ → 해결(2026-11-18, 아래 절).
 - 해시 필드 단위 만료(HEXPIRE)는 복사되지만 비교에는 넣지 않았다.
 
 **쓰기 정지 단축(추가).** 워커 수준에서 단계별로 재 보니, 쓰기 거부 probe 한 번이 약 8초였고 정지 구간에 세 번 들어 있었다. 원인은 redis-py 8의 기본 재시도다. 연결 오류를 10번까지 점점 길게 기다리며 다시 시도하는데, 로그인 거부(`AuthenticationError`)도 연결 오류의 하위 클래스다. 그래서 차단된 writer의 로그인 시도마다 몇 초씩 기다렸다. 워커 실행 설정이 만드는 writer 클라이언트도 똑같았다. 이제 writer 자신의 로그인은 한 번만 시도한다. 관리자 클라이언트의 재시도는 그대로 둔다. 쓰기 정지는 10.1초 → 1.75초, 인계 전체는 26초 → 2.8초가 됐다. Redis 시험 20 PASS(177초 → 45초).
+
+### Redis에서 Valkey로 (2026-11-18)
+
+라이선스 변경 이후 많이 하는 이전이다. 먼저 실측해 보니 Valkey 9.1.3은 Redis 8.2.2의 `DUMP`를 문자열 하나까지 **모두** 거부했다(다른 RDB 버전). 그때까지는 Redis 8에서 Valkey로 키 공간을 옮길 수 없었다.
+
+이제 목적지가 원본의 직렬화를 거부하면, 키를 내용으로 다시 만든다. 단위 밖의 임시 이름에 만들고, 절대 만료 시각을 넣은 뒤, 한 번에 이름을 바꿔 넣는다.
+
+- **기본 타입.** 문자열, 리스트, 셋, 정렬 셋은 배치로 읽는다. 점수는 정확한 double로 옮긴다.
+- **해시.** 필드마다의 만료(`HPEXPIRETIME`)까지 옮긴다. 이 명령이 없는 옛 서버에는 필드 만료 자체가 없다.
+- **stream.** 항목과 ID, 마지막 ID·추가된 항목 수·지워진 최대 ID(`XSETID`)를 옮긴다. consumer group은 마지막 전달 ID·읽은 수와 consumer까지 옮긴다. 대기 항목은 담당 consumer·대기 시간·전달 횟수까지 되살린다(`XCLAIM ... FORCE JUSTID`).
+- **거부.** 다시 만들 수 없는 타입(모듈 타입)은 거부한다.
+- **표시.** sync 표시에 어느 방식으로 옮겼는지 적는다.
+
+| 시험(원본 Redis 8.2.2, 목적지 Valkey 9.1.3) | 결과 |
+|---|---|
+| 적합성 키트(두 템플릿) | 9 PASS |
+| 덤프가 옮겼을 것 전부: stream 상태와 대기 항목의 담당자, 만료 시각, 필드 만료, 정확한 점수, group만 있는 빈 stream, 1,200 원소 셋 | PASS |
+| 결함 주입: 대기 항목 누락 / 만료 시각 누락 | 각각 1건·3건 실패로 검출. Redis 시험 33 PASS |
 
 ### Sentinel이 지키는 서버 (2026-11-18)
 
@@ -1815,7 +1833,7 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 | Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). 관리형 미실측 |
 | 메모리 세션 drain adapter | 모의 시험 통과 | 로컬 kind, WebSocket 시험 서버. 커널 TCP 테이블로 세션 계수, drain 상한 hold·terminate |
 | 애플리케이션 한 단위(볼륨 + 세션) | 모의 시험 통과 | 로컬 kind, 게시판 + 게임 서버를 control plane 전체 흐름으로. 쓰기 정지 32.5초 1회 |
-| Redis 계열(Valkey) 키 공간 adapter·probe | 모의 시험 통과 | 로컬 kind의 Valkey 9.1.3 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 등록된 replica까지 차단(승격 뒤에도 유지 실측). Cluster·Sentinel 자동 발견 미시험 |
+| Redis 계열(Valkey) 키 공간 adapter·probe | 모의 시험 통과 | 로컬 kind의 Valkey 9.1.3 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 등록된 replica까지 차단(승격 뒤에도 유지 실측), Sentinel 시각 대조, Redis 8 → Valkey 9(내용 복사). Cluster 미시험 |
 | MongoDB 데이터베이스 adapter·probe | 모의 시험 통과 | 시험용 MongoDB 8.0.34 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 단일 구성원 레플리카셋. 샤딩 미시험 |
 | MongoDB 변경 캡처(change stream, snapshot-cdc) | 모의 시험 통과 | 시험용 MongoDB 8.0.34 레플리카셋 두 대. 적합성 키트, 정지 구간 쓰기 3건(offline 20,080건), 복사 중 동시 쓰기, 재개 거부 시 전체 복사, control plane 전체 흐름 |
 | probe 관측값 보존·조회 | 모의 시험 통과 | 서명 digest와 일치를 DB 제약으로 강제, 테넌트 격리, API 조회 |
