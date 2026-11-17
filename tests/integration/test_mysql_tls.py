@@ -3,9 +3,10 @@ session that is encrypted with the server's certificate and host name
 checked, and a replication channel that requires TLS verifies the source's
 certificate - a CA that does not vouch for it keeps the sync from starting."""
 
+from datetime import UTC, datetime
 import time
 
-from adapter_conformance import apply, readback
+from adapter_conformance import apply, command, readback
 from mysql_business import PROBE_INSERT, SCHEMA, TABLES
 from mysql_pair_business import REPLICATION
 from mysql_pair_world import MySqlPairWorld
@@ -58,7 +59,8 @@ def test_replication_requiring_tls_verifies_the_source(mysql_pair_business):
     trusted = adapter(world, "/etc/mysql-tls/ca.pem")
     for action in ("stage_target", "start_sync"):
         apply(trusted, action)
-    assert readback(trusted, "start_sync") == EffectStatus.APPLIED
+    observation = trusted.readback(command(trusted.adapter_id, "start_sync"), datetime.now(UTC))
+    assert observation.status == EffectStatus.APPLIED, observation.evidence
     status = trusted._status()
     assert status["Source_SSL_Allowed"] == "Yes" and \
         status["Source_SSL_Verify_Server_Cert"] == "Yes"

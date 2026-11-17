@@ -40,6 +40,10 @@ from sova.adapters.mysql_offline_copy import MARKS, MySqlOfflineCopyAdapter, acc
 from sova.domain.contracts import ContractError
 
 _HOST = re.compile(r"[A-Za-z0-9.-]{1,253}")
+# Client errors the channel recovers from by connecting again: cannot reach the
+# host (2002, 2003), cannot resolve it yet (2005), connection lost (2013).
+_TRANSIENT = frozenset({2002, 2003, 2005, 2013})
+_CONNECT_RETRY_SECONDS = 5  # the server's default is 60
 
 
 class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
@@ -118,7 +122,8 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
             cur.execute(
                 "CHANGE REPLICATION SOURCE TO SOURCE_HOST=%s, SOURCE_PORT=%s, SOURCE_USER=%s, "
                 "SOURCE_PASSWORD=%s, SOURCE_LOG_FILE=%s, SOURCE_LOG_POS=%s, "
-                f"SOURCE_AUTO_POSITION=0, GET_SOURCE_PUBLIC_KEY=1{tls} FOR CHANNEL %s",
+                f"SOURCE_AUTO_POSITION=0, GET_SOURCE_PUBLIC_KEY=1, "
+                f"SOURCE_CONNECT_RETRY={_CONNECT_RETRY_SECONDS}{tls} FOR CHANNEL %s",
                 (host, port, user, self.replication_password, file, position,
                  *((self.replication_ca_path,) if self.replication_tls else ()), self.channel))
             cur.execute(
@@ -129,14 +134,17 @@ class MySqlReplicationAdapter(MySqlOfflineCopyAdapter):
 
     def _await_channel(self, seconds=30):
         """``START REPLICA`` returns before the channel has reached the source; a
-        TLS handshake under load takes seconds. Wait (bounded) until it runs or
-        reports an error, so the readback that follows sees where it settled
-        instead of a channel still connecting."""
+        TLS handshake under load takes seconds, and a source just reachable may
+        refuse the first connection. Wait (bounded) until the channel runs or
+        reports an error that retrying will not cure (TLS verification, a
+        refused login), so the readback that follows sees where it settled."""
         deadline = time.monotonic() + min(seconds, self.catch_up_seconds)
         while time.monotonic() < deadline:
             status = self._status()
-            if status is None or status.get("Last_IO_Error") or \
-                    status.get("Replica_IO_Running") != "Connecting":
+            if status is None or status.get("Replica_IO_Running") == "Yes":
+                return
+            errno = int(status.get("Last_IO_Errno") or 0)
+            if errno and errno not in _TRANSIENT:
                 return
             time.sleep(0.2)
 
