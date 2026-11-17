@@ -257,3 +257,58 @@ def kafka_tls_business(kafka_tls_broker):
     b = kafka_tls_broker
     for found in business(b["address"], b["root"], b["api"], b["ca_file"]):
         yield {**found, "ca_file": b["ca_file"]}
+
+
+@pytest.fixture
+def kafka_cross_business(kafka_business, kafka_tls_broker):
+    """The topic's business on the shared broker (source) and a second, separate
+    broker - the module's own, TLS - as the target: the unit's principals
+    exist there too, as an operator creates accounts, with the probes'
+    transactional-ID prefix allowed; nothing else."""
+    import httpx
+    from confluent_kafka import Producer
+    from confluent_kafka.admin import (
+        AclBinding,
+        AclBindingFilter,
+        AclOperation,
+        AclPermissionType,
+        AdminClient,
+        NewTopic,
+        ResourcePatternType,
+        ResourceType,
+    )
+
+    b, t = kafka_business, kafka_tls_broker
+    target_settings = settings(t["address"], *t["root"], t["ca_file"])
+    admin = AdminClient(target_settings)
+    for user in b["users"].values():
+        httpx.post(f"{t['api']}/v1/security/users", json={
+            "username": user, "password": PASSWORD, "algorithm": "SCRAM-SHA-256"},
+            timeout=10).raise_for_status()
+    probe = [AclBinding(ResourceType.TRANSACTIONAL_ID, b["probe"], ResourcePatternType.PREFIXED,
+                        b["principals"][k], "*", AclOperation.WRITE, AclPermissionType.ALLOW)
+             for k in ("app", "batch")]
+    for future in admin.create_acls(probe).values():
+        future.result()
+    other = b["names"]["src"].replace("orders-", "shop-")  # another tenant, target side
+    admin.create_topics([NewTopic(other, 1, 1)])[other].result()
+    producer = Producer(target_settings)
+    producer.produce(other, value=b'{"shop": true}', partition=0)
+    producer.flush(15)
+
+    def as_user(key, side):
+        if side == "source":
+            return b["as_user"](key)
+        return settings(t["address"], b["users"][key], PASSWORD, t["ca_file"])
+
+    yield {**b, "target": {**t, "admin": admin, "settings": target_settings},
+           "as_user_on": as_user, "other_topic": other}
+    admin.delete_topics([b["names"]["tgt"], other])
+    for principal in b["principals"].values():
+        for future in admin.delete_acls([AclBindingFilter(
+                ResourceType.ANY, None, ResourcePatternType.ANY, principal, None,
+                AclOperation.ANY, AclPermissionType.ANY)]).values():
+            future.result()
+    admin.delete_consumer_groups([b["group"]])
+    for user in b["users"].values():
+        httpx.delete(f"{t['api']}/v1/security/users/{user}", timeout=10)

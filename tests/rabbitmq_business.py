@@ -203,3 +203,30 @@ def rabbitmq_tls_business(rabbitmq_tls_broker):
     b = rabbitmq_tls_broker
     for found in business(b["host"], b["port"], b["http"], b["admin"], b["context"]):
         yield {**found, "ca_file": b["ca_file"]}
+
+
+@pytest.fixture
+def rabbitmq_cross_business(rabbitmq_business, rabbitmq_tls_broker):
+    """The queue's business on the shared broker (source) and a second, separate
+    broker - the module's own, TLS only - as the target: the unit's users
+    exist there too (as an operator creates accounts), with no permission;
+    another tenant's virtual host sits on it."""
+    import httpx
+
+    b, t = rabbitmq_business, rabbitmq_tls_broker
+
+    def api(method, path, body=None):
+        r = httpx.request(method, t["http"] + "/api" + path, json=body, auth=t["admin"],
+                          verify=t["context"], timeout=10)
+        if r.status_code != 404 or method != "DELETE":
+            r.raise_for_status()
+
+    for user in b["users"].values():
+        api("PUT", f"/users/{user}", {"password": PASSWORD, "tags": ""})
+    other = b["vhosts"]["src"].replace("orders-", "shop-")
+    api("PUT", f"/vhosts/{quote(other, safe='')}", {})
+    yield {**b, "target": t, "other_vhost": other}
+    for vhost in (b["vhosts"]["tgt"], other):
+        api("DELETE", f"/vhosts/{quote(vhost, safe='')}")
+    for user in b["users"].values():
+        api("DELETE", f"/users/{user}")
