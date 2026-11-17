@@ -15,7 +15,10 @@ Made apart from the adapter that moved the records, by other means:
   each registered group's position counted as records before it; a
   compacted topic by its meaning instead - the latest record of each key, and
   each group's state of the records from its position on - which each
-  cluster's own compaction leaves unchanged;
+  cluster's own compaction leaves unchanged. The target's first records
+  that the source's time retention has removed since the copy (each older
+  than the source's ``retention.ms``, the source's log past offset 0, the
+  rest equal) are left out and counted;
 * a business invariant is a registered check over the target's records: every
   value is JSON carrying a field, or no key appears twice;
 * the restore drill copies the target topic into a scratch topic, compares
@@ -31,6 +34,7 @@ Each probe returns ``(passed, observation)``.
 
 import hashlib
 import json
+import time
 from uuid import uuid4
 
 from sova.domain.contracts import ContractError
@@ -228,8 +232,8 @@ class KafkaTopicProbes:
                         [r for r in records[tp.partition] if r[0] >= tp.offset]))).encode())
         return h.hexdigest(), keys
 
-    def _digest(self, side, topic):
-        records = self._read(side, topic)
+    def _digest(self, side, topic, records=None):
+        records = self._read(side, topic) if records is None else records
         if records is None:
             return None, 0
         if self._compacted(side, topic):
@@ -242,15 +246,51 @@ class KafkaTopicProbes:
         h.update(json.dumps(self._positions(side, topic, records)).encode())
         return h.hexdigest(), count
 
+    def _retention(self, side, topic):
+        k = _kafka()
+        admin = k.admin.AdminClient(self.config(side))
+        resource = k.admin.ConfigResource(k.admin.ResourceType.TOPIC, topic)
+        entry = admin.describe_configs([resource])[resource].result().get("retention.ms")
+        try:
+            return int(entry.value) if entry is not None and entry.value else None
+        except ValueError:
+            return None
+
+    def _expired_on_source(self, source, target):
+        """partition -> how many of the target's first records the source's
+        time retention has since removed (the rest equal to the source's, the
+        source's log past offset 0, each record older than the retention)."""
+        retention = self._retention("source", self.topics["source"])
+        cutoff = int(time.time() * 1000) - (retention if retention is not None else 0)
+        out = {}
+        for partition, mine in target.items():
+            theirs = source.get(partition, [])
+            extra = len(mine) - len(theirs)
+            if extra <= 0 or retention is None or retention < 0 or \
+                    (theirs and theirs[0][0] == 0) or \
+                    [r[1:] for r in mine[extra:]] != [r[1:] for r in theirs] or \
+                    not all(0 < r[4] < cutoff for r in mine[:extra]):
+                continue
+            out[partition] = extra
+        return out
+
     def content_equal(self, name):
         if self.sets and name not in self.sets:
             raise ContractError("Unregistered protected set")
-        source = self._digest("source", self.topics["source"])
-        target = self._digest("target", self.topics["target"])
+        topics = self.topics
+        read = {side: self._read(side, topics[side]) for side in ("source", "target")}
+        expired = {}
+        if read["source"] is not None and read["target"] is not None and \
+                not self._compacted("source", topics["source"]):
+            expired = self._expired_on_source(read["source"], read["target"])
+            read["target"] = {p: rs[expired.get(p, 0):] for p, rs in read["target"].items()}
+        source = self._digest("source", topics["source"], read["source"])
+        target = self._digest("target", topics["target"], read["target"])
         return source == target and source[0] is not None, {
             "probe": "content_equal", "set": name,
             "source": {"records": source[1], "digest": source[0]},
-            "target": {"records": target[1], "digest": target[0]}}
+            "target": {"records": target[1], "digest": target[0]},
+            "expired_on_source_only": {str(p): n for p, n in expired.items()}}
 
     def invariant(self, invariant_id):
         spec = self.invariants.get(invariant_id)

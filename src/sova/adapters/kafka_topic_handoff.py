@@ -49,7 +49,13 @@ records are, partition by partition, exactly the first of the source's
 committed records, the rest are appended the same way; otherwise everything
 is copied again. The write stop then carries the records produced since the
 sync, not the topic. Offsets differ between clusters; positions are
-compared as "the number of records before it". Records a producer aborted
+compared as "the number of records before it". The source keeps deleting
+its oldest records by time (``retention.ms``) after the copy, the target
+copy not with it (its segments are new): the target's first records the
+source no longer has are left out of the comparison - and counted - when
+each was produced longer ago than the source's retention, the source's log
+no longer starts at 0, and the rest equals the source's. A target missing
+records the source has is never equal. Records a producer aborted
 are not business content and are not copied. ACLs are evaluated as the
 standard authorizer does: literal, prefixed and wildcard patterns, the
 ``User:*`` principal, ``ALL``, and DENY over ALLOW.
@@ -86,6 +92,28 @@ def _kafka():
             "TopicCollection": TopicCollection, "IsolationLevel": IsolationLevel,
             "KafkaError": KafkaError, "KafkaException": KafkaException,
             "Groups": ConsumerGroupTopicPartitions, "admin": admin}
+
+
+def expired_prefix(source, target, retention_ms, now_ms):
+    """How many of the target's first records the source's time retention has
+    removed since they were copied: the target holds them, the source no
+    longer does. 0 unless the target is longer, the rest of it equals the
+    source's records, the source's log no longer starts at offset 0, and each
+    of those records was produced (a producer timestamp) longer ago than the
+    retention - a segment goes only when its newest record is that old.
+    ``source``/``target``: [(offset, record)] in order."""
+    extra = len(target) - len(source)
+    if extra <= 0 or retention_ms is None or retention_ms < 0:
+        return 0
+    if source and source[0][0] == 0:
+        return 0
+    rest = [r for _, r in target[extra:]]
+    if rest != [r for _, r in source]:
+        return 0
+    if not all(r["timestamp"] is not None and r["timestamp"] < now_ms - retention_ms
+               for _, r in target[:extra]):
+        return 0
+    return extra
 
 
 class KafkaTopicHandoffAdapter:
@@ -152,6 +180,17 @@ class KafkaTopicHandoffAdapter:
         entries = self._admin(side).describe_configs([resource])[resource].result()
         return {n: e.value for n, e in sorted(entries.items())
                 if e.source == admin.ConfigSource.DYNAMIC_TOPIC_CONFIG.value}
+
+    def _retention_ms(self, side):
+        """The topic's effective ``retention.ms`` (whatever sets it), or None."""
+        admin = _kafka()["admin"]
+        resource = admin.ConfigResource(admin.ResourceType.TOPIC, self._topic(side))
+        entry = self._admin(side).describe_configs([resource])[resource].result().get(
+            "retention.ms")
+        try:
+            return int(entry.value) if entry is not None and entry.value is not None else None
+        except ValueError:
+            return None
 
     def _offsets(self, side, partitions, level):
         k = _kafka()
@@ -543,6 +582,10 @@ class KafkaTopicHandoffAdapter:
             return same, {"compacted": True, "partitions": digests, "group_positions": [
                 {g: {str(p): n for p, n in by_p.items()} for g, by_p in side.items()}
                 for side in positions]}
+        retention, now = self._retention_ms("source"), int(time.time() * 1000)
+        expired = {p: expired_prefix(source[p], target[p], retention, now)
+                   for p in range(partitions)}
+        target = {p: target[p][expired[p]:] for p in range(partitions)}
         digests = {str(p): [self._digest(source[p]), self._digest(target[p])]
                    for p in range(partitions)}
         positions = (self._positions("source", partitions, source),
@@ -550,7 +593,8 @@ class KafkaTopicHandoffAdapter:
         same = all(a == b for a, b in digests.values()) and positions[0] == positions[1]
         return same, {"partitions": digests, "group_positions": [
             {g: {str(p): n for p, n in by_p.items()} for g, by_p in side.items()}
-            for side in positions]}
+            for side in positions], "expired_on_source_only": {
+                str(p): n for p, n in expired.items() if n}}
 
     def _start_sync(self):
         self._copy()

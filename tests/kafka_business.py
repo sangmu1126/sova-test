@@ -10,6 +10,7 @@ removed afterwards. Source and target are two topics on the one broker.
 """
 
 import os
+import time
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -46,9 +47,10 @@ def settings(address, user, password, ca=None):
     return found
 
 
-def business(address, root, api, ca=None, config=None):
+def business(address, root, api, ca=None, config=None, archive=0):
     """The topic and its business on one broker (``ca``: reached over TLS;
-    ``config``: the topic's own configuration)."""
+    ``config``: the topic's own configuration; ``archive``: so many 8 KiB
+    records produced three days ago, in partition 0 before the business)."""
     import httpx
     from confluent_kafka import Consumer, Producer, TopicPartition
     from confluent_kafka.admin import (
@@ -100,6 +102,11 @@ def business(address, root, api, ca=None, config=None):
         return settings(address, users[key], PASSWORD, ca)
 
     producer = Producer({**as_user("app"), "enable.idempotence": True})
+    then = int(time.time() * 1000) - 3 * 86_400_000
+    for i in range(archive):  # old records: with small segments, closed ones of their own
+        producer.produce(names["src"], key=f"archive-{i}".encode(), value=b"a" * 8192,
+                         timestamp=then + i, partition=0)
+    producer.flush(15)
     for i in range(1, 31):  # business before the handoff
         producer.produce(names["src"], key=f"order-{i}".encode(),
                          value=f'{{"order": {i}, "amount": {i * 10}}}'.encode(),
@@ -132,6 +139,15 @@ def business(address, root, api, ca=None, config=None):
 @pytest.fixture
 def kafka_business():
     yield from business(*broker())
+
+
+@pytest.fixture
+def kafka_retained_business():
+    """The business after 160 records three days old, on a topic rolling 1 MiB
+    segments: the first holds old records only, so a shorter retention drops it."""
+    yield from business(*broker(), config={
+        "cleanup.policy": "delete", "retention.ms": "604800000", "segment.bytes": "1048576"},
+        archive=160)
 
 
 @pytest.fixture
