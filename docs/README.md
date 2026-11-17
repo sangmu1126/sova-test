@@ -6,6 +6,8 @@
 
 [통합 명세 채택 ADR](adr/0001-contract-driven-foundation.md) · [보존 원문](specifications/contract-driven-migration-platform-v1.1-integrated-notion.md) · [원문 manifest](specifications/manifest.json). 현재 첫 구현은 [계약·방향별 자격 안내](contract-foundation.md)를 따른다. 아래 기존 구현·검증 기록과 목표 명세를 구분한다.
 
+**2026-11-18 다음 통합 우선순위:** [이전 시스템의 프로덕션 자격 검토와 개발 계획](migration-production-qualification.md) · [ADR-0008](adr/0008-migration-production-qualification.md) · [검토 기록](development/migration-production-review-2026-11-18.md). 기존 HTTP·PostgreSQL 경로의 사용자 요청 대조·장애·복귀를 먼저 검증한다. 기능 확대·과거 실측과 운영 자격을 구분한다.
+
 ## 처음 읽는 순서
 
 | 목적 | 먼저 읽을 문서 | 해석 범위 |

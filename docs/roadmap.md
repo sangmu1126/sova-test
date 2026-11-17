@@ -1,5 +1,7 @@
 # Sova 구현 순서와 수용 기준
 
+**2026-11-18 개인 개발 우선순위:** 다음 통합 목표는 [기존 HTTP·PostgreSQL 경로의 프로덕션 자격 검증](migration-production-qualification.md)이다. 사용자 요청의 누락·중복·전체 대기, 실제 보안 설정 아래의 장애·복귀를 MQ-01~06으로 확인한다. [ADR-0008](adr/0008-migration-production-qualification.md)에 선택 이유를 남겼다. 아래 단계표는 과거 기준으로 보존하며, 이후 구현을 빠진 상태로 단정하거나 전체 완료로 읽지 않는다.
+
 이 문서의 단계표는 **2026-11-02 제어면 로드맵**이다. 이후 별도 `demo/local_response` 실행기는 개인 EKS→이 Mac RKE2의 제한된 9개 대응 경로를 검증했다([실행 안내](workload-response-runtime.md), [명세 추적표](spec-traceability.md)). 아래 S4의 프리뷰 상태를 최신 실행기의 상태로 읽지 않는다. 이 후속 검증도 일반 앱·CDC·기업 인증·Harbor·HA/DR를 포함한 S0~S7 전체 완료를 뜻하지 않는다. 날짜별 연결 현황은 [구현 현황](implementation-status.md)을 따른다.
 
 현재 담당: **보안 거버넌스 우선**. Harbor 실행 연동은 팀원이 담당한다. [담당 경계](team-boundaries.md) · [거버넌스 구현](security-governance.md).
