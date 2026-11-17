@@ -377,4 +377,6 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
 - 네 번째 전체 회귀(새 DB, 474cf1c 기준): 평문 1834 PASS / **1 FAIL** / 302 SKIP(37분), TLS 55 PASS / 2 SKIP.
   - 실패는 MySQL TLS 복제 시험이었다. 3차 회귀에서는 통과했다. `start_sync` 직후 readback이 아직 "연결 중"인 복제 채널을 보고 UNKNOWN을 냈다. 워커도 같은 순서로 읽으므로, 운영에서도 불필요한 불확실 중단이 생길 수 있는 adapter 쪽 경합이다. 채널이 자리 잡을 때까지 상한을 두고 기다리게 고쳤다. 두 서버 MySQL 시험 17 PASS.
 - Kafka 쓰기 정지 단축. 단계별로 재 보고 probe 레코드 읽기의 fetch 대기를 원인으로 찾았다. 정지 8.9초 → 6.7초(클러스터 사이 8.96초 → 7.09초). Kafka 시험 21 PASS.
+- 다섯 번째 전체 회귀(새 DB, b5034fd 기준, 오늘 변경 전부 포함): 평문 **1837 PASS / 0 FAIL** / 302 SKIP(38분), TLS 55 PASS / 2 SKIP, suite-exit 0.
+- MongoDB 변경 캡처의 BSON 한도 초과 이벤트(남겨 둔 한계). `$changeStreamSplitLargeEvent`로 조각을 받아 합친다. 처음 준비한 구현은 조각을 기다리는 동안 마감 확인을 건너뛰었다(앞서 고친 무한 루프와 같은 유형). 적용 전에 고쳤다. MongoDB 변경 캡처 시험 17 PASS, 분할 단계를 빼면 실패, 단위 7 PASS. 이 변경은 5차 회귀 뒤의 것이라 해당 모듈과 단위 시험으로 확인했다.
 
