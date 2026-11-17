@@ -1396,13 +1396,18 @@ probe끼리 agent를 공유하면 줄일 수 있지만, probe의 독립성과 �
 - 결과: 복사 agent 준비 1.86초 → 0.83초. 쓰기 정지는 볼륨 단위 27.5초 → 20.4초, 애플리케이션 단위 32.5초 → 27.7초.
 - 남은 시간은 앱 자신의 종료와, 복원 훈련이 새 볼륨을 프로비저닝하는 시간이다. 새 볼륨을 실제로 만들어 채워 보는 것이 그 훈련의 의미라 그대로 두었다.
 
-**agent 구간의 전송 암호화(검토, 2026-11-18).** API 서버에서 agent Pod까지는 클러스터 네트워크의 평문 HTTP다. 그래서 검증된 전송 암호화를 요구하는 계약에서 이 단위는 실패로 측정된다.
+**agent 구간의 전송 암호화(2026-11-18).** 기본 전송(`agent_transport: proxy`)은 API 서버의 Pod 프록시다. 이 경우 API 서버에서 agent Pod까지는 클러스터 네트워크의 평문 HTTP다. agent에 TLS를 붙여 `https:` Pod 프록시를 써도 API 서버는 Pod 인증서를 검증하지 않는다(Kubernetes의 Pod 프록시 동작). 그래서 "검증된" 전송은 되지 않는다.
 
-- agent에 TLS를 붙여 `https:` Pod 프록시를 써도, API 서버는 Pod 인증서를 검증하지 않는다(Kubernetes의 Pod 프록시 동작). 암호화는 되지만 "검증된" 전송은 아니다.
-- 검증된 경로의 선택지는 둘이다.
-  - API 서버를 거치는 port-forward 터널 위에서 Sova와 agent가 직접 TLS를 맺는다. 이 경우 데이터는 API 서버 → kubelet(TLS) → 노드 안에서만 흐른다. 다만 API 서버의 스트리밍 프로토콜을 클라이언트에 새로 구현해야 한다.
-  - 클러스터가 Pod 네트워크를 암호화한다(예: Cilium·WireGuard 투명 암호화, 서비스 메시 mTLS). 이를 inventory에서 확인한다.
-- 이번에는 어느 쪽도 구현하지 않았다.
+이제 `agent_transport: port-forward`를 쓸 수 있다. agent에 API 서버의 port-forward로 닿는다(WebSocket, 채널 프로토콜 v4). 클라이언트는 표준 라이브러리만으로 구현했다.
+
+- **경로.** 데이터는 다음으로만 흐르고, 클러스터 네트워크를 평문으로 건너지 않는다.
+  - 워커 → API 서버: 등록된 CA로 검증된 TLS
+  - API 서버 → kubelet: TLS
+  - kubelet → 노드 안의 컨테이너
+- **검증 범위.** API 서버가 kubelet 인증서를 검증하는지는 클러스터 설정이라 워커가 볼 수 없다. 그래서 운영자 inventory(`kubelet_tls_verified`)가 그렇다고 기록할 때만 전송 의무가 통과한다. 관측값에 구간마다의 상태와 근거(inventory)를 적는다. 관리형 클러스터는 대개 검증하고, kind는 기본으로 하지 않는다.
+- **클라이언트 검증.** 업그레이드 응답의 키(`Sec-WebSocket-Accept`)와 프로토콜, 포트 채널 개통을 확인한다. 클라이언트 프레임은 마스킹한다. 오류 채널에 내용이 오면 실패로 끝낸다. 필요한 권한은 `pods/portforward`(get, create)다.
+- **찾아 고친 것.** 처음 구현은 64MiB 복사가 1.5MiB/s였다(프록시 19.3MiB/s). 호출마다 시간을 재니 크기와 상관없이 모두 약 1.02초였다. agent가 응답하고 연결을 닫아도, 그 종료가 port-forward를 거쳐 오기까지 약 1초가 걸렸다. 이제 Content-Length만큼 응답이 오면 바로 끝낸다. 호출은 12~40ms가 됐고, 처리량은 프록시와 같아졌다(64MiB 두 번: port-forward 16.7·18.8MiB/s, 프록시 17.6·18.6MiB/s).
+- **시험.** 적합성 키트(두 템플릿)와 전송 probe를 port-forward로 돌렸다. 프로토콜은 가짜 서버로 단위 시험했다: 마스킹 경계, 다른 키나 프로토콜의 응답, 403, 오류 채널, 길이 없는 응답, 닫히기 전에 끝나는 응답.
 
 ### 클러스터 사이 볼륨 인계 (로컬 kind 두 대)
 
@@ -1875,7 +1880,7 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 | MySQL 변경 캡처(서버 복제, snapshot-cdc) | 모의 시험 통과 | 시험용 MySQL 8.4.13 두 대. 적합성 키트, 정지 구간 쓰기 0행(offline 20,158행), control plane 전체 흐름 |
 | Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL). 한 브로커의 두 토픽과, 서로 다른 kind 클러스터의 두 브로커 사이. control plane 전체 흐름 연결(2026-11-17). TLS 리스너만 연 Redpanda에서 검증된 TLS로 전체 흐름. snapshot-cdc 최종 단계는 sync 이후 레코드만 씀(정지 중 오프셋 11, offline 636). 압축 토픽은 키별 최신 값으로 비교 |
 | RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8. 한 브로커의 두 vhost와, 서로 다른 kind 클러스터의 두 브로커 사이. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 전체 흐름 연결(2026-11-17). TLS만 받는 브로커에서 AMQP·관리 API 모두 검증된 TLS로 전체 흐름 |
-| Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). 관리형 미실측 |
+| Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). agent 전송 port-forward 선택 가능(처리량 프록시와 같음). 관리형 미실측 |
 | 메모리 세션 drain adapter | 모의 시험 통과 | 로컬 kind, WebSocket 시험 서버. 커널 TCP 테이블로 세션 계수, drain 상한 hold·terminate |
 | 애플리케이션 한 단위(볼륨 + 세션) | 모의 시험 통과 | 로컬 kind, 게시판 + 게임 서버를 control plane 전체 흐름으로. 쓰기 정지 32.5초 1회 |
 | Redis 계열(Valkey) 키 공간 adapter·probe | 모의 시험 통과 | 로컬 kind의 Valkey 9.1.3 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 등록된 replica까지 차단(승격 뒤에도 유지 실측), Sentinel 시각 대조, Redis 8 → Valkey 9(내용 복사), 클러스터(primary 셋) |

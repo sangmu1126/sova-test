@@ -96,6 +96,8 @@ rules:
   - {apiGroups: [""], resources: [persistentvolumeclaims], verbs: [get, list, create, patch, delete]}
   - {apiGroups: [""], resources: [pods], verbs: [get, list, create, delete]}
   - {apiGroups: [""], resources: [pods/proxy], verbs: [get, create, update]}
+  # agent_transport: port-forward 이면 프록시 대신
+  - {apiGroups: [""], resources: [pods/portforward], verbs: [get, create]}
   # 세션: 원본 Pod에 붙이는 관찰 컨테이너와 그 출력
   - {apiGroups: [""], resources: [pods/ephemeralcontainers], verbs: [patch]}
   - {apiGroups: [""], resources: [pods/log], verbs: [get]}
@@ -110,7 +112,12 @@ rules:
 - **이미지 가져오기.** 이미지가 노드에 없으면 받아 와야 한다. 사설 레지스트리를 쓰는 곳에서는 같은 digest를 미러링해 `agent_image`로 지정한다.
 - **agent 키.** 워커의 Secret에 hex로 넣고 `agent_key_file`로 가리킨다. 어느 워커 replica든 같은 키로 agent와 통신한다.
 - **NetworkPolicy.** API 서버의 Pod 프록시는 agent Pod의 8080 포트로 들어온다. 애플리케이션 namespace에 기본 거부 정책이 있다면, `app.kubernetes.io/managed-by: sova` Pod의 8080 수신을 허용해야 한다.
-- **API 서버 → agent 구간.** 이 구간은 클러스터 네트워크의 평문 HTTP다. 검증된 전송 암호화를 요구하는 계약에서 이 단위는 실패로 측정된다. 선택지(port-forward 위 종단 TLS, Pod 네트워크 암호화)는 [구현 안내](../../docs/contract-foundation.md)의 볼륨 절에 있다.
+- **API 서버 → agent 구간.** 기본(`agent_transport: proxy`)은 API 서버의 Pod 프록시이고, 이 구간은 클러스터 네트워크의 평문 HTTP다. `agent_transport: port-forward`는 API 서버의 port-forward(WebSocket)로 agent에 닿는다. 데이터는 다음 경로로만 흐르고, 클러스터 네트워크를 평문으로 건너지 않는다.
+  - 워커 → API 서버: 검증된 TLS
+  - API 서버 → kubelet: TLS
+  - kubelet → 노드 안의 컨테이너
+
+  API 서버가 kubelet 인증서를 검증하는지는 클러스터 설정이라 워커가 볼 수 없다. 그래서 운영자가 `kubelet_tls_verified`로 기록하면 전송 의무가 통과한다. 관리형 클러스터는 대개 검증하고, kind는 기본으로 하지 않는다.
 
 ### 저장소별 실행 설정 항목
 
