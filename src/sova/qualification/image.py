@@ -12,6 +12,7 @@ import io
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import subprocess
 import sys
@@ -77,14 +78,26 @@ def source_inventory(root, revision, package):
         data = git(root, "archive", "--format=tar", revision, prefix)
     except subprocess.CalledProcessError:
         raise ImageCheckError("source_reference_unavailable") from None
-    expected = {}
+    expected, links = {}, {}
     with tarfile.open(fileobj=io.BytesIO(data)) as archive:
-        for member in archive:
+        members = {m.name: m for m in archive}
+        for member in members.values():
             if not member.name.startswith(prefix) or member.isdir():
                 continue
-            if not member.isfile():
-                raise ImageCheckError("source_symlink_or_special_file")
             relative = member.name[len(prefix):]
+            if member.issym():
+                # setuptools materializes the repository's internal SQL
+                # aliases in the wheel. Resolve only a Git-declared link to
+                # a regular file inside this same fixed package tree.
+                target = posixpath.normpath(posixpath.join(posixpath.dirname(member.name), member.linkname))
+                resolved = members.get(target)
+                if (posixpath.isabs(member.linkname) or not target.startswith(prefix)
+                        or resolved is None or not resolved.isfile()):
+                    raise ImageCheckError("source_symlink_or_special_file")
+                links[relative] = member.linkname
+                member = resolved
+            elif not member.isfile():
+                raise ImageCheckError("source_symlink_or_special_file")
             if Path(relative).suffix not in SUFFIXES:
                 continue
             expected[relative] = hashlib.sha256(archive.extractfile(member).read()).hexdigest()
@@ -95,10 +108,16 @@ def source_inventory(root, revision, package):
     if package_root.is_symlink():
         raise ImageCheckError("source_symlink_or_special_file")
     for path in package_root.rglob("*"):
+        relative = path.relative_to(package_root).as_posix()
         if path.is_symlink():
+            if (links.get(relative) != os.readlink(path)
+                    or not path.resolve().is_relative_to(package_root.resolve())
+                    or not path.is_file()):
+                raise ImageCheckError("source_symlink_or_special_file")
+        elif relative in links:
             raise ImageCheckError("source_symlink_or_special_file")
         if path.is_file() and path.suffix in SUFFIXES:
-            current[path.relative_to(package_root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+            current[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
     if current != expected:
         raise ImageCheckError("working_source_differs_from_revision")
     return expected

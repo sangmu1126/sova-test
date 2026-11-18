@@ -77,6 +77,20 @@ def test_source_inventory_is_fixed_to_committed_python_and_sql(checkout):
     assert files == {"__init__.py": sha("# source\n"), "adapters/sql/schema.sql": sha("SELECT 1;\n")}
 
 
+def test_git_declared_internal_sql_alias_is_compared_as_installed_payload(checkout):
+    root, _ = checkout
+    alias = root / "src/sova/adapters/alias.sql"
+    alias.symlink_to("sql/schema.sql")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-m", "internal SQL alias"], check=True, capture_output=True)
+    revision = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+    assert image.source_inventory(root, revision, "sova")["adapters/alias.sql"] == sha("SELECT 1;\n")
+    alias.unlink()
+    alias.symlink_to("../../../../outside.sql")
+    with pytest.raises(image.ImageCheckError, match="symlink"):
+        image.source_inventory(root, revision, "sova")
+
+
 @pytest.mark.parametrize("case", ["modified", "untracked", "missing", "symlink"])
 def test_working_tree_drift_and_symlinks_are_refused(checkout, case):
     root, revision = checkout
