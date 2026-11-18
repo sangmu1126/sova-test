@@ -173,7 +173,20 @@ def test_real_effect_is_not_replayed_and_recovery_requires_remote_settlement(
                 assert sum(e['event']=='apply_committed' and e['action']=='copy_content' for e in events)==(mode=='committed')
                 with h.business['connect'](h.business['names']['tgt']) as conn:
                     count = conn.execute('SELECT applies FROM qualification_copy_audit').fetchone()[0]
-                    target_rows = conn.execute('SELECT count(*) FROM orders').fetchone()[0]
+                    target_counts = conn.execute('SELECT (SELECT count(*) FROM orders),'
+                        '(SELECT count(*) FROM work_items),(SELECT count(*) FROM idempotency_results)').fetchone()
+                with h.business['connect'](h.business['names']['src']) as conn:
+                    source_counts = conn.execute('SELECT (SELECT count(*) FROM orders),'
+                        '(SELECT count(*) FROM work_items),(SELECT count(*) FROM idempotency_results)').fetchone()
+                    original = conn.execute("SELECT count(*) FROM orders o JOIN work_items w "
+                        "ON w.id=o.id AND w.order_id=o.id AND w.state='done' "
+                        "JOIN idempotency_results r ON r.customer=o.customer AND r.idempotency_key=o.idempotency_key "
+                        "AND r.result='confirmed' WHERE o.id BETWEEN 1 AND 50 "
+                        "AND o.customer='customer-'||(o.id%7)::text AND o.idempotency_key='key-'||o.id::text "
+                        "AND o.amount=o.id*10").fetchone()[0]
+                target_rows = target_counts[0]
+                assert source_counts==(51,51,51) and original==50
+                assert target_counts==((53,53,53) if mode=='committed' else (0,0,0))
                 assert count==(1 if mode=='committed' else 0)
                 assert target_rows==(53 if mode=='committed' else 0)
                 final = execution(h)
@@ -189,7 +202,8 @@ def test_real_effect_is_not_replayed_and_recovery_requires_remote_settlement(
                     observations=observations, proof_digests=list(settlement.issued),
                     local_native_proof_producer=True, operational_proof_issued=False,
                     kubernetes_quiescence_qualified=False, successor_calls=calls, old_trace=events,
-                    committed_copy_audit=count, target_rows=target_rows, measurement=report,
+                    committed_copy_audit=count, target_rows=target_rows, source_counts=source_counts,
+                    target_counts=target_counts, original_records_verified=original, measurement=report,
                     migration_completed=(mode=='committed'), effect_apply_replayed=False)
             finally:
                 if old is not None:
