@@ -12,7 +12,6 @@ import json
 import os
 from pathlib import Path
 import re
-import subprocess
 import time
 
 import pytest
@@ -167,21 +166,11 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
             # Normal kubelet deletion, not --force/zero grace (which by itself
             # could remove the API object before its process really stopped).
             watched = env.object("pod", lost)
-            watch_path = env.directory / "owner-terminal-watch.log"
-            with watch_path.open("w") as watch_output:
-                watch = subprocess.Popen(["kubectl", "--kubeconfig", str(env.config), "--context", "kind-"+env.run,
-                    "-n", NAMESPACE, "get", "pod", lost, "--watch-only", "--output-watch-events",
-                    "--resource-version="+watched["metadata"]["resourceVersion"],
-                    '-o=jsonpath={.type} {.object.metadata.uid} {.object.status.phase}{"\\n"}'],
-                    stdout=watch_output, stderr=subprocess.DEVNULL)
+            with env.watch_pod(lost, uid, watched["metadata"]["resourceVersion"]) as watch_path:
                 deletion_requested_at = datetime.now(UTC)
-                try:
-                    env.kube("-n", NAMESPACE, "delete", "pod", lost, "--grace-period=1", "--wait=true")
-                finally:
-                    watch.terminate()
-                    watch.wait(timeout=5)
-            terminal = [line for line in watch_path.read_text().splitlines()
-                        if uid in line and line.split()[-1] in ("Succeeded", "Failed")]
+                env.kube("-n", NAMESPACE, "delete", "pod", lost, "--grace-period=1", "--wait=true")
+            terminal = [event for line in watch_path.read_text().splitlines()
+                        if (event := json.loads(line))["phase"] in ("Succeeded", "Failed")]
             stopped_at = datetime.now(UTC)
             all_containers = json.loads(command(["docker", "exec", env.node, "crictl", "ps", "-a", "-o", "json"]).stdout)
             old = [c for c in all_containers["containers"] if c["id"] == container]

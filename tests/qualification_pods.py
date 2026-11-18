@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import threading
 import time
 from uuid import uuid4
 
@@ -89,6 +90,44 @@ class PodRun:
         # Ignore only a partially written final line, not malformed complete records.
         lines = path.read_bytes().splitlines(keepends=True)
         return [json.loads(line) for line in lines if line.endswith(b"\n")]
+
+    @contextmanager
+    def watch_pod(self, name, uid, resource_version):
+        """Retain only identity/phase fields from a real API watch, never Pod specs."""
+        path, errors = self.directory / "owner-terminal-watch.jsonl", []
+        error_path = self.directory / "owner-terminal-watch.stderr"
+        endpoint = (f"/api/v1/namespaces/{self.namespace}/pods?watch=true&timeoutSeconds=20"
+                    f"&fieldSelector=metadata.name%3D{name}&resourceVersion={resource_version}")
+        with path.open("w") as output, error_path.open("w") as error:
+            process = subprocess.Popen(["kubectl", "--kubeconfig", str(self.config), "--context", "kind-"+self.run,
+                                        "get", "--raw", endpoint], stdout=subprocess.PIPE, stderr=error, text=True)
+            def collect():
+                try:
+                    for line in process.stdout:
+                        value = json.loads(line)
+                        pod = value.get("object", {})
+                        if pod.get("metadata", {}).get("uid") == uid:
+                            output.write(json.dumps({"type": value.get("type"), "uid": uid,
+                                "phase": pod.get("status", {}).get("phase"),
+                                "resource_version": pod["metadata"].get("resourceVersion"),
+                                "observed_at": datetime.now(UTC).isoformat()}) + "\n")
+                            output.flush()
+                except (ValueError, OSError) as failure:
+                    errors.append(type(failure).__name__)
+            thread = threading.Thread(target=collect, daemon=True)
+            thread.start()
+            try:
+                time.sleep(.1)
+                if process.poll() not in (None, 0):
+                    raise RuntimeError("Pod watch failed; inspect private stderr")
+                yield path
+            finally:
+                process.terminate()
+                process.wait(timeout=5)
+                thread.join(timeout=5)
+                process.stdout.close()
+            if errors or thread.is_alive() or process.returncode not in (0, -15):
+                raise RuntimeError("Pod watch did not complete cleanly")
 
 
 @contextmanager
