@@ -1,0 +1,558 @@
+{
+  "schema_version": 1,
+  "date_kst": "2026-11-19",
+  "scope": "isolated local PostgreSQL/API/worker/console acceptance; not production deployment",
+  "code_commit": "796ae0c75cb9d610528733b8b1af15dd88a9d195",
+  "security_source_commit": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+  "postgres_image_id": "sha256:0d938e975177bef9f1f61f3f9dbcf2e0aa0a139568f66d3415ed8892eb97f6ac",
+  "postgres_version": "17.12 (Debian 17.12-1.pgdg13+1)",
+  "architecture": "arm64",
+  "trials": [
+    {
+      "name": "native-initial",
+      "source_commit": "2dd429ff428b5c19203da2e2cb9fcab8cddc6e2b",
+      "run_id": "effect-settlement-0078273c196e467099bee92f96425865",
+      "tests": 7,
+      "failures": 1,
+      "pytest_exit_code": 1,
+      "verified_tls": true,
+      "clock_passed": true,
+      "clock_samples": 85,
+      "container_removed": true,
+      "network_removed": true
+    },
+    {
+      "name": "service-initial",
+      "source_commit": "2dd429ff428b5c19203da2e2cb9fcab8cddc6e2b",
+      "run_id": "mq03-83dfb0931f614cbf998bea280f2396ba",
+      "tests": 78,
+      "failures": 1,
+      "pytest_exit_code": 1,
+      "verified_tls": true,
+      "clock_passed": true,
+      "clock_samples": 195,
+      "container_removed": true,
+      "network_removed": true
+    },
+    {
+      "name": "browser-first",
+      "source_commit": "1634748cfab8488cdc67ed8764b0ae7bc16fa2ef",
+      "run_id": "effect-settlement-9770bb0860184862bb6a15986e92e2d4",
+      "tests": 7,
+      "failures": 0,
+      "pytest_exit_code": 0,
+      "verified_tls": true,
+      "clock_passed": true,
+      "clock_samples": 112,
+      "container_removed": true,
+      "network_removed": true
+    },
+    {
+      "name": "service-final",
+      "source_commit": "1634748cfab8488cdc67ed8764b0ae7bc16fa2ef",
+      "run_id": "mq03-39eb21728c854015b367c6cdfba656b9",
+      "tests": 78,
+      "failures": 0,
+      "pytest_exit_code": 0,
+      "verified_tls": true,
+      "clock_passed": true,
+      "clock_samples": 252,
+      "container_removed": true,
+      "network_removed": true
+    },
+    {
+      "name": "browser-final",
+      "source_commit": "796ae0c75cb9d610528733b8b1af15dd88a9d195",
+      "run_id": "effect-settlement-ae582c4b9b14413492ec6bea30c54102",
+      "tests": 7,
+      "failures": 0,
+      "pytest_exit_code": 0,
+      "verified_tls": true,
+      "clock_passed": true,
+      "clock_samples": 93,
+      "container_removed": true,
+      "network_removed": true
+    }
+  ],
+  "failed_trials_retained": true,
+  "failure_causes": [
+    "Initial fixture tried runtime UPDATE of protected security_hold column; test setup moved to run-owned migration owner, runtime grants unchanged",
+    "Existing failback test compared time-varying observation timestamps; stable persisted fields and recovery content still checked"
+  ],
+  "cases": {
+    "committed": {
+      "initial": {
+        "activation_possible": false,
+        "epoch": 1,
+        "expires_at": "2026-11-18T20:38:40.729096+00:00",
+        "next_operation": 0,
+        "observation_version": "handoff-recovery-status-v1",
+        "observed_at": "2026-11-18T20:38:35.729096+00:00",
+        "owner_environment": "aws-source",
+        "recovery": {
+          "authorizes_execution": false,
+          "automatic_replay_allowed": false,
+          "next_steps": [],
+          "pending_effects": [],
+          "reason": null,
+          "required": false,
+          "status": "clear"
+        },
+        "scope": {
+          "application_id": "orders-service",
+          "operation_id": "handoff-0e8afcedbc1a16dda6a90f5d",
+          "plan_digest": "2a78a6ecfc72acac709cac99a5d3df97aadec3fe9bc17af4a56341afdf54718c",
+          "tenant_id": "tenant-d1f7c86a0e72467c8d264a38c37fdc81",
+          "unit_digest": "4a69535272b218d0971f03b21dd7dbf4aa0f84acba717aba32df863d2f7dbad5"
+        },
+        "state": "SOURCE_ACTIVE"
+      },
+      "blocked": {
+        "activation_possible": false,
+        "epoch": 1,
+        "expires_at": "2026-11-18T20:38:45.855532+00:00",
+        "next_operation": 3,
+        "observation_version": "handoff-recovery-status-v1",
+        "observed_at": "2026-11-18T20:38:40.855532+00:00",
+        "owner_environment": "aws-source",
+        "recovery": {
+          "authorizes_execution": false,
+          "automatic_replay_allowed": false,
+          "next_steps": [
+            "VERIFY_REMOTE_SETTLEMENT",
+            "READBACK_EXISTING_COMMAND",
+            "REVIEW_RECOVERY_PLAN"
+          ],
+          "pending_effects": [
+            {
+              "action": "copy_content",
+              "fingerprint": "8bfbed1309c81c4928ef7625890753eecfd8ce1c2b24be2e5a038923cbe4050a",
+              "revision": 2,
+              "status": "in_flight"
+            }
+          ],
+          "reason": "OWNER_EXPIRED_UNSETTLED",
+          "required": true,
+          "status": "required"
+        },
+        "scope": {
+          "application_id": "orders-service",
+          "operation_id": "handoff-0e8afcedbc1a16dda6a90f5d",
+          "plan_digest": "2a78a6ecfc72acac709cac99a5d3df97aadec3fe9bc17af4a56341afdf54718c",
+          "tenant_id": "tenant-d1f7c86a0e72467c8d264a38c37fdc81",
+          "unit_digest": "4a69535272b218d0971f03b21dd7dbf4aa0f84acba717aba32df863d2f7dbad5"
+        },
+        "state": "SOURCE_FENCED"
+      },
+      "final": {
+        "activation_possible": true,
+        "epoch": 2,
+        "expires_at": "2026-11-18T20:38:49.500428+00:00",
+        "next_operation": 9,
+        "observation_version": "handoff-recovery-status-v1",
+        "observed_at": "2026-11-18T20:38:44.500428+00:00",
+        "owner_environment": "onprem-target",
+        "recovery": {
+          "authorizes_execution": false,
+          "automatic_replay_allowed": false,
+          "next_steps": [],
+          "pending_effects": [],
+          "reason": null,
+          "required": false,
+          "status": "clear"
+        },
+        "scope": {
+          "application_id": "orders-service",
+          "operation_id": "handoff-0e8afcedbc1a16dda6a90f5d",
+          "plan_digest": "2a78a6ecfc72acac709cac99a5d3df97aadec3fe9bc17af4a56341afdf54718c",
+          "tenant_id": "tenant-d1f7c86a0e72467c8d264a38c37fdc81",
+          "unit_digest": "4a69535272b218d0971f03b21dd7dbf4aa0f84acba717aba32df863d2f7dbad5"
+        },
+        "state": "HANDOFF_COMPLETE"
+      },
+      "browser": {
+        "browser": "156.0.8078.4",
+        "desktop_sha256": "d4a6d3db4f89219815ad8661c55ecd43cd48d14d1bb9bb95b16dd8a72b5e26c2",
+        "driver": "1.56.1",
+        "executed": true,
+        "mobile_effect_row_heights": [],
+        "mobile_sha256": "4856467fd190eecfa8d76095725cea6bb0c36583a22a1d1de042968032f144d2",
+        "mutation_requests": 0,
+        "native_gets": 1,
+        "observed_hold": false,
+        "observed_state": "HANDOFF_COMPLETE",
+        "page_errors": 0,
+        "synthetic_operator_identity": true,
+        "viewport_overflow": false
+      },
+      "wrong_tenant_denied": true,
+      "credential_replacement_denied": true,
+      "automatic_replay_added": false,
+      "production_deployed": false,
+      "operational_proof_issued": false,
+      "business": {
+        "source_counts": [
+          51,
+          51,
+          51
+        ],
+        "target_counts": [
+          53,
+          53,
+          53
+        ],
+        "original_records_verified": 50,
+        "committed_copy_audit": 1,
+        "migration_completed": true,
+        "effect_apply_replayed": false
+      }
+    },
+    "uncommitted": {
+      "initial": {
+        "activation_possible": false,
+        "epoch": 1,
+        "expires_at": "2026-11-18T20:38:55.900086+00:00",
+        "next_operation": 0,
+        "observation_version": "handoff-recovery-status-v1",
+        "observed_at": "2026-11-18T20:38:50.900086+00:00",
+        "owner_environment": "aws-source",
+        "recovery": {
+          "authorizes_execution": false,
+          "automatic_replay_allowed": false,
+          "next_steps": [],
+          "pending_effects": [],
+          "reason": null,
+          "required": false,
+          "status": "clear"
+        },
+        "scope": {
+          "application_id": "orders-service",
+          "operation_id": "handoff-8db7d3e2b61974bdf2bbdfe5",
+          "plan_digest": "f06a0cff8385b187f7bdfff2660686d63990141c1289f3fc581f081e629e643e",
+          "tenant_id": "tenant-aac20a10e6f64129b0ceb5dcd0aa1064",
+          "unit_digest": "47e7a497699af91499ffcb51036f83e61b0111d8b5bb8fec1bd9f459891ff5ba"
+        },
+        "state": "SOURCE_ACTIVE"
+      },
+      "blocked": {
+        "activation_possible": false,
+        "epoch": 1,
+        "expires_at": "2026-11-18T20:39:00.146458+00:00",
+        "next_operation": 3,
+        "observation_version": "handoff-recovery-status-v1",
+        "observed_at": "2026-11-18T20:38:55.146458+00:00",
+        "owner_environment": "aws-source",
+        "recovery": {
+          "authorizes_execution": false,
+          "automatic_replay_allowed": false,
+          "next_steps": [
+            "VERIFY_REMOTE_SETTLEMENT",
+            "READBACK_EXISTING_COMMAND",
+            "REVIEW_RECOVERY_PLAN"
+          ],
+          "pending_effects": [
+            {
+              "action": "copy_content",
+              "fingerprint": "c230c833e73e4bdd42cb821bfae88c9032bba0b732398f8e7128da20fae0f070",
+              "revision": 2,
+              "status": "in_flight"
+            }
+          ],
+          "reason": "OWNER_EXPIRED_UNSETTLED",
+          "required": true,
+          "status": "required"
+        },
+        "scope": {
+          "application_id": "orders-service",
+          "operation_id": "handoff-8db7d3e2b61974bdf2bbdfe5",
+          "plan_digest": "f06a0cff8385b187f7bdfff2660686d63990141c1289f3fc581f081e629e643e",
+          "tenant_id": "tenant-aac20a10e6f64129b0ceb5dcd0aa1064",
+          "unit_digest": "47e7a497699af91499ffcb51036f83e61b0111d8b5bb8fec1bd9f459891ff5ba"
+        },
+        "state": "SOURCE_FENCED"
+      },
+      "final": {
+        "activation_possible": false,
+        "epoch": 1,
+        "expires_at": "2026-11-18T20:39:00.606443+00:00",
+        "next_operation": 3,
+        "observation_version": "handoff-recovery-status-v1",
+        "observed_at": "2026-11-18T20:38:55.606443+00:00",
+        "owner_environment": "aws-source",
+        "recovery": {
+          "authorizes_execution": false,
+          "automatic_replay_allowed": false,
+          "next_steps": [
+            "VERIFY_REMOTE_SETTLEMENT",
+            "READBACK_EXISTING_COMMAND",
+            "REVIEW_RECOVERY_PLAN"
+          ],
+          "pending_effects": [
+            {
+              "action": "copy_content",
+              "fingerprint": "c230c833e73e4bdd42cb821bfae88c9032bba0b732398f8e7128da20fae0f070",
+              "revision": 3,
+              "status": "unknown"
+            }
+          ],
+          "reason": "EFFECT_RESULT_UNKNOWN",
+          "required": true,
+          "status": "required"
+        },
+        "scope": {
+          "application_id": "orders-service",
+          "operation_id": "handoff-8db7d3e2b61974bdf2bbdfe5",
+          "plan_digest": "f06a0cff8385b187f7bdfff2660686d63990141c1289f3fc581f081e629e643e",
+          "tenant_id": "tenant-aac20a10e6f64129b0ceb5dcd0aa1064",
+          "unit_digest": "47e7a497699af91499ffcb51036f83e61b0111d8b5bb8fec1bd9f459891ff5ba"
+        },
+        "state": "SOURCE_FENCED"
+      },
+      "browser": {
+        "browser": "156.0.8078.4",
+        "desktop_sha256": "3301cf3204345ceb03e8715c01a38ee5fe896e01fb20338569091846e5b771c6",
+        "driver": "1.56.1",
+        "executed": true,
+        "mobile_effect_row_heights": [
+          46
+        ],
+        "mobile_sha256": "4cfca6afdff592399fc8a4169605ec6074530fc8f70ced1a3e59dd377a78b5ed",
+        "mutation_requests": 0,
+        "native_gets": 1,
+        "observed_hold": true,
+        "observed_state": "SOURCE_FENCED",
+        "page_errors": 0,
+        "synthetic_operator_identity": true,
+        "viewport_overflow": false
+      },
+      "wrong_tenant_denied": true,
+      "credential_replacement_denied": true,
+      "automatic_replay_added": false,
+      "production_deployed": false,
+      "operational_proof_issued": false,
+      "business": {
+        "source_counts": [
+          51,
+          51,
+          51
+        ],
+        "target_counts": [
+          0,
+          0,
+          0
+        ],
+        "original_records_verified": 50,
+        "committed_copy_audit": 0,
+        "migration_completed": false,
+        "effect_apply_replayed": false
+      }
+    }
+  },
+  "final_measured_source_hashes_verified": 325,
+  "raw_root_local": "/Users/Sooming_/dev/softbank_2026/local-dev-records/recovery-status-20261119",
+  "raw_files_sha256": {
+    "console-tests.log": "8197a7fa5042749cfdfbcc25fcea2117809006c2f8b54d1f48c8e10eeea6100c",
+    "browser.log": "c52eb5a8c3efed3cf32542be18966024d344cb0e1e951c0501bf9bba11b21160",
+    "local-boundaries.xml": "066fc43215d98688b638ec6b33d74364398a24a357aefcddf20bd956c538627e",
+    "service-final.log": "7f8454575346ae05af0f211bb61ff198c767c4d4373e16fc5741acda2aaab39f",
+    "native.log": "5e0c0af81aacad06fbaa4fcb4804d61d6f5c2fb86987db9b2c82fcf7b0369660",
+    "final.log": "7cc29e565e4e358787af2600e4dc61b7bfe74dcafa1abe38521b04723f2b74a6",
+    "local-boundaries.log": "4545ce30c70687fd9acce72bba6a8a08e203dc45cbf9e4af404f7e97d9b5afdc",
+    "cleanup-checks.json": "41e2fa63e2edeeed3f552638898d201132001d8b4c6871e96b65ddf62cd75f7f",
+    "native/runtime-worker-killed-api-2.log": "2fedac889e8282e5d459749d68d5b3f8fcc13641d6561a894b194a6b3a0f7dd3",
+    "native/runtime-settlement-uncommitted-api-2.log": "4dce27ca2ea2c23bfa81d8576c77318bf32f6b3f0362026cad749f7177bdd664",
+    "native/runtime-worker-killed-api-1.log": "69ce6bcae0f524acc383784686f51655d037d679c4f611e3dccb80cc88661bc6",
+    "native/runtime-settlement-uncommitted-api-1.log": "b693dcbe1ddfa89281fd6fad0642d724a3fb11a6cdd8f91ce11a0e07c16a5964",
+    "native/runtime-effect-settlement-uncommitted.json": "911e2e0a912c32220128f831e3445d11f288d5b94205674274290cb56ba238ae",
+    "native/worker-worker-killed-worker-a.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native/results.xml": "66cda1b8e3e8e20f3b7b18b8afd8dda9bfe8dbc225b117207fe0aeb8e2343299",
+    "native/worker-worker-killed-worker-b.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native/worker-settlement-committed-old-worker.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native/runtime-cleanup-settlement-committed.json": "41e09c9795219fb60a7c6b3ac85433abfd0fea11564e34257044bf9e31f92ffa",
+    "native/runtime-recovery-status-committed.json": "992bc1925aa925e94c7dd00a93d8052c66bd4450448dc0e68391a39070c73364",
+    "native/runtime-effect-settlement-progress-uncommitted.json": "c09dfa350d632e71700708ebdce1b2ea827ff7d44dccc338d80dfca7d635227d",
+    "native/runtime-worker-graceful.json": "69801b97795a0f8bef75d6cd28dcf2fb40816423a73892a52418dd24f872ac80",
+    "native/postgres-test-failure.log": "904f027d30ea561c833079b21a403f1cfd1f28e9208ac7824c654c392e44bee7",
+    "native/runtime-effect-settlement-progress-committed.json": "c58221fb4b0d65d14478d5f4d076d9a4463c72cc0a0c51d560be006346dae8ce",
+    "native/runtime-cleanup-settlement-uncommitted.json": "f7fa8629f15f26ba43bb2b51807c085e5e90bb2da9504969e0acda4ce45771ce",
+    "native/runtime-worker-killed.json": "4356f76c91e2b459378ee42a5291518ea01b8e91d0d2f5f24670d2923b769c58",
+    "native/runtime-recovery-status-uncommitted.json": "517a87bae1280bbce1d3aa5ae056a973cbc73c5d5de30deb9107052109ccc830",
+    "native/runtime-effect-settlement-committed.json": "9c9f4d79191a3addbdc5581a9b95b7e61dcac064f7344a435178d030e565a76c",
+    "native/run.json": "60cef2c135552d1d79dd21a7a825b7a3cd791cc49f4b55b42cd162667a31e717",
+    "native/runtime-worker-graceful-api-1.log": "07a9e065a2c0d58537fdc96dcd0668cc8c91b3198eee4ebff235ea2c073500bf",
+    "native/worker-worker-graceful-worker-b.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native/runtime-cleanup-worker-killed.json": "b737a30dfba1a52137189c2b1dc55e14bb8fb3daf5e1ce2d4b3cfeeb08f9a43f",
+    "native/runtime-settlement-committed-api-1.log": "0365df623af7f4723258fa5237641eb5d976c5c5dc82112d9f3eb39069a96a77",
+    "native/worker-settlement-uncommitted-old-worker.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native/runtime-worker-graceful-api-2.log": "c71e95900a92bc9a85fec598e2a4ba7a60bf8f9207ca25e82376bf8c83140ee0",
+    "native/runtime-cleanup-worker-graceful.json": "a9f4875feeed7cc61c956cf2ad8c9763646421cb7ba7da6400f76b8962545365",
+    "native/worker-worker-graceful-worker-a.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native/runtime-settlement-committed-api-2.log": "bb5e4c97f1730a8e4f222130088882f66e78a265d19e712431c24616c6fbb516",
+    "browser/runtime-worker-killed-api-2.log": "68b3be732155d7c56167ddd2452a5f57656cd5decae0f4f510e78c0109f9667c",
+    "browser/runtime-settlement-uncommitted-api-2.log": "4d0cbb6f297d7b3db512440fce3f144458a7abc9980c1a529f2df5ae61a90e29",
+    "browser/runtime-worker-killed-api-1.log": "a05cb18aa6dc0eb8bf1c3702279ba3389ad0200ae0d6cbaa926ccb56c85905ac",
+    "browser/runtime-settlement-uncommitted-api-1.log": "57d52861f3ed411a0d0bfffdd236b30700285253f37700f4d38e9d4ac1bf8a9c",
+    "browser/runtime-effect-settlement-uncommitted.json": "ac194e90b5cb0190d0223d043cc9eeface589bffd817d6ddb72ce039f41d0052",
+    "browser/worker-worker-killed-worker-a.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "browser/results.xml": "21d3695be9c0949486d82376e6cc4ac7fb30cc02eed7d4585f510714dad2ac88",
+    "browser/worker-worker-killed-worker-b.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "browser/worker-settlement-committed-old-worker.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "browser/runtime-cleanup-settlement-committed.json": "fc597744f93004c2ac328927316455ae9f885732e5ddd69f364db7473acbb44b",
+    "browser/runtime-recovery-status-committed.json": "965aef1b445b280f3769be44933790bc8132da52220b45085dca98bc994923ee",
+    "browser/runtime-effect-settlement-progress-uncommitted.json": "6d4d969ba3a7a3acd62204ae4929ccd4285eb7d657a8f7fa81ee4abf713e2bd8",
+    "browser/runtime-worker-graceful.json": "f8caf4cf9e7bf2b62876377c11b5f2849c5743e50ffafc892cfda7ae21eb6729",
+    "browser/runtime-effect-settlement-progress-committed.json": "0c1100b021971afed18e4ccafbe3abba9948503ad372206534cedf837e70301e",
+    "browser/runtime-cleanup-settlement-uncommitted.json": "d4ec76f03ac9a3b576ae6c2fe6f9e1e15c9a547bfcf94df4ac7c9fe1e1463d12",
+    "browser/runtime-worker-killed.json": "cacfa020fe81ba032d35ac5be32a8806c27e17e79a1dc2ecb49c6849897d966e",
+    "browser/runtime-recovery-status-uncommitted.json": "77fabcc388f2b51aef059c6a998665c617b35d14fdd74d596908714711882d93",
+    "browser/runtime-effect-settlement-committed.json": "fd51b399a1f0f3827ab6fe98e2b8d0b88b8987cc81fcdad4a107f027d99ef48f",
+    "browser/run.json": "697ae909a561c6c8d1c876bbc71e5671dff98c6266311a64d9606aa18c7460f9",
+    "browser/runtime-worker-graceful-api-1.log": "f402986b5e669b53a2e2387fe432bb1c06464025de8377c14a5485a39e16165e",
+    "browser/worker-worker-graceful-worker-b.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "browser/runtime-cleanup-worker-killed.json": "fe7852a1398becc98ce9bd5d6fc6a132e9b53e7ff181c1b1a6b1207566d539b7",
+    "browser/runtime-settlement-committed-api-1.log": "49fa63b54a40d82a969154a60f75941df3237d8c2863edb6e74e88661b9bb8dd",
+    "browser/worker-settlement-uncommitted-old-worker.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "browser/runtime-worker-graceful-api-2.log": "518b440e6e011cac39501ae83416855d32bbcaae87660447cee4df328ef8f640",
+    "browser/runtime-cleanup-worker-graceful.json": "430faded9fb6568427e967713ad880a5a7b870929efc15bbf7412d9859c69985",
+    "browser/worker-worker-graceful-worker-a.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "browser/runtime-settlement-committed-api-2.log": "4d29a76189728074f7a66aad9e2f1d5e215453394c5db6db48f1788447edd8fb",
+    "service-final/missing-committed-order.json": "5418e54e5ad55de3d7f752298187b988511634f4332de87e9cb246197429b669",
+    "service-final/handoff-and-retry.json": "0016be25e4a4a06a8a57b21c8b0439c99f162efa63e1371bb21c57d60c2a8671",
+    "service-final/unauthorized-no-order.json": "ace6170ba40d56807aef16bf68f5571e7b1213121e7b1be0f3e75c4fcb80a919",
+    "service-final/stale-return-input-denied.json": "7ca32a7b8e7f5f33d3022de44900149427e12ada0cd31f596ac2e3c9a5931761",
+    "service-final/results.xml": "efc04b90d7e43351c4f8b075dc6e10ad5993d477d859b8d3cb7f3bdfd84bd4a2",
+    "service-final/fractional-cent-corruption.json": "6194288653f753cc208db3ae105689ac63cb9cd393e251fdd1a07a5c73493383",
+    "service-final/commit-response-lost.json": "f2e97fc4719b6eb81430a6a2b4e48f1d500e5517131d899ac4f978ae44d55e95",
+    "service-final/service-handoff-and-failback.json": "0065df922ad649ca6ed4ffd797715492fe6895bc1a90ff177472f45755100272",
+    "service-final/failback-authorization-denials.json": "84543d3ccc4d838a8c96f91ad51c090fe3ed537481e7b7a90bca5a63e9023314",
+    "service-final/lookup-and-idempotent-retry.json": "d40e638833d538780b2eae9ca5427ce6f3933f2700cdbcd35a03c4e1a939aac0",
+    "service-final/terminal-handoff-remains-terminal.json": "24ac3fee41a88f83798b5411fba717f4942cb05f50954317035387d5b1c680f9",
+    "service-final/run.json": "d4f5e93e3bd20ebc224b5657ede12aeea2248b37b315a44341302ec2ac9a9306",
+    "final/runtime-worker-killed-api-2.log": "6747fb480dd0ff37df678527fb1724ae92437c4ee1b61a24452a39492fe5d3f5",
+    "final/runtime-settlement-uncommitted-api-2.log": "32ecce5ad24d5445924909a25a00935b533271d9a19aa5a982d8d20174ee676e",
+    "final/runtime-worker-killed-api-1.log": "1a815582ba01fac7f0a608854f3fb99202cc299171f13b111bf140ace3e2ff05",
+    "final/runtime-settlement-uncommitted-api-1.log": "c3021dc8462a36f85d333f81c155f80c76d31abd236c8ca1be36867b7d898cc9",
+    "final/runtime-effect-settlement-uncommitted.json": "05a22b5efaa08df129346d33ceb254ab85b7d7583333b71745a16e00df8862ce",
+    "final/worker-worker-killed-worker-a.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "final/results.xml": "78e248f2856c449ddd0f23c6d6ebd219bd8aed73ddf3af8eaa03e03bb05b33ab",
+    "final/worker-worker-killed-worker-b.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "final/worker-settlement-committed-old-worker.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "final/runtime-cleanup-settlement-committed.json": "3024a5cc25f4c4f9409951124ad822252f021afd8952ee183d1bb0763cb90379",
+    "final/runtime-recovery-status-committed.json": "5d496202e86e9cdceac1d449e5b85817e27a7d934f527314c94f1f461dbdf79e",
+    "final/runtime-effect-settlement-progress-uncommitted.json": "27b1a757044b0567d3eb92e88dc4b0eda8bc92dbe0f89156077187955b49ac8c",
+    "final/runtime-worker-graceful.json": "a370d05f778794deb650fd2ac11c9d7a62155ee445fd221eef2368ab87aa9be7",
+    "final/runtime-effect-settlement-progress-committed.json": "dfcdc7f307b7783cf2fedae642de2f655f052e413d6073bb74b2a65bbd9768ea",
+    "final/runtime-cleanup-settlement-uncommitted.json": "9f9910b18a1a26c055cf9eca4c6b1dbc76b62f7be4941771cc5cfd834700afdf",
+    "final/runtime-worker-killed.json": "84a7a4d2df423dcc6db6522992a1eb221360c572f7ddeb18c75316d0e75c6093",
+    "final/runtime-recovery-status-uncommitted.json": "b97c9b3d89e306954d99e43883213a121ca9519500982477a9289de03f194e91",
+    "final/runtime-effect-settlement-committed.json": "feac6842cc629448c3eb16b09ae9515efd8dbc81c60137d650038851e4306d5f",
+    "final/run.json": "47060dd5835342554fdbb0c8c3cdc1f5f0673d1155c0dbc9c034db47daa637b5",
+    "final/runtime-worker-graceful-api-1.log": "82ec40b28f2a764cb9b4d52447dccc29984bf492229144d23c9f14166a97ee73",
+    "final/worker-worker-graceful-worker-b.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "final/runtime-cleanup-worker-killed.json": "8ccfa06a04e3b827226f00e03299fa306844a19f508ba986b9491213f2789052",
+    "final/runtime-settlement-committed-api-1.log": "c1a678eb0e41067710e5629544b40ef2b2a76106e04d9cf122ad6a8211bd59e0",
+    "final/worker-settlement-uncommitted-old-worker.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "final/runtime-worker-graceful-api-2.log": "b6ec4db0ae1ef9a1bb0f0486044f9a2c481df4c7ccb648c36baa195c1bd2061e",
+    "final/runtime-cleanup-worker-graceful.json": "a9426c87656e3b1b6543988a5682a318986b737481954c9e847ebf7122883eea",
+    "final/worker-worker-graceful-worker-a.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "final/runtime-settlement-committed-api-2.log": "952f564909d485ce852f45982ecd27c5aca893b2804150c475f88cba236c28b7",
+    "final/browser-settlement-committed/desktop.png": "d4a6d3db4f89219815ad8661c55ecd43cd48d14d1bb9bb95b16dd8a72b5e26c2",
+    "final/browser-settlement-committed/mobile.png": "4856467fd190eecfa8d76095725cea6bb0c36583a22a1d1de042968032f144d2",
+    "final/browser-settlement-uncommitted/desktop.png": "3301cf3204345ceb03e8715c01a38ee5fe896e01fb20338569091846e5b771c6",
+    "final/browser-settlement-uncommitted/mobile.png": "4cfca6afdff592399fc8a4169605ec6074530fc8f70ced1a3e59dd377a78b5ed",
+    "browser/browser-settlement-committed/desktop.png": "9309b8cc571e676d731f1f07b435c89333805d7702a4919f0627f19422a1cfcf",
+    "browser/browser-settlement-committed/mobile.png": "27f4b4bb8dd4b4ce9972f964a8e0716ba951cf3a06f2bb49bac922a600bbd3ec",
+    "browser/browser-settlement-uncommitted/desktop.png": "46c765297cc398e100a31d5bc99ccc9b6f4f4e89f7fdfb5873c82770dba8d911",
+    "browser/browser-settlement-uncommitted/mobile.png": "7eb8fe2706ff4fd42bdf3e6d2c210d32432e7d70693b795e89dc7f00635192fb",
+    "../recovery-status-service-20261119/missing-committed-order.json": "0943e792194dcf436eda585a3351c44c2ec779dbced82ebe364e2eb11bc67983",
+    "../recovery-status-service-20261119/handoff-and-retry.json": "a4164ba5055f62f03d709b399bcf1e440881b2bd51e8a84ac5cb9978c05f7abb",
+    "../recovery-status-service-20261119/unauthorized-no-order.json": "541a1de017e8387c6bf6907899114923b9a2295ef9ee37cb90be58478491d4b0",
+    "../recovery-status-service-20261119/stale-return-input-denied.json": "9cdc4123dc44a14f06f8ff40cd519c9f4cc13912284713724a4263c0756c40c9",
+    "../recovery-status-service-20261119/results.xml": "673ae8b30063c99def92c4314ac701a2f15f88c24d523418121da6122bb866b6",
+    "../recovery-status-service-20261119/fractional-cent-corruption.json": "073a4d6a2b7d17cb704b2d4d35fbd2f88ab71f00b9a0ad470eea8c5ec3607579",
+    "../recovery-status-service-20261119/postgres-test-failure.log": "84aba085229b1419f3237d20e3ff5b81d5612d3c4f0e7f3dda395a97644db569",
+    "../recovery-status-service-20261119/commit-response-lost.json": "3f68518708ec7961d0a0dea68a062322b41e6fd6550d92b50c3721c24aa16c52",
+    "../recovery-status-service-20261119/failback-authorization-denials.json": "1a70eb6db28d7d4d1eb42155818f6e67a1bd48915b127682a03a7624f2dbabc8",
+    "../recovery-status-service-20261119/lookup-and-idempotent-retry.json": "8b225572ec535452817d2a95f42dcd6a01eaa476b183a44f667d8150728da26d",
+    "../recovery-status-service-20261119/terminal-handoff-remains-terminal.json": "d1743f0f7e010aa2cce2e0fd9e9630dce3f938fde69b499d6f49fae22c9b46aa",
+    "../recovery-status-service-20261119/run.json": "bd27150dd0271faed36119648f1df9d1e28fc08f72937481b3d899fa0ed5a2da",
+    "console-tests.json": "9503bcdf3360305244f22e94a8660c4bf1d08910963dcc1e90d9faed641be82a",
+    "console-format.log": "3b38201247d2eb5e2e65a55480c4101c66b768fa96f2833a36dcba6f9cf282bc"
+  },
+  "cleanup": [
+    {
+      "kind": "container",
+      "name": "sova-effect-settlement-0078273c196e467099bee92f96425865",
+      "absent": true
+    },
+    {
+      "kind": "network",
+      "name": "sova-network-effect-settlement-0078273c196e467099bee92f96425865",
+      "absent": true
+    },
+    {
+      "kind": "container",
+      "name": "sova-effect-settlement-9770bb0860184862bb6a15986e92e2d4",
+      "absent": true
+    },
+    {
+      "kind": "network",
+      "name": "sova-network-effect-settlement-9770bb0860184862bb6a15986e92e2d4",
+      "absent": true
+    },
+    {
+      "kind": "container",
+      "name": "sova-effect-settlement-ae582c4b9b14413492ec6bea30c54102",
+      "absent": true
+    },
+    {
+      "kind": "network",
+      "name": "sova-network-effect-settlement-ae582c4b9b14413492ec6bea30c54102",
+      "absent": true
+    },
+    {
+      "kind": "container",
+      "name": "sova-mq03-39eb21728c854015b367c6cdfba656b9",
+      "absent": true
+    },
+    {
+      "kind": "network",
+      "name": "sova-network-mq03-39eb21728c854015b367c6cdfba656b9",
+      "absent": true
+    },
+    {
+      "kind": "container",
+      "name": "sova-mq03-83dfb0931f614cbf998bea280f2396ba",
+      "absent": true
+    },
+    {
+      "kind": "network",
+      "name": "sova-network-mq03-83dfb0931f614cbf998bea280f2396ba",
+      "absent": true
+    }
+  ],
+  "worker_or_mutation_or_schema_changed": false,
+  "read_api_and_local_console_changed": true,
+  "cloud_used": false,
+  "shared_resources_changed": false,
+  "operational_qualification": false,
+  "service_continuity": "NOT_QUALIFIED",
+  "limitations": [
+    "synthetic local operator/IdP/inventory/plan trust bootstrap",
+    "test-only remote settlement proof is not authenticated Kubernetes/provider proof",
+    "loopback GET bridge is not enterprise delegated authorization or remote TLS deployment",
+    "read observation is not approval, recovery authorization or a whole-governance PASS",
+    "no product image rebuild, cloud rollout or production recovery acceptance"
+  ],
+  "local_boundary_tests": {
+    "passed": 51,
+    "failed": 0,
+    "skipped": 0
+  },
+  "console_tests": {
+    "passed": 50,
+    "failed": 0,
+    "success": true
+  },
+  "raw_hashes_verified": 127
+}
