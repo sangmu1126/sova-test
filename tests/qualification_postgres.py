@@ -206,7 +206,10 @@ def main():
                  "tests/integration/test_postgres_handoff_authority.py",
                  "tests/unit/test_authority_witness.py",
                  "tests/unit/test_file_witness_concurrency.py",
-                 "tests/integration/test_qualification_diagnostics.py"]
+                 "tests/integration/test_qualification_diagnostics.py",
+                 "tests/integration/test_postgres_failback.py",
+                 "tests/integration/test_postgres_handoff_escalation.py",
+                 "tests/integration/test_postgres_handoff_audit_retention.py"]
         measured_sources.extend([*(root / t for t in tests), root / "tests/handoff_support.py",
                                  root / "src/sova/adapters/postgres_handoff_authority.py",
                                  root / "src/sova/adapters/file_authority_witness.py",
