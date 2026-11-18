@@ -101,7 +101,14 @@ rules:
   # 세션: 원본 Pod에 붙이는 관찰 컨테이너와 그 출력
   - {apiGroups: [""], resources: [pods/ephemeralcontainers], verbs: [patch]}
   - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+  # 세션(Service 경로): 준비 단계의 데이터플레인 측정용 Pod·Service(위 pods create/delete와 함께)
+  - {apiGroups: [""], resources: [services], verbs: [get, patch, create, delete]}
 ```
+
+- **Service 경로 세션의 데이터플레인 측정.** 세션 단위를 Service 경로로 옮길 때는 준비 단계(`stage_target`)에서 측정을 먼저 한다. "selector가 바뀌어도 이미 맺은 연결이 계속 흐르는가"를 단위의 namespace에서 일회용 Pod 두 개와 Service 하나로 잰다(약 20~40초, 정지 구간 밖).
+  - 흐르지 않으면 단위를 거부하고 Gateway 경로를 안내한다. GKE Dataplane V2가 그렇다(실측).
+  - 결과는 목적지 워크로드의 `sova.dev/route-flows-measured`에 남고, 한 시간이 지나면 다시 잰다.
+  - 측정용 Pod는 agent Pod와 같은 조건(고정 이미지, non-root, 마운트 없음)으로 돈다.
 
 - **agent Pod.** 고정된 Python 이미지에서 표준 라이브러리만으로 돈다. 다음 조건을 지키므로 restricted Pod Security를 통과한다.
   - non-root로 돈다(`run_as`).
