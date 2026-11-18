@@ -2,6 +2,8 @@
 
 2026-11-18 · 개인 `feature/migration-request-qualification`. MQ-03 로컬 runtime 연결이며 운영 배포 인수는 아니다.
 
+후속 [워커 프로세스 종료·인계·복구 차단 시험](migration-worker-qualification.md)은 별도 실행과 증거로 관리한다. 이 문서의 81개 결과는 `081cda5` 스냅샷 기준이다.
+
 ## 이전 검증에서 확장한 것
 
 [기존 서비스 구성 요소 시험](migration-service-qualification.md)은 같은 pytest 프로세스 안에서 `create_app`과 생성한 JWKS 함수를 연결했다. 이번에는 운영 서비스와 같은 **`python -m sova.service.main serve-api` 명령**으로 API를 별도 프로세스에서 실행한다.

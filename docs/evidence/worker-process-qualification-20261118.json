@@ -1,0 +1,326 @@
+{
+  "kind": "LocalWorkerProcessVerificationSummary",
+  "version": 1,
+  "date_kst": "2026-11-18",
+  "scope": "MQ-03 polling process composition and two MQ-04 termination boundaries; no deployed worker or cloud qualification",
+  "branch": "feature/migration-request-qualification",
+  "source": {
+    "working_tree_base_when_tested": "b0360f09ec1ec9ab22b8fb10d3377d6d9403c47b",
+    "committed_snapshot_with_identical_measured_sources": "ae509a1abd7eeda7e00c7bcf6cb00f8e46e72d00",
+    "security_producer": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+    "all_measured_source_hashes_match_committed_snapshot": true,
+    "measured_source_sha256": {
+      "examples/qualification/orders-http-postgres-v1.json": "44c0632a619a5b42eae89bf2c2360c9478ce054440b9b2bdb22ab510dd5d71a3",
+      "src/sova/qualification/__init__.py": "03e25cb600cd4fa8c72759464fc049cfe3c3da31f89c7f2ea52f5e384155a22b",
+      "src/sova/qualification/__main__.py": "c2f28ef4820e0ebb296ee474c18aeeab717a04c9c877c4ee6413aaa84e330f5c",
+      "src/sova/qualification/http_orders.py": "761538de2c1645d68cde46d558b2a7d9e477bc7f1af928ff8a60d37b2bbbee35",
+      "src/sova/qualification/postgres_orders.py": "b0c602dc4c9db02e0bd18c080026b38e643b4379e27c5bb353ac33aba3406eda",
+      "src/sova/qualification/requests.py": "1f701150aab8564d6c139c5803a35db478932bb6664f160c0d0f115161d1b612",
+      "src/sova/service/__init__.py": "04ad811567cd672308b8a9a50ab12084ec37843db5b8e299a79f2ded97b5f04e",
+      "src/sova/service/api.py": "dee1d3cbe0804162f733620b2c2363b6386be39a03c825b7b02fe7d2a15587b2",
+      "src/sova/service/auth.py": "42ab347486d57eacfd296cf6a8f9863217769b08cb9c51f18c081ae57d855d85",
+      "src/sova/service/catalog.py": "bdc8e6f7da60224b3683993fc5d1e603de537f96e19b58c202bd38075f7f2573",
+      "src/sova/service/composite_execution.py": "c9bc7a9c4c69db084a0d5b72a656267c459d5554370fe808c96a9b15a1473081",
+      "src/sova/service/config.py": "fad4366e781a9fe83540825cd0b5570d5b0858562bf44e531999b986bf53bdaf",
+      "src/sova/service/control_plane.py": "41193d73e49fdd8f48f5406e7e399c6d971ca2d9f7c2d3cba09bedaebd6877b1",
+      "src/sova/service/kafka_execution.py": "025d015a2f5f6dfbe5ba8cada837e00ff300fb9218482f71d2c9f0f53bc821bd",
+      "src/sova/service/main.py": "6872820457a5e713fb4b42ac1a59a9d2a6aa10edeee6ed5a6797ff13a9770f3c",
+      "src/sova/service/mongodb_execution.py": "2872173c94c0e6edfc528bddbd7f5c2981a30a7df75f15fd6d9d80cad8d67bd0",
+      "src/sova/service/mysql_execution.py": "cc83f2435eca020ad9858a8a88dceeea2ec3d1c1b29343875634e42945b92065",
+      "src/sova/service/postgres_execution.py": "7f03a63a8c8dfb876c56cd834f031c5798295f878c875e02660fbc1a2b6cf51f",
+      "src/sova/service/quiescence.py": "cb6abf2b016654f2ba05941b8b745e60d6409d670a29cf3e0a690dc31e518bf1",
+      "src/sova/service/rabbitmq_execution.py": "8934d85b2889e41c84d3208207da8d9947f14acd5a2310b34bc3198632de2f8c",
+      "src/sova/service/redis_execution.py": "6d710dab2d971bbb61ec89b0476183633032fe4ce93370d60b8d4f976e872c27",
+      "src/sova/service/route_stores.py": "9a0990a2399dca4602dfd902cd5d382012df171ac1082c8d4566073de7ab74f3",
+      "src/sova/service/schema.py": "93f56a980cb7042f1d0031deeea5a766872c68274e5eea85f4a375d600b675c4",
+      "src/sova/service/volume_execution.py": "13d6a94fcec041dbadae519ff772d7909cdfea58dde87320e35379b67cfff0ed",
+      "src/sova/service/worker.py": "3a148ff7ec555bcaa64252747403bd547da4dca734471262691ac279bc796555",
+      "tests/contract_world.py": "27badc1d9a7d3e676a3a2c807055088a89d327392df37dd9abafe0e5ab325b44",
+      "tests/control_plane_support.py": "c0b0a83312067d62c4246a801f00b9bd4b9aa9e408c3c76bf96575d3dba8230c",
+      "tests/integration/test_order_http_handoff.py": "f91e0a00193b7cc230da4e471eb2eb8350db05ef369719bf571b2f753090ae3a",
+      "tests/integration/test_order_service_journey.py": "ea2b6169c5e9080f1a34270c9b46394e1cd098cd1056b34a28bc157ec5597284",
+      "tests/integration/test_service_api.py": "2b6b1068e0e95f4b49a7f8a99b11829cd9246e161a9c8d5383264bcf069f5f2d",
+      "tests/integration/test_service_control_plane.py": "6543ae024334d8ea7bdc7e82c279395974bd71cfffe2be2f7b4e2d2c7949d44b",
+      "tests/integration/test_service_runtime_journey.py": "44d830f388666e004ac582af3ec09c90bcee363bef9c5d47afbcd28e0989978a",
+      "tests/integration/test_service_worker.py": "decd6173b03c4ca1558305c1dec3d83e4c6537e7c37abd3f21951ed518b65752",
+      "tests/integration/test_worker_process_journey.py": "afa03cd29a9412eb7af1fbe45a85be63051bdee47618218e67034a39a3f07299",
+      "tests/qualification_orders.py": "9963519c64a422eb61efabbdfc260f918e6a52f5e6f8972fa9c0ce0db72a18f2",
+      "tests/qualification_postgres.py": "042dbd8101e551a97c67c5c2a85cee34206e973b4d9942aba8afa907e660a045",
+      "tests/qualification_runtime.py": "37219730a4fd738526451928a527d2a02001f133c251a52a1d54e102e6dbe007",
+      "tests/qualification_service.py": "02cf881a927fbec75133bb23215e248e4efe58d7502a3861cdae157ee95cf41f",
+      "tests/qualification_worker.py": "d06e6ca20be8df8ec8d5c6362544a8c6ee7db35641dc8f16a406daf65db13523",
+      "tests/unit/test_request_qualification.py": "bda58a6c8ca221a02a2fbca97ef7c6f4d11962148f0bf46d2b8a5554b50752bb"
+    }
+  },
+  "tests": {
+    "tests": 83,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "previous_regressions": 81,
+    "new_worker_process_cases": 2
+  },
+  "environment": {
+    "image_id": "sha256:0d938e975177bef9f1f61f3f9dbcf2e0aa0a139568f66d3415ed8892eb97f6ac",
+    "postgres_version": "17.12 (Debian 17.12-1.pgdg13+1)",
+    "architecture": "arm64",
+    "topology": "one run-owned TLS PostgreSQL server with multiple logical databases",
+    "container_memory_mib": 1536,
+    "data_tmpfs_mib": 1024,
+    "database_filesystem_usage": [
+      "Filesystem     1K-blocks   Used Available Use% Mounted on",
+      "tmpfs            1048576 334804    713772  32% /var/lib/postgresql/data"
+    ],
+    "worker": "real OS subprocesses running an observed HandoffWorker.run subclass, existing effects/probes; dedicated test entry point",
+    "adapter_instrumentation": "trace and after-copy-commit barrier; delegates real apply/validate/readback",
+    "route": "scope-bound shared file read by real loopback HTTP order app; not a production route backend",
+    "test_lease_seconds": 2,
+    "product_worker_config_changed": false,
+    "api": "real service CLI, loopback HTTP",
+    "jwks": "verified HTTPS fixture issuer",
+    "witness": "local file",
+    "registry_inputs": "synthetic, with observed PostgreSQL engine versions",
+    "shared_environment_used": false,
+    "real_cloud_used": false,
+    "owned_container_removed": true,
+    "owned_network_removed": true
+  },
+  "clock_checks": {
+    "passed": true,
+    "samples": 234,
+    "max_allowed_skew_seconds": 1,
+    "max_observed_skew_lower_bound_seconds": 0.0,
+    "clock_or_database_lease_timestamps_modified": false
+  },
+  "cases": {
+    "graceful": {
+      "authority_state": "HANDOFF_COMPLETE",
+      "migration_completed": true,
+      "worker_processes": [
+        {
+          "exit_code": 0,
+          "intentional_sigkill": false,
+          "loop_stopped_recorded": true,
+          "owner": "mq-worker-41700c4a7e38410fb2ac326c80db8e1a",
+          "process_wait_completed": true
+        },
+        {
+          "exit_code": 0,
+          "intentional_sigkill": false,
+          "loop_stopped_recorded": true,
+          "owner": "mq-worker-37f17606d04e426188872c4ed7e9d91e",
+          "process_wait_completed": true
+        }
+      ],
+      "all_owned_processes_waited": true,
+      "api_cleanup": {
+        "all_api_processes_stopped": true,
+        "api_exits_observed": [
+          {
+            "application_shutdown_complete": true,
+            "exit_code": -15,
+            "forced_kill": false,
+            "server_process_finished": true
+          },
+          {
+            "application_shutdown_complete": true,
+            "exit_code": -15,
+            "forced_kill": false,
+            "server_process_finished": true
+          }
+        ],
+        "api_starts": 2,
+        "api_transport": "loopback HTTP",
+        "cli": "python -m sova.service.main serve-api --host 127.0.0.1",
+        "database_profile_versions": {
+          "aws-source": "17.12",
+          "onprem-target": "17.12"
+        },
+        "jwks_https_gets": 2,
+        "jwks_transport": "certificate-verified HTTPS",
+        "worker_deployed": false
+      },
+      "data_integrity": "SATISFIED",
+      "service_continuity": "NOT_QUALIFIED",
+      "counts": {
+        "confirmed_requests": 3,
+        "http_error_attempts": 1,
+        "logical_requests": 3,
+        "not_committed_requests": 0,
+        "submission_attempts": 4,
+        "successful_submission_responses": 3,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "unresolved_commits": 0
+      },
+      "request_resolutions": [
+        "CONFIRMED",
+        "CONFIRMED",
+        "CONFIRMED"
+      ],
+      "observed_adapter_copy_apply_calls": 1,
+      "execution_epoch": 2,
+      "effect_statuses": [
+        "confirmed_applied"
+      ],
+      "quiescence_provider": null,
+      "worker_cli_deployed": false,
+      "prior_execution_epoch": 1
+    },
+    "killed": {
+      "authority_state": "SOURCE_FENCED",
+      "migration_completed": false,
+      "worker_processes": [
+        {
+          "exit_code": -9,
+          "intentional_sigkill": true,
+          "loop_stopped_recorded": false,
+          "owner": "mq-worker-ac5b9b5cf2d94ee08ec3821c76251957",
+          "process_wait_completed": true
+        },
+        {
+          "exit_code": 0,
+          "intentional_sigkill": false,
+          "loop_stopped_recorded": true,
+          "owner": "mq-worker-a0c17c2ffb5f450da8bbda1dae4ffe5e",
+          "process_wait_completed": true
+        }
+      ],
+      "all_owned_processes_waited": true,
+      "api_cleanup": {
+        "all_api_processes_stopped": true,
+        "api_exits_observed": [
+          {
+            "application_shutdown_complete": true,
+            "exit_code": -15,
+            "forced_kill": false,
+            "server_process_finished": true
+          },
+          {
+            "application_shutdown_complete": true,
+            "exit_code": -15,
+            "forced_kill": false,
+            "server_process_finished": true
+          }
+        ],
+        "api_starts": 2,
+        "api_transport": "loopback HTTP",
+        "cli": "python -m sova.service.main serve-api --host 127.0.0.1",
+        "database_profile_versions": {
+          "aws-source": "17.12",
+          "onprem-target": "17.12"
+        },
+        "jwks_https_gets": 2,
+        "jwks_transport": "certificate-verified HTTPS",
+        "worker_deployed": false
+      },
+      "data_integrity": "SATISFIED",
+      "service_continuity": "NOT_QUALIFIED",
+      "counts": {
+        "confirmed_requests": 1,
+        "http_error_attempts": 1,
+        "logical_requests": 2,
+        "not_committed_requests": 1,
+        "submission_attempts": 2,
+        "successful_submission_responses": 1,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "unresolved_commits": 0
+      },
+      "request_resolutions": [
+        "CONFIRMED",
+        "NOT_COMMITTED"
+      ],
+      "observed_adapter_copy_apply_calls": 1,
+      "execution_epoch": 1,
+      "effect_statuses": [
+        "confirmed_applied",
+        "in_flight"
+      ],
+      "quiescence_provider": null,
+      "worker_cli_deployed": false,
+      "lease_expired": true,
+      "pending_copy_status": "in_flight",
+      "outcome": "Recovery precondition unsatisfied: pending effect and no quiescence provider; not a persisted authority status"
+    }
+  },
+  "previous_unsuccessful_runs": [
+    {
+      "run": "run-01",
+      "junit": {
+        "tests": 83,
+        "failures": 0,
+        "errors": 4,
+        "skipped": 0
+      },
+      "reason": "384MiB run-owned tmpfs exhausted by database templates and WAL; setup/teardown errors before new worker cases.",
+      "owned_resources_removed": true,
+      "run_sha256": "f37ba731f5db95e8c2b550d386dba7afb066c24da70b3eb2160a36f879636b07",
+      "junit_sha256": "f4512bf5258879060b3bb6ea639d16e9c1eeaa276402e2146067963554b1ab0c"
+    },
+    {
+      "run": "run-02",
+      "junit": {
+        "tests": 83,
+        "failures": 2,
+        "errors": 0,
+        "skipped": 0
+      },
+      "reason": "Existing 81 regressions passed; worker child imported an unnecessary API fixture and failed startup. Parent-only import boundary fixed.",
+      "owned_resources_removed": true,
+      "run_sha256": "353d2171c9fa15d235427cea9ac14e388a1c52ebc9ca8866c24728e283db5b74",
+      "junit_sha256": "cc549447e27c25a41b4ed04b98aed477881cc74382112c41d25ed1eaa6929b65"
+    }
+  ],
+  "raw_artifacts_sha256": {
+    "commit-response-lost.json": "280593385cfd3090704242292c1ab7a629be3d5fc65e5f2694fce90d4f656f39",
+    "failback-authorization-denials.json": "ace8c6c5f7056174e1d2419c277dd7e7c9555b87f8508746da20adff6adeb1b1",
+    "fractional-cent-corruption.json": "8bad42f67def5148888d33992952de6f34c7d419cf9cbab700f2766622f65709",
+    "handoff-and-retry.json": "ff8fd8ea5a9c2a82d2ee540e3a1077ee9d28a2252d1f5944d3caae0e1dcdcb53",
+    "lookup-and-idempotent-retry.json": "40fbcfd356ab205ef208dc2c1cd6b71664d9e34046fefb551836c65a0bbc54e5",
+    "missing-committed-order.json": "ad3b1f2dc404b86aefa65a555f44f2d7a8c2173d177ccab4a541f6016225a943",
+    "results.xml": "b68391d3dc2919954c6767e60c9bf9712d6a30e1fc8d4ff4a8c517bf3e9bc72c",
+    "run.json": "0fc51c8d8b1597ad86cf3683a27d5c89d453886ce7b0daacab9bad0aeb286bec",
+    "runtime-cleanup-service-handoff-and-failback.json": "19209a43ff2259900d341ddc69b75d2fdca101defe145d16ee4b5e2fe5306d06",
+    "runtime-cleanup-untrusted-database-ca.json": "5259ef2496976ff4983c6ceb1ce008638f7b42e3d3b5093591666dd5b17c9c98",
+    "runtime-cleanup-untrusted-jwks-ca.json": "acdd0a0825e900002745239823b94bf8aabcabb2c6790670aad08d022e6947e6",
+    "runtime-cleanup-worker-graceful.json": "26967bb0deac971be70cc2796c2055816bbe87591583f76f303c3f1397d197ca",
+    "runtime-cleanup-worker-killed.json": "cec045428cd87a891debb292024f01ea536f60e0e175a4749bf0fe7201c16827",
+    "runtime-service-handoff-and-failback-api-1.log": "d9014693b0948632ebf491d54b0c89ccddce419642b850d2dc12d59c32dac94d",
+    "runtime-service-handoff-and-failback-api-2.log": "678f7a322a418f53423fec8305e0477e669b020652aad886df212f6d0593d937",
+    "runtime-service-handoff-and-failback-api-3.log": "66371f9175716e15943cfe459d7c8f89c595850f789e4a4f6d87611309e9fb45",
+    "runtime-service-handoff-and-failback.json": "56378816a34aac0c1588f5853730306af245650523168272bdf3c1a5e0edc548",
+    "runtime-untrusted-database-ca-api-1.log": "041ef9af86f826f0399cf0f46b80ad444222c19cc28f914214cba54bdc1e2a5d",
+    "runtime-untrusted-database-ca-api-2.log": "17fcbc1436860e55084227ad6a4c48992ed5336afbfcbba434659d2a683b9ab7",
+    "runtime-untrusted-database-ca.json": "eb3fc5230037ff4f372f851eb7e27de2909d0defa9b31818b8b67bf52c9aa55e",
+    "runtime-untrusted-jwks-ca-api-1.log": "0b58dae534810aeeac1d26d914dc075a56f09526797a7b717b3413ba1c87cd80",
+    "runtime-untrusted-jwks-ca-api-2.log": "85629aefe7fdbe38eeca0754b890803adf22c81632c0d677c0af1833298c179e",
+    "runtime-untrusted-jwks-ca.json": "c78f7a1390f8465579bec2d7944e7795dd013596c79a508066938a190c8b1e63",
+    "runtime-worker-graceful-api-1.log": "71b45cee293546aa2508551b2afaf1ebcf4c4eddeeaed4131e5179a67840671d",
+    "runtime-worker-graceful-api-2.log": "9b76b563f9a0a98504eda88c1c63852ed19578dfff14345753a3763cbe3e11e2",
+    "runtime-worker-graceful.json": "859234a431849343c5d83289fa22bab233660ae77b949db4d27572d81d748186",
+    "runtime-worker-killed-api-1.log": "659ee17b2157ab8ca27c0cf79abf038fd325f892353f0210108f6021d1ce971a",
+    "runtime-worker-killed-api-2.log": "c1aaba21ea784176e0eb933d25ad414a64ba2fe8249ef41a279c1b94102c7f2c",
+    "runtime-worker-killed.json": "cc5d3450e6f72df1a94c5d22cc3312403dc74a84af1dc8d6ad1818a42c977f1f",
+    "service-handoff-and-failback.json": "594a93cffb8c746bdafdab0ec44f2fed8b6b22cf13c0d5a8f2de29c231d69d22",
+    "stale-return-input-denied.json": "399f807b87cedfa1f3dcfb2dea59214711666efbd6349eb2fc1dd0040572cadd",
+    "terminal-handoff-remains-terminal.json": "04936c362893aaf35aac780b217678e16c89f8f749ae9c31bd993f1a6254b7ae",
+    "unauthorized-no-order.json": "ad333d8ff099ba64536a6d04fb5fd881f72c9076dd530ba0f72dc591a43a9d61",
+    "worker-worker-graceful-worker-a.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "worker-worker-graceful-worker-b.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "worker-worker-killed-worker-a.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "worker-worker-killed-worker-b.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "qualification_issued": false,
+  "authorizes_execution": false,
+  "signed_operational_evidence": false,
+  "not_qualified": [
+    "service run-worker CLI/catalog and deployed Pod",
+    "real Kubernetes quiescence and readback recovery",
+    "AWS to independent VM",
+    "external Edge and production network policy",
+    "independent witness/audit",
+    "enterprise IdP",
+    "load and continuity SLO"
+  ]
+}
