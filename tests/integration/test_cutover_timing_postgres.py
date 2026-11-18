@@ -28,6 +28,11 @@ def test_real_timing_is_plan_bound_and_does_not_export_unreferenced_observation_
         assert ledger['snapshot']['read_only'] and ledger['snapshot']['isolation'] == 'repeatable read'
         assert len(ledger['effects']) == 21 and {e['action'] for e in ledger['effects']} == set(ACTIONS)
         assert len(ledger['authority']) == 10 and ledger['measurement_receipts']
+        # Identical zone observations are content-addressed once. The signed
+        # envelopes still represent three distinct obligations and timestamps.
+        zone = [x for x in ledger['measurement_receipts'] if x['obligation_id'] in {
+            'residency.audit', 'residency.backups', 'residency.business_data'}]
+        assert len(zone) == 3 and len({x['artifact_digest'] for x in zone}) == 1
         assert ledger['scope']['operation_id'] == admission['operation_id']
         assert 'must-not-leave-the-database' not in json.dumps(ledger) and 'unreferenced' not in json.dumps(ledger)
         assert all(set(e) == {'action', 'fingerprint', 'revision', 'status', 'at'} for e in ledger['effects'])

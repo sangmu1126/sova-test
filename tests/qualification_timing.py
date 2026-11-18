@@ -78,11 +78,10 @@ def read_ledger(connect, tenant, app, admission):
             'AND unit_digest=%s AND plan_digest=%s ORDER BY revision LIMIT 257',
             (tenant, app, unit, plan)).fetchall()
         receipts = conn.execute(
-            "SELECT o.obligation_id,o.artifact_digest,(o.document::jsonb)->>'probe',s.stored_at,"
+            "SELECT s.document #>> '{evidence,obligation_id}',o.artifact_digest,(o.document::jsonb)->>'probe',s.stored_at,"
             "s.document #>> '{evidence,result}' FROM sova_control.signed_security_evidence s "
             "JOIN sova_control.evidence_observations o ON (s.tenant_id,s.application_id)=(o.tenant_id,o.application_id) "
             "AND s.document #>> '{evidence,artifact_digest}'=o.artifact_digest "
-            "AND s.document #>> '{evidence,obligation_id}'=o.obligation_id "
             "WHERE s.tenant_id=%s AND s.application_id=%s AND s.document #> '{evidence,revisions}'=%s "
             'ORDER BY s.stored_at LIMIT 257', (tenant, app, Jsonb(revisions))).fetchall()
         if any(len(x) > LIMIT for x in (events, authority, receipts)):
