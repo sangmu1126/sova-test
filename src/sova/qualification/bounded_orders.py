@@ -129,14 +129,14 @@ class BoundedOrderClient:
             if error == "invalid_receipt":
                 result, reason = "REJECTED", "invalid_receipt"
                 break
+            if retry_after == "unsupported":
+                result, reason = "REJECTED", "unsupported_retry_after"
+                break
             if kind == "lookup" and status == 404:
-                kind, delay = "submit", 0.0
+                kind, delay = "submit", retry_after or 0.0
                 continue
             if status not in (None, 503):
                 result, reason = "REJECTED", "nonretryable_status"
-                break
-            if retry_after == "unsupported":
-                result, reason = "REJECTED", "unsupported_retry_after"
                 break
             # An ambiguous POST is never blindly resent. First observe its
             # business key; only a definitive 404 permits another submission.

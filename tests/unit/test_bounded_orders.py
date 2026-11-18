@@ -84,6 +84,15 @@ def test_unsupported_retry_after_stops_instead_of_ignoring_server_wait(journal):
     assert result["result"] == "REJECTED" and result["reason"] == "unsupported_retry_after"
 
 
+def test_lookup_wait_hint_is_honored_before_resubmission(journal):
+    calls = []
+    def handler(request):
+        calls.append(request.method)
+        return httpx.Response(503) if len(calls)==1 else httpx.Response(404,headers={"retry-after":"60"})
+    result = execute(journal,handler)
+    assert calls == ["POST","GET"] and result["reason"] == "deadline"
+
+
 def test_whole_network_attempt_is_cancelled_and_recorded_at_deadline(journal):
     cancelled = []
     async def handler(request):
