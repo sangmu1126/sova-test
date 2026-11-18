@@ -1,0 +1,303 @@
+{
+  "kind": "ServiceImageSourceAndWorkerStartupVerificationSummary",
+  "version": 1,
+  "date_kst": "2026-11-18",
+  "scope": "Local arm64 image source comparison and negative actual worker CLI startup checks; not a deployed healthy-worker qualification",
+  "source_revision": "24e17165ac6ef657ba9fa79c4ab8f784e98f20eb",
+  "security_producer": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+  "feature_commits": [
+    "c0f9b2ae0946f35b1942b79859d146a79cef24e1",
+    "24e17165ac6ef657ba9fa79c4ab8f784e98f20eb"
+  ],
+  "measured_files_match_snapshot": true,
+  "measured_source_sha256": {
+    "src/sova/qualification/image.py": "9abc6384c7eb53a18876ff0885d6a7ae2361343f12bfed14de443619c5f1304b",
+    "tests/qualification_image_cli.py": "7ed440daec524db3eee7967d6ee9fd978520c97430b197375495a74a5af180c9",
+    "tests/unit/test_image_qualification.py": "031674c32ffa67044bdd95023e863672170f665f265e1cbe25489aafe5709541",
+    "src/sova/service/config.py": "91dd0d4164d7eb59166e201391c361d6dde718ce769815054c70465ab17184f0",
+    "src/sova/service/main.py": "49db1aeba20c31ccc1c24a1d505f5e576a1aabe50663b3ac28804f7dd33bbe6a",
+    "deploy/service/Dockerfile": "c442d82621457f91f981d799e90c4d163741d19bbef1cb7889cbb7ca6b44fc56",
+    "pyproject.toml": "326be20715e4278b7d3f5c712b490df72d475b2ec402db3aaa0754bb09563210"
+  },
+  "initial_audit": {
+    "result": "ERROR",
+    "reason": "source_symlink_or_special_file",
+    "resolution": "Support only fixed Git-declared SQL aliases to regular files inside the same package; external and undeclared links remain rejected"
+  },
+  "cached_image": {
+    "image_id": "sha256:207bd22c20a0108186c87e5dde9205363789417a56e237018a1b5687f6974b4d",
+    "status": "MISMATCH",
+    "packages": {
+      "sova": {
+        "changed": [
+          "adapters/aws_ecs_compute.py",
+          "adapters/gcp_cloud_run_compute.py",
+          "adapters/kafka_topic_handoff.py",
+          "adapters/keycloak_identity.py",
+          "adapters/keycloak_identity_handoff.py",
+          "adapters/kubernetes/handoff_controls.py",
+          "adapters/kubernetes/https.py",
+          "adapters/mysql_handoff_probes.py",
+          "adapters/mysql_offline_copy.py",
+          "adapters/postgres_handoff_probes.py",
+          "adapters/postgres_offline_copy.py",
+          "adapters/rabbitmq_queue_handoff.py",
+          "adapters/s3_offline_copy.py",
+          "adapters/secrets_handoff.py",
+          "service/api.py",
+          "service/auth.py",
+          "service/catalog.py",
+          "service/config.py",
+          "service/control_plane.py",
+          "service/main.py",
+          "service/mysql_execution.py",
+          "service/schema.py",
+          "service/worker.py"
+        ],
+        "expected_files": 317,
+        "extra": [],
+        "installed_files": 284,
+        "missing": [
+          "adapters/composite_handoff.py",
+          "adapters/evidence_bounds.py",
+          "adapters/kafka_topic_probes.py",
+          "adapters/kubernetes/gateway_route.py",
+          "adapters/kubernetes/volume_agent.py",
+          "adapters/kubernetes/volume_agents.py",
+          "adapters/kubernetes/volume_controls.py",
+          "adapters/kubernetes_session_handoff.py",
+          "adapters/kubernetes_session_probes.py",
+          "adapters/kubernetes_volume_handoff.py",
+          "adapters/kubernetes_volume_probes.py",
+          "adapters/mongodb_change_stream.py",
+          "adapters/mongodb_handoff.py",
+          "adapters/mongodb_probes.py",
+          "adapters/mysql_replication.py",
+          "adapters/postgres_evidence_observations.py",
+          "adapters/rabbitmq_queue_probes.py",
+          "adapters/redis_keyspace_handoff.py",
+          "adapters/redis_keyspace_probes.py",
+          "adapters/sql/postgres_evidence_observations_v1.sql",
+          "qualification/__init__.py",
+          "qualification/__main__.py",
+          "qualification/http_orders.py",
+          "qualification/image.py",
+          "qualification/postgres_orders.py",
+          "qualification/requests.py",
+          "service/composite_execution.py",
+          "service/kafka_execution.py",
+          "service/mongodb_execution.py",
+          "service/rabbitmq_execution.py",
+          "service/redis_execution.py",
+          "service/route_stores.py",
+          "service/volume_execution.py"
+        ],
+        "version_matches": true
+      },
+      "sova_security": {
+        "changed": [],
+        "expected_files": 122,
+        "extra": [],
+        "installed_files": 122,
+        "missing": [],
+        "version_matches": true
+      }
+    },
+    "cli": [
+      {
+        "name": "invalid-health-port",
+        "exit_code": 1,
+        "error": null,
+        "expected_contract_error": "Worker health_port must be an integer in 1..65535",
+        "passed": false,
+        "log_sha256": "35aa2615e76ce366f08626bac51b394bfcc5b6ca702aa7c931de6ee6bcefca8f"
+      },
+      {
+        "name": "invalid-lease",
+        "exit_code": 1,
+        "error": null,
+        "expected_contract_error": "SOVA_LEASE_SECONDS is outside execution ledger bounds",
+        "passed": false,
+        "log_sha256": "ec8c3d69e8265130989e8253c5658c842aa8e72b6b84f57b4f26d6fe36572856"
+      },
+      {
+        "name": "invalid-poll",
+        "exit_code": 1,
+        "error": null,
+        "expected_contract_error": "Worker poll_seconds must be positive and below the stall timeout",
+        "passed": false,
+        "log_sha256": "dc3a99ea94cd6df70456ebdac9d7fda9971a0387ffed728dcc44f3685fd6d976"
+      },
+      {
+        "name": "empty-catalog",
+        "exit_code": 1,
+        "error": null,
+        "expected_contract_error": "At least one application is required",
+        "passed": true,
+        "log_sha256": "a9785aa9c045c38233d73093883e131fff252f4b30e7f352829a01579b28bee0"
+      }
+    ],
+    "cli_all_passed": false
+  },
+  "new_image": {
+    "image_id": "sha256:117a14eadae2cc25b43a434dbf9a06e1497f8e1c96ebc5e9da62a4c0fb7591f6",
+    "architecture": "arm64",
+    "runtime_user": "10001:10001",
+    "entrypoint": [
+      "sova-service"
+    ],
+    "status": "MATCH",
+    "packages": {
+      "sova": {
+        "changed": [],
+        "expected_files": 317,
+        "extra": [],
+        "installed_files": 317,
+        "missing": [],
+        "version_matches": true
+      },
+      "sova_security": {
+        "changed": [],
+        "expected_files": 122,
+        "extra": [],
+        "installed_files": 122,
+        "missing": [],
+        "version_matches": true
+      }
+    },
+    "installed_distributions": {
+      "PyMySQL": "1.2.4",
+      "annotated-doc": "0.0.7",
+      "annotated-types": "0.8.0",
+      "anyio": "4.16.0",
+      "boto3": "1.44.5",
+      "botocore": "1.44.5",
+      "certifi": "2026.10.23",
+      "cffi": "2.1.1",
+      "click": "8.5.1",
+      "cryptography": "50.0.2",
+      "fastapi": "0.164.0",
+      "h11": "0.16.0",
+      "httpcore": "1.0.9",
+      "httpx": "0.28.1",
+      "idna": "3.20",
+      "jmespath": "1.1.0",
+      "opentelemetry-api": "1.45.2",
+      "pip": "25.0.1",
+      "psycopg": "3.3.9",
+      "psycopg-binary": "3.3.9",
+      "pycparser": "3.12",
+      "pydantic": "2.14.3",
+      "pydantic_core": "2.50.4",
+      "python-dateutil": "2.9.0.post0",
+      "s3transfer": "0.19.3",
+      "six": "1.17.0",
+      "sova-control-plane": "0.1.0",
+      "sova-security": "0.11.1",
+      "starlette": "1.10.0",
+      "typing-inspection": "0.4.5",
+      "typing_extensions": "4.16.0",
+      "urllib3": "2.8.0",
+      "uvicorn": "0.54.0"
+    },
+    "source_manifest_sha256": "452e99122bbdbdf813d3c418e44faaade1dcbc3876f367a73dabd9c84b3cbe34",
+    "production_dockerfile_used": true,
+    "base_image_id": "sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b",
+    "security_wheel_sha256": "a40e4925e4f70f0c62daf7149e87eb0b8e01ca50386c741caddc8c5fc610e8ce",
+    "dependency_resolution_locked": false,
+    "source_overlay": false,
+    "pushed_to_registry": false,
+    "retained_locally": true,
+    "cli_cases": [
+      {
+        "name": "invalid-health-port",
+        "exit_code": 1,
+        "error": null,
+        "expected_contract_error": "Worker health_port must be an integer in 1..65535",
+        "passed": true,
+        "log_sha256": "cd09a1be28c0d5897b275c8b523f45f9919ca7b64ce8eda94d3636f0c9462f60"
+      },
+      {
+        "name": "invalid-lease",
+        "exit_code": 1,
+        "error": null,
+        "expected_contract_error": "SOVA_LEASE_SECONDS is outside execution ledger bounds",
+        "passed": true,
+        "log_sha256": "152af2b6d2f7fcd4e0329fa333d5f2c08059f2f7671025946a3132f21b987764"
+      },
+      {
+        "name": "invalid-poll",
+        "exit_code": 1,
+        "error": null,
+        "expected_contract_error": "Worker poll_seconds must be positive and below the stall timeout",
+        "passed": true,
+        "log_sha256": "9435cb2f17fadb6bc67290495e996270ca7a2c852ba671e881b412c0ca61288d"
+      },
+      {
+        "name": "empty-catalog",
+        "exit_code": 1,
+        "error": null,
+        "expected_contract_error": "At least one application is required",
+        "passed": true,
+        "log_sha256": "5c2dec9e7c1ac3c5ba66d9451d32435bb3d490b5b0d1e9145139cf1890a26ab8"
+      }
+    ],
+    "cli_all_passed": true
+  },
+  "unit_tests": {
+    "tests": 121,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "new_image_tests": 36,
+    "prior_startup_and_catalog_tests": 85,
+    "overlaps_previous_runs": true,
+    "do_not_sum_with_previous_runs": true
+  },
+  "isolation": {
+    "read_only_containers": true,
+    "network": "none",
+    "user": "10001:10001",
+    "capabilities": "ALL dropped",
+    "no_new_privileges": true,
+    "source_overlay": false,
+    "fixture_files_generated_only": true,
+    "shared_kubernetes_used": false,
+    "cloud_used": false,
+    "containers_remaining": 0,
+    "pod_observed": false
+  },
+  "raw_artifacts_sha256": {
+    "cached-image.json": "581565b1b9884d3e9029217344c2ad8714ffed7a03443da002ae2b9398f25b22",
+    "cached-image-02.json": "45d88604324de70d2e8747525612c65c1edf1fe900593b1a802bfd6abd0f50a8",
+    "current-image.json": "abb290cddead30e62abea6896a221dea052185e622b4962a409f9542b0b4130a",
+    "unit.xml": "b5eda4b5de1f8445a4ac4d1415d96d6260db65785ac0d705221479f194f0efb9",
+    "build-01/build-input.json": "8d4e036ba51ea8b9795e1560155396a6b779a28f93bfe7c30db588643dff7a64",
+    "build-01/build.log": "ee518d2369527fde02fca8c30033f15b8a82efd27103c34f67bd776d5c115a15",
+    "build-01/image-id": "e60f58c3695699dbc8a6ff816afac38bb2bf07517a264bc7119fd71c4cd0a87f",
+    "cached-cli/run.json": "a1b5d1b740e5b18db66e0570eae14fbc2f9c56310695a3f5ecfea5b41eb74489",
+    "current-cli/run.json": "73a1b9fb35272efb0fe4668e50368bab53875137e1e35697945b2f2fa1a77146",
+    "cached-cli/empty-catalog.jsonl": "a9785aa9c045c38233d73093883e131fff252f4b30e7f352829a01579b28bee0",
+    "cached-cli/invalid-health-port.jsonl": "35aa2615e76ce366f08626bac51b394bfcc5b6ca702aa7c931de6ee6bcefca8f",
+    "cached-cli/invalid-lease.jsonl": "ec8c3d69e8265130989e8253c5658c842aa8e72b6b84f57b4f26d6fe36572856",
+    "cached-cli/invalid-poll.jsonl": "dc3a99ea94cd6df70456ebdac9d7fda9971a0387ffed728dcc44f3685fd6d976",
+    "current-cli/empty-catalog.jsonl": "5c2dec9e7c1ac3c5ba66d9451d32435bb3d490b5b0d1e9145139cf1890a26ab8",
+    "current-cli/invalid-health-port.jsonl": "cd09a1be28c0d5897b275c8b523f45f9919ca7b64ce8eda94d3636f0c9462f60",
+    "current-cli/invalid-lease.jsonl": "152af2b6d2f7fcd4e0329fa333d5f2c08059f2f7671025946a3132f21b987764",
+    "current-cli/invalid-poll.jsonl": "9435cb2f17fadb6bc67290495e996270ca7a2c852ba671e881b412c0ca61288d",
+    "build-01/wheels/sova_security-0.11.1-py3-none-any.whl": "a40e4925e4f70f0c62daf7149e87eb0b8e01ca50386c741caddc8c5fc610e8ce"
+  },
+  "qualification_issued": false,
+  "authorizes_execution": false,
+  "signed_operational_evidence": false,
+  "not_qualified": [
+    "healthy deployed run-worker and business catalog",
+    "actual Pod imageID/digest mapping and SA/UID/RBAC",
+    "authenticated worker quiescence and recovery after lease expiration",
+    "amd64 image",
+    "locked/reproducible release build",
+    "image signature or vulnerability verification",
+    "AWS to independent VM",
+    "production network/witness/continuity SLO/financial certification"
+  ]
+}
