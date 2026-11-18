@@ -106,3 +106,5 @@ caffeinate -di python tests/qualification_postgres.py \
 ## 복구 조회 후속 수정
 
 [복구 상태 조회와 증인 기록의 동시성](authority-read-concurrency.md)에서 미커밋 SQL·외부 증인 대조, 프로세스 간 파일 기록 경합을 별도로 재현하고 수정했다. 새로운 실제 Pod 결과와 남은 환경 실패는 해당 기록에서 구분한다. 이 문서의 기존 고정 실행·오류·소진 수치는 후속 성공으로 덮어쓰지 않는다.
+
+[준비된 목적지의 정상 전환](ready-target-cutover.md)은 작업자 장애를 주입하지 않는 별도 v3 프로필이다. 기존 v2 장애·복구 경로와 구분하며 동일 조건의 성능 개선 비교로 사용하지 않는다.

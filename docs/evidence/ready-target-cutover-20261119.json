@@ -1,0 +1,1360 @@
+{
+  "kind": "MeasuredReadyTargetNormalCutoverVerification",
+  "version": 1,
+  "date_kst": "2026-11-19",
+  "base_commit": "d34d80764cedf3b410ee3c506163ee32f7d89d11",
+  "harness_source": "436bc3e5ebe195244a13c920cfcbd570b45308be",
+  "product_source": "0abcadcb4b8ab9426c747dbee39305c90d8916c7",
+  "image_id": "sha256:bf94bd18080210a11900913116adf4de144e84a538fbbc25d9b101640574633a",
+  "security_source": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+  "product_source_changes": false,
+  "timeout_changes": false,
+  "retry_budget_changes": false,
+  "components": {
+    "tests": 7,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "component_setup_note": "First direct unit invocation did not collect tests because the pinned security source was absent from PYTHONPATH; after supplying the existing pinned source, 7 metric regressions passed. No dependency version substitution.",
+  "raw_evidence_root": "/Users/Sooming_/dev/softbank_2026/local-dev-records/ready-target-cutover-20261119",
+  "trials": [
+    {
+      "name": "deferred",
+      "mode": "ready_deferred",
+      "profile": "orders-ready-target-v3",
+      "source_commit": "436bc3e5ebe195244a13c920cfcbd570b45308be",
+      "run_id": "worker-http-136d9332ec2043e589ea51a45f0873ca",
+      "cluster_uid": "8b039e93-336c-41d4-b7ae-32aeedd083ae",
+      "results": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "database_bootstrap": {
+        "source_database": "src_2c07faef9a",
+        "target_database": "tgt_2c07faef9a",
+        "source_version": "17.12",
+        "target_version": "17.12",
+        "source_tls": true,
+        "target_tls": true,
+        "observed_at": "2026-11-18T17:13:37.268142+00:00",
+        "qualification_issued": false,
+        "authorizes_execution": false
+      },
+      "discovery_before_cluster_creation": true,
+      "owner_fault_injected": false,
+      "target_prepared": {
+        "pod_uid": "e6e8f2b6-9724-4aee-8ed4-1d99da2616ef",
+        "health_ready": true,
+        "selected_by_route": false,
+        "matching_target_label_ready": true,
+        "target_label": "target",
+        "business_writes_enabled_early": false,
+        "target_write_denial_sqlstate": "42501",
+        "source_positive_control": true
+      },
+      "initial_orders": 100,
+      "initial_failures": 7,
+      "initial_status_counts": {
+        "200": 93,
+        "503": 7
+      },
+      "all_status_counts": {
+        "200": 103,
+        "404": 7,
+        "503": 7
+      },
+      "phase_counts": {
+        "load": 100,
+        "recovery": 14,
+        "post_handoff_probe": 3
+      },
+      "non_200_by_side": {
+        "503:source": 7,
+        "404:target": 7
+      },
+      "bounded_results": {},
+      "bounded_exhaustion_reasons": {},
+      "completion_budget_satisfied": null,
+      "maximum_inline_elapsed_ms": null,
+      "maximum_load_completion_ms": 20704.074259,
+      "data_integrity": "SATISFIED",
+      "counts": {
+        "logical_requests": 103,
+        "submission_attempts": 110,
+        "successful_submission_responses": 103,
+        "http_error_attempts": 7,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 103,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "tls_controls": {
+        "verified_https": true,
+        "wrong_ca_denied": true,
+        "wrong_hostname_denied": true
+      },
+      "installed_source_match": {
+        "status": "MATCH",
+        "packages": {
+          "sova": {
+            "expected_files": 318,
+            "installed_files": 318,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          },
+          "sova_security": {
+            "expected_files": 122,
+            "installed_files": 122,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          }
+        },
+        "service_entrypoint_matches": true
+      },
+      "pod_identities": [
+        {
+          "name": "worker-a",
+          "uid": "1b9604f0-97d3-4e43-965f-ee445f197c93",
+          "service_account": "worker",
+          "service_account_uid": "e317f13a-8729-427d-9afd-e6817c62f934",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://36f8860aa78e0686a9eb04357dc595a7a834e16ce2acf9653979329760035f67"
+        },
+        {
+          "name": "worker-b",
+          "uid": "ba7c9fbd-e750-4c60-af33-24e885046681",
+          "service_account": "worker",
+          "service_account_uid": "e317f13a-8729-427d-9afd-e6817c62f934",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://cee9945a96a07080809a3407bb3e390166e7294969373325b373c62b21881f0c"
+        }
+      ],
+      "handoff": {
+        "state": "HANDOFF_COMPLETE",
+        "owner_fault_injected": false,
+        "recovery_events": 0,
+        "route_patch_requests": 1,
+        "route_mutator_pod_uid": "1b9604f0-97d3-4e43-965f-ee445f197c93",
+        "final_actor": "worker-a.1b9604f0-97d3-4e43-965f-ee445f197c93.4c826ea65cd8",
+        "effect_status": "confirmed_applied",
+        "historical_orders_preserved": 50,
+        "target_write_confirmed": true,
+        "target_load_successes": 81,
+        "late_target_activation_calls": 0,
+        "client_continuity_qualified": false
+      },
+      "live_owner": null,
+      "runtime_stop": null,
+      "final_sql_diagnostics": {
+        "authority": [
+          [
+            "HANDOFF_COMPLETE",
+            10,
+            null,
+            "9"
+          ]
+        ],
+        "effects": [
+          [
+            "stage_target",
+            "confirmed_applied"
+          ],
+          [
+            "pause_admission",
+            "confirmed_applied"
+          ],
+          [
+            "fence_source_writes",
+            "confirmed_applied"
+          ],
+          [
+            "copy_content",
+            "confirmed_applied"
+          ],
+          [
+            "verify_final_state",
+            "confirmed_applied"
+          ],
+          [
+            "activate_target",
+            "confirmed_applied"
+          ],
+          [
+            "commit_route",
+            "confirmed_applied"
+          ]
+        ],
+        "evidence_results": [
+          [
+            "sova.registry.dependency-snapshot.v1",
+            "pass"
+          ],
+          [
+            "security.deny_cross_tenant_data_access",
+            "pass"
+          ],
+          [
+            "security.tested_restore",
+            "pass"
+          ],
+          [
+            "operations.restore_test",
+            "pass"
+          ],
+          [
+            "fence.source_writes_denied",
+            "pass"
+          ],
+          [
+            "business.ORDER-01",
+            "pass"
+          ],
+          [
+            "residency.backups",
+            "pass"
+          ],
+          [
+            "security.verified_transport_encryption",
+            "pass"
+          ],
+          [
+            "data.work_items",
+            "pass"
+          ],
+          [
+            "route.stale_writes_rejected",
+            "pass"
+          ],
+          [
+            "residency.audit",
+            "pass"
+          ],
+          [
+            "availability.write_admission_pause",
+            "pass"
+          ],
+          [
+            "data.orders",
+            "pass"
+          ],
+          [
+            "authority.single_writer_after_activation",
+            "pass"
+          ],
+          [
+            "availability.client_completion_wait",
+            "pass"
+          ],
+          [
+            "residency.business_data",
+            "pass"
+          ],
+          [
+            "data.idempotency_results",
+            "pass"
+          ],
+          [
+            "sova.registry.service-contract.v1",
+            "pass"
+          ],
+          [
+            "sova.registry.strategy-qualification.v1",
+            "pass"
+          ]
+        ]
+      },
+      "actual_secret_get_status": 403,
+      "unauthorized_pod_get_status": 403,
+      "control_plane_status_counts": {
+        "200": 14,
+        "201": 6
+      },
+      "clock_passed": true,
+      "clock_samples": 183,
+      "clock_sampling_failures": 0,
+      "environment_error": null,
+      "environment_accepted": true,
+      "runner_exit_code": 0,
+      "clock_sampling_failure_cause_established": null,
+      "resources_removed": true,
+      "qualification_issued": false,
+      "authorizes_execution": false,
+      "measured_source_sha256": {
+        "examples/qualification/orders-http-postgres-v1.json": "44c0632a619a5b42eae89bf2c2360c9478ce054440b9b2bdb22ab510dd5d71a3",
+        "examples/qualification/orders-pod-https-postgres-v1.json": "50b7d0c3b9bae8cda79a1add2e09f4030552723ac3fe926288485ba289e4e4cb",
+        "examples/qualification/orders-ready-target-v3.json": "ad05f8ff1f6c38563f6e2c07be724ce91dcd43888f06f647cd8b8c94b8cf4759",
+        "src/sova/qualification/__init__.py": "03e25cb600cd4fa8c72759464fc049cfe3c3da31f89c7f2ea52f5e384155a22b",
+        "src/sova/qualification/__main__.py": "c2f28ef4820e0ebb296ee474c18aeeab717a04c9c877c4ee6413aaa84e330f5c",
+        "src/sova/qualification/bounded_orders.py": "3dac6e4ae22f918d8a022e791b0f59d168ec3bb133dc172c9727ae8855e0c456",
+        "src/sova/qualification/http_orders.py": "f471b6c1e6fe33711d96f733fd0aeb79b94ff5d0f249ccd523dc5286a0aae92f",
+        "src/sova/qualification/image.py": "9abc6384c7eb53a18876ff0885d6a7ae2361343f12bfed14de443619c5f1304b",
+        "src/sova/qualification/postgres_orders.py": "b0c602dc4c9db02e0bd18c080026b38e643b4379e27c5bb353ac33aba3406eda",
+        "src/sova/qualification/requests.py": "1f701150aab8564d6c139c5803a35db478932bb6664f160c0d0f115161d1b612",
+        "src/sova/service/__init__.py": "04ad811567cd672308b8a9a50ab12084ec37843db5b8e299a79f2ded97b5f04e",
+        "src/sova/service/api.py": "dee1d3cbe0804162f733620b2c2363b6386be39a03c825b7b02fe7d2a15587b2",
+        "src/sova/service/auth.py": "42ab347486d57eacfd296cf6a8f9863217769b08cb9c51f18c081ae57d855d85",
+        "src/sova/service/catalog.py": "bdc8e6f7da60224b3683993fc5d1e603de537f96e19b58c202bd38075f7f2573",
+        "src/sova/service/composite_execution.py": "c9bc7a9c4c69db084a0d5b72a656267c459d5554370fe808c96a9b15a1473081",
+        "src/sova/service/config.py": "91dd0d4164d7eb59166e201391c361d6dde718ce769815054c70465ab17184f0",
+        "src/sova/service/control_plane.py": "41193d73e49fdd8f48f5406e7e399c6d971ca2d9f7c2d3cba09bedaebd6877b1",
+        "src/sova/service/kafka_execution.py": "025d015a2f5f6dfbe5ba8cada837e00ff300fb9218482f71d2c9f0f53bc821bd",
+        "src/sova/service/main.py": "49db1aeba20c31ccc1c24a1d505f5e576a1aabe50663b3ac28804f7dd33bbe6a",
+        "src/sova/service/mongodb_execution.py": "2872173c94c0e6edfc528bddbd7f5c2981a30a7df75f15fd6d9d80cad8d67bd0",
+        "src/sova/service/mysql_execution.py": "cc83f2435eca020ad9858a8a88dceeea2ec3d1c1b29343875634e42945b92065",
+        "src/sova/service/postgres_execution.py": "7f03a63a8c8dfb876c56cd834f031c5798295f878c875e02660fbc1a2b6cf51f",
+        "src/sova/service/quiescence.py": "cb6abf2b016654f2ba05941b8b745e60d6409d670a29cf3e0a690dc31e518bf1",
+        "src/sova/service/rabbitmq_execution.py": "8934d85b2889e41c84d3208207da8d9947f14acd5a2310b34bc3198632de2f8c",
+        "src/sova/service/redis_execution.py": "6d710dab2d971bbb61ec89b0476183633032fe4ce93370d60b8d4f976e872c27",
+        "src/sova/service/route_stores.py": "9a0990a2399dca4602dfd902cd5d382012df171ac1082c8d4566073de7ab74f3",
+        "src/sova/service/schema.py": "93f56a980cb7042f1d0031deeea5a766872c68274e5eea85f4a375d600b675c4",
+        "src/sova/service/volume_execution.py": "13d6a94fcec041dbadae519ff772d7909cdfea58dde87320e35379b67cfff0ed",
+        "src/sova/service/worker.py": "3a148ff7ec555bcaa64252747403bd547da4dca734471262691ac279bc796555",
+        "tests/contract_world.py": "27badc1d9a7d3e676a3a2c807055088a89d327392df37dd9abafe0e5ab325b44",
+        "tests/control_plane_support.py": "c0b0a83312067d62c4246a801f00b9bd4b9aa9e408c3c76bf96575d3dba8230c",
+        "tests/handoff_drive.py": "736ceb33c16d55e32865b69979c6b84dd8ab222b2a439586b095fe8ec8aa0cdf",
+        "tests/integration/test_order_http_handoff.py": "f91e0a00193b7cc230da4e471eb2eb8350db05ef369719bf571b2f753090ae3a",
+        "tests/integration/test_worker_pod_http_journey.py": "3629f80240834b2232fe29a4170a680eac9f64c4a5319f2695fa261700d25b16",
+        "tests/integration/test_worker_pod_journey.py": "f686b8eb1933320e4e86b679bb022196e61dddae973dc0481f8851088750d062",
+        "tests/postgres_business.py": "06f82150025d01115a9bc3dca3ec5cff2149d593f227cc08cd2e611c219fdc86",
+        "tests/postgres_fixtures.py": "dee72e9f8426d632dff738e475bbd7bdd65c32bdb9319bd6135d67b658601774",
+        "tests/qualification_diagnostics.py": "b80bf4e90de4c8766bab4ab1c5ca4962e5cccdf3b3bc3650dc1f57a85bab6745",
+        "tests/qualification_load_client.py": "6477aa84c077665368b5ec2afcefa4e8ea47eca19740492c5dfea7be540732a9",
+        "tests/qualification_order_pod.py": "68a59ed2b3654f3f5c1ca8d24a913ba26e1883a474ce10369192c75775a7dbff",
+        "tests/qualification_orders.py": "9963519c64a422eb61efabbdfc260f918e6a52f5e6f8972fa9c0ce0db72a18f2",
+        "tests/qualification_pod_http.py": "3aa4c6af5c78ce4461ee52f64044ea01896410fec3fb9de1c4e8b67091bac886",
+        "tests/qualification_pods.py": "e89fa204793749557efefeb1f8d8ea9693ae4487d5619620a52dbe3885a1c403",
+        "tests/qualification_postgres.py": "fe6ef4970b93a1c83068ca030a0223cabad462dbd36ada74ceec9c0725f3f6a5",
+        "tests/qualification_service.py": "af206085dc6ce587468be3280245316c0e259f3ede2cc26bd77b84ab2c232f4f",
+        "tests/unit/test_request_qualification.py": "bda58a6c8ca221a02a2fbca97ef7c6f4d11962148f0bf46d2b8a5554b50752bb"
+      }
+    },
+    {
+      "name": "bounded",
+      "mode": "ready_bounded",
+      "profile": "orders-ready-target-v3",
+      "source_commit": "436bc3e5ebe195244a13c920cfcbd570b45308be",
+      "run_id": "worker-http-3ad6363295ee486884afc172b058c75d",
+      "cluster_uid": "c35eaecf-4f14-4989-adb9-1389d8d4cbe9",
+      "results": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "database_bootstrap": {
+        "source_database": "src_fa17d60db4",
+        "target_database": "tgt_fa17d60db4",
+        "source_version": "17.12",
+        "target_version": "17.12",
+        "source_tls": true,
+        "target_tls": true,
+        "observed_at": "2026-11-18T17:15:32.361738+00:00",
+        "qualification_issued": false,
+        "authorizes_execution": false
+      },
+      "discovery_before_cluster_creation": true,
+      "owner_fault_injected": false,
+      "target_prepared": {
+        "pod_uid": "a103cb4a-d48b-4dcb-a55c-03db253fef0f",
+        "health_ready": true,
+        "selected_by_route": false,
+        "matching_target_label_ready": true,
+        "target_label": "target",
+        "business_writes_enabled_early": false,
+        "target_write_denial_sqlstate": "42501",
+        "source_positive_control": true
+      },
+      "initial_orders": 100,
+      "initial_failures": 2,
+      "initial_status_counts": {
+        "200": 98,
+        "503": 2
+      },
+      "all_status_counts": {
+        "200": 103,
+        "404": 2,
+        "503": 9
+      },
+      "phase_counts": {
+        "load": 100,
+        "inline_retry": 9,
+        "recovery": 2,
+        "post_handoff_probe": 3
+      },
+      "non_200_by_side": {
+        "503:source": 9,
+        "404:target": 2
+      },
+      "bounded_results": {
+        "CONFIRMED": 99,
+        "EXHAUSTED": 1
+      },
+      "bounded_exhaustion_reasons": {
+        "attempt_limit": 1
+      },
+      "completion_budget_satisfied": false,
+      "maximum_inline_elapsed_ms": 2964.255,
+      "maximum_load_completion_ms": 25026.341761,
+      "data_integrity": "SATISFIED",
+      "counts": {
+        "logical_requests": 103,
+        "submission_attempts": 105,
+        "successful_submission_responses": 103,
+        "http_error_attempts": 2,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 103,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "tls_controls": {
+        "verified_https": true,
+        "wrong_ca_denied": true,
+        "wrong_hostname_denied": true
+      },
+      "installed_source_match": {
+        "status": "MATCH",
+        "packages": {
+          "sova": {
+            "expected_files": 318,
+            "installed_files": 318,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          },
+          "sova_security": {
+            "expected_files": 122,
+            "installed_files": 122,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          }
+        },
+        "service_entrypoint_matches": true
+      },
+      "pod_identities": [
+        {
+          "name": "worker-a",
+          "uid": "4ae61d5d-fa52-4a5d-807e-a75c7b7904b7",
+          "service_account": "worker",
+          "service_account_uid": "72d97549-7f71-4fbc-b165-088aa6ec0281",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://d6d9b2f81b74fcae0fd104a663be657cf48e395d790e087910540b0eeba4d274"
+        },
+        {
+          "name": "worker-b",
+          "uid": "67c9a77e-5c3c-4727-bf16-c06198d00f77",
+          "service_account": "worker",
+          "service_account_uid": "72d97549-7f71-4fbc-b165-088aa6ec0281",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://61498fa81a379cb6bb2454f27402d2b3de7240bf8e959e1bf4ee9fa60d45696c"
+        }
+      ],
+      "handoff": {
+        "state": "HANDOFF_COMPLETE",
+        "owner_fault_injected": false,
+        "recovery_events": 0,
+        "route_patch_requests": 1,
+        "route_mutator_pod_uid": "4ae61d5d-fa52-4a5d-807e-a75c7b7904b7",
+        "final_actor": "worker-a.4ae61d5d-fa52-4a5d-807e-a75c7b7904b7.3ff6bdc8e2b8",
+        "effect_status": "confirmed_applied",
+        "historical_orders_preserved": 50,
+        "target_write_confirmed": true,
+        "target_load_successes": 80,
+        "late_target_activation_calls": 0,
+        "client_continuity_qualified": false
+      },
+      "live_owner": null,
+      "runtime_stop": null,
+      "final_sql_diagnostics": {
+        "authority": [
+          [
+            "HANDOFF_COMPLETE",
+            10,
+            null,
+            "9"
+          ]
+        ],
+        "effects": [
+          [
+            "stage_target",
+            "confirmed_applied"
+          ],
+          [
+            "pause_admission",
+            "confirmed_applied"
+          ],
+          [
+            "fence_source_writes",
+            "confirmed_applied"
+          ],
+          [
+            "copy_content",
+            "confirmed_applied"
+          ],
+          [
+            "verify_final_state",
+            "confirmed_applied"
+          ],
+          [
+            "activate_target",
+            "confirmed_applied"
+          ],
+          [
+            "commit_route",
+            "confirmed_applied"
+          ]
+        ],
+        "evidence_results": [
+          [
+            "sova.registry.dependency-snapshot.v1",
+            "pass"
+          ],
+          [
+            "operations.restore_test",
+            "pass"
+          ],
+          [
+            "business.ORDER-01",
+            "pass"
+          ],
+          [
+            "availability.client_completion_wait",
+            "pass"
+          ],
+          [
+            "residency.business_data",
+            "pass"
+          ],
+          [
+            "availability.write_admission_pause",
+            "pass"
+          ],
+          [
+            "security.tested_restore",
+            "pass"
+          ],
+          [
+            "residency.audit",
+            "pass"
+          ],
+          [
+            "authority.single_writer_after_activation",
+            "pass"
+          ],
+          [
+            "data.orders",
+            "pass"
+          ],
+          [
+            "security.verified_transport_encryption",
+            "pass"
+          ],
+          [
+            "residency.backups",
+            "pass"
+          ],
+          [
+            "security.deny_cross_tenant_data_access",
+            "pass"
+          ],
+          [
+            "data.work_items",
+            "pass"
+          ],
+          [
+            "route.stale_writes_rejected",
+            "pass"
+          ],
+          [
+            "data.idempotency_results",
+            "pass"
+          ],
+          [
+            "fence.source_writes_denied",
+            "pass"
+          ],
+          [
+            "sova.registry.service-contract.v1",
+            "pass"
+          ],
+          [
+            "sova.registry.strategy-qualification.v1",
+            "pass"
+          ]
+        ]
+      },
+      "actual_secret_get_status": 403,
+      "unauthorized_pod_get_status": 403,
+      "control_plane_status_counts": {
+        "200": 20,
+        "201": 6
+      },
+      "clock_passed": true,
+      "clock_samples": 208,
+      "clock_sampling_failures": 0,
+      "environment_error": null,
+      "environment_accepted": true,
+      "runner_exit_code": 0,
+      "clock_sampling_failure_cause_established": null,
+      "resources_removed": true,
+      "qualification_issued": false,
+      "authorizes_execution": false,
+      "measured_source_sha256": {
+        "examples/qualification/orders-http-postgres-v1.json": "44c0632a619a5b42eae89bf2c2360c9478ce054440b9b2bdb22ab510dd5d71a3",
+        "examples/qualification/orders-pod-https-postgres-v1.json": "50b7d0c3b9bae8cda79a1add2e09f4030552723ac3fe926288485ba289e4e4cb",
+        "examples/qualification/orders-ready-target-v3.json": "ad05f8ff1f6c38563f6e2c07be724ce91dcd43888f06f647cd8b8c94b8cf4759",
+        "src/sova/qualification/__init__.py": "03e25cb600cd4fa8c72759464fc049cfe3c3da31f89c7f2ea52f5e384155a22b",
+        "src/sova/qualification/__main__.py": "c2f28ef4820e0ebb296ee474c18aeeab717a04c9c877c4ee6413aaa84e330f5c",
+        "src/sova/qualification/bounded_orders.py": "3dac6e4ae22f918d8a022e791b0f59d168ec3bb133dc172c9727ae8855e0c456",
+        "src/sova/qualification/http_orders.py": "f471b6c1e6fe33711d96f733fd0aeb79b94ff5d0f249ccd523dc5286a0aae92f",
+        "src/sova/qualification/image.py": "9abc6384c7eb53a18876ff0885d6a7ae2361343f12bfed14de443619c5f1304b",
+        "src/sova/qualification/postgres_orders.py": "b0c602dc4c9db02e0bd18c080026b38e643b4379e27c5bb353ac33aba3406eda",
+        "src/sova/qualification/requests.py": "1f701150aab8564d6c139c5803a35db478932bb6664f160c0d0f115161d1b612",
+        "src/sova/service/__init__.py": "04ad811567cd672308b8a9a50ab12084ec37843db5b8e299a79f2ded97b5f04e",
+        "src/sova/service/api.py": "dee1d3cbe0804162f733620b2c2363b6386be39a03c825b7b02fe7d2a15587b2",
+        "src/sova/service/auth.py": "42ab347486d57eacfd296cf6a8f9863217769b08cb9c51f18c081ae57d855d85",
+        "src/sova/service/catalog.py": "bdc8e6f7da60224b3683993fc5d1e603de537f96e19b58c202bd38075f7f2573",
+        "src/sova/service/composite_execution.py": "c9bc7a9c4c69db084a0d5b72a656267c459d5554370fe808c96a9b15a1473081",
+        "src/sova/service/config.py": "91dd0d4164d7eb59166e201391c361d6dde718ce769815054c70465ab17184f0",
+        "src/sova/service/control_plane.py": "41193d73e49fdd8f48f5406e7e399c6d971ca2d9f7c2d3cba09bedaebd6877b1",
+        "src/sova/service/kafka_execution.py": "025d015a2f5f6dfbe5ba8cada837e00ff300fb9218482f71d2c9f0f53bc821bd",
+        "src/sova/service/main.py": "49db1aeba20c31ccc1c24a1d505f5e576a1aabe50663b3ac28804f7dd33bbe6a",
+        "src/sova/service/mongodb_execution.py": "2872173c94c0e6edfc528bddbd7f5c2981a30a7df75f15fd6d9d80cad8d67bd0",
+        "src/sova/service/mysql_execution.py": "cc83f2435eca020ad9858a8a88dceeea2ec3d1c1b29343875634e42945b92065",
+        "src/sova/service/postgres_execution.py": "7f03a63a8c8dfb876c56cd834f031c5798295f878c875e02660fbc1a2b6cf51f",
+        "src/sova/service/quiescence.py": "cb6abf2b016654f2ba05941b8b745e60d6409d670a29cf3e0a690dc31e518bf1",
+        "src/sova/service/rabbitmq_execution.py": "8934d85b2889e41c84d3208207da8d9947f14acd5a2310b34bc3198632de2f8c",
+        "src/sova/service/redis_execution.py": "6d710dab2d971bbb61ec89b0476183633032fe4ce93370d60b8d4f976e872c27",
+        "src/sova/service/route_stores.py": "9a0990a2399dca4602dfd902cd5d382012df171ac1082c8d4566073de7ab74f3",
+        "src/sova/service/schema.py": "93f56a980cb7042f1d0031deeea5a766872c68274e5eea85f4a375d600b675c4",
+        "src/sova/service/volume_execution.py": "13d6a94fcec041dbadae519ff772d7909cdfea58dde87320e35379b67cfff0ed",
+        "src/sova/service/worker.py": "3a148ff7ec555bcaa64252747403bd547da4dca734471262691ac279bc796555",
+        "tests/contract_world.py": "27badc1d9a7d3e676a3a2c807055088a89d327392df37dd9abafe0e5ab325b44",
+        "tests/control_plane_support.py": "c0b0a83312067d62c4246a801f00b9bd4b9aa9e408c3c76bf96575d3dba8230c",
+        "tests/handoff_drive.py": "736ceb33c16d55e32865b69979c6b84dd8ab222b2a439586b095fe8ec8aa0cdf",
+        "tests/integration/test_order_http_handoff.py": "f91e0a00193b7cc230da4e471eb2eb8350db05ef369719bf571b2f753090ae3a",
+        "tests/integration/test_worker_pod_http_journey.py": "3629f80240834b2232fe29a4170a680eac9f64c4a5319f2695fa261700d25b16",
+        "tests/integration/test_worker_pod_journey.py": "f686b8eb1933320e4e86b679bb022196e61dddae973dc0481f8851088750d062",
+        "tests/postgres_business.py": "06f82150025d01115a9bc3dca3ec5cff2149d593f227cc08cd2e611c219fdc86",
+        "tests/postgres_fixtures.py": "dee72e9f8426d632dff738e475bbd7bdd65c32bdb9319bd6135d67b658601774",
+        "tests/qualification_diagnostics.py": "b80bf4e90de4c8766bab4ab1c5ca4962e5cccdf3b3bc3650dc1f57a85bab6745",
+        "tests/qualification_load_client.py": "6477aa84c077665368b5ec2afcefa4e8ea47eca19740492c5dfea7be540732a9",
+        "tests/qualification_order_pod.py": "68a59ed2b3654f3f5c1ca8d24a913ba26e1883a474ce10369192c75775a7dbff",
+        "tests/qualification_orders.py": "9963519c64a422eb61efabbdfc260f918e6a52f5e6f8972fa9c0ce0db72a18f2",
+        "tests/qualification_pod_http.py": "3aa4c6af5c78ce4461ee52f64044ea01896410fec3fb9de1c4e8b67091bac886",
+        "tests/qualification_pods.py": "e89fa204793749557efefeb1f8d8ea9693ae4487d5619620a52dbe3885a1c403",
+        "tests/qualification_postgres.py": "fe6ef4970b93a1c83068ca030a0223cabad462dbd36ada74ceec9c0725f3f6a5",
+        "tests/qualification_service.py": "af206085dc6ce587468be3280245316c0e259f3ede2cc26bd77b84ab2c232f4f",
+        "tests/unit/test_request_qualification.py": "bda58a6c8ca221a02a2fbca97ef7c6f4d11962148f0bf46d2b8a5554b50752bb"
+      }
+    },
+    {
+      "name": "crash-control",
+      "mode": "prepared_deferred",
+      "profile": "orders-pod-https-comparison-v2",
+      "source_commit": "436bc3e5ebe195244a13c920cfcbd570b45308be",
+      "run_id": "worker-http-c54e6b89d2e84023986359fb64b823d1",
+      "cluster_uid": "171e7659-244a-477d-8040-3d2da8375cc5",
+      "results": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "database_bootstrap": {
+        "source_database": "src_bf21570f64",
+        "target_database": "tgt_bf21570f64",
+        "source_version": "17.12",
+        "target_version": "17.12",
+        "source_tls": true,
+        "target_tls": true,
+        "observed_at": "2026-11-18T17:18:08.240240+00:00",
+        "qualification_issued": false,
+        "authorizes_execution": false
+      },
+      "discovery_before_cluster_creation": true,
+      "owner_fault_injected": true,
+      "target_prepared": {
+        "pod_uid": "22197a75-59d3-4ff0-b3be-03fb17cfb6cc",
+        "health_ready": true,
+        "selected_by_route": false,
+        "matching_target_label_ready": false,
+        "target_label": "prepared",
+        "business_writes_enabled_early": false,
+        "target_write_denial_sqlstate": "42501",
+        "source_positive_control": true
+      },
+      "initial_orders": 100,
+      "initial_failures": 21,
+      "initial_status_counts": {
+        "200": 79,
+        "503": 16,
+        "transport_error": 5
+      },
+      "all_status_counts": {
+        "200": 103,
+        "404": 21,
+        "503": 16,
+        "transport_error": 5
+      },
+      "phase_counts": {
+        "load": 100,
+        "recovery": 42,
+        "post_handoff_probe": 3
+      },
+      "non_200_by_side": {
+        "503:source": 16,
+        "None:None": 5,
+        "404:target": 21
+      },
+      "bounded_results": {},
+      "bounded_exhaustion_reasons": {},
+      "completion_budget_satisfied": null,
+      "maximum_inline_elapsed_ms": null,
+      "maximum_load_completion_ms": 23212.182094,
+      "data_integrity": "SATISFIED",
+      "counts": {
+        "logical_requests": 103,
+        "submission_attempts": 124,
+        "successful_submission_responses": 103,
+        "http_error_attempts": 16,
+        "transport_error_attempts": 5,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 103,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "tls_controls": {
+        "verified_https": true,
+        "wrong_ca_denied": true,
+        "wrong_hostname_denied": true
+      },
+      "installed_source_match": {
+        "status": "MATCH",
+        "packages": {
+          "sova": {
+            "expected_files": 318,
+            "installed_files": 318,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          },
+          "sova_security": {
+            "expected_files": 122,
+            "installed_files": 122,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          }
+        },
+        "service_entrypoint_matches": true
+      },
+      "pod_identities": [
+        {
+          "name": "worker-a",
+          "uid": "e90ea654-7318-4a1d-a465-2d591bd81244",
+          "service_account": "worker",
+          "service_account_uid": "5c146d7d-7f35-41ea-9680-9d5c7719ef5c",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://06fed2d796b24cae2c86556151ba86bafc800213ef92da98a2dc7ea4410fb347"
+        },
+        {
+          "name": "worker-b",
+          "uid": "3e3914b5-0dfe-4f35-b973-74b9a91a6e6d",
+          "service_account": "worker",
+          "service_account_uid": "5c146d7d-7f35-41ea-9680-9d5c7719ef5c",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://7af2c9ddfd36faeea11716973f6127909c0ddd74cb60e14e805eda79f29f4d91"
+        }
+      ],
+      "handoff": {
+        "state": "HANDOFF_COMPLETE",
+        "original_owner": "worker-a.e90ea654-7318-4a1d-a465-2d591bd81244.ce912a75ea73",
+        "recovery_owner": "worker-b.3e3914b5-0dfe-4f35-b973-74b9a91a6e6d.89be4d2e8d29",
+        "recovery_at": "2026-11-18T17:20:27.578852+00:00",
+        "route_patch_requests": 1,
+        "pod_absence_audit_observations": 1,
+        "stopped_pod_observation_http_statuses": [
+          200,
+          404
+        ],
+        "effect_status": "confirmed_applied",
+        "historical_orders_preserved": 50,
+        "target_write_confirmed": true,
+        "client_continuity_qualified": false
+      },
+      "live_owner": {
+        "owner_id": "worker-a.e90ea654-7318-4a1d-a465-2d591bd81244.ce912a75ea73",
+        "lease_until": "2026-11-18T17:20:23.016897+00:00",
+        "database_observed_at": "2026-11-18T17:20:23.695139+00:00",
+        "recovery_events": 0,
+        "effect": "in_flight",
+        "authenticated_alive_observations": 1
+      },
+      "runtime_stop": {
+        "container_id": "06fed2d796b24cae2c86556151ba86bafc800213ef92da98a2dc7ea4410fb347",
+        "observed_at": "2026-11-18T17:20:27.443591+00:00",
+        "state": "absent from CRI inventory",
+        "force_api_deletion": false,
+        "terminal_pod_watch": [
+          {
+            "type": "MODIFIED",
+            "uid": "e90ea654-7318-4a1d-a465-2d591bd81244",
+            "phase": "Failed",
+            "resource_version": "709",
+            "observed_at": "2026-11-18T17:20:27.324037+00:00"
+          },
+          {
+            "type": "MODIFIED",
+            "uid": "e90ea654-7318-4a1d-a465-2d591bd81244",
+            "phase": "Failed",
+            "resource_version": "710",
+            "observed_at": "2026-11-18T17:20:27.421344+00:00"
+          },
+          {
+            "type": "DELETED",
+            "uid": "e90ea654-7318-4a1d-a465-2d591bd81244",
+            "phase": "Failed",
+            "resource_version": "711",
+            "observed_at": "2026-11-18T17:20:27.433476+00:00"
+          }
+        ]
+      },
+      "final_sql_diagnostics": {
+        "authority": [
+          [
+            "HANDOFF_COMPLETE",
+            10,
+            null,
+            "9"
+          ]
+        ],
+        "effects": [
+          [
+            "stage_target",
+            "confirmed_applied"
+          ],
+          [
+            "pause_admission",
+            "confirmed_applied"
+          ],
+          [
+            "fence_source_writes",
+            "confirmed_applied"
+          ],
+          [
+            "copy_content",
+            "confirmed_applied"
+          ],
+          [
+            "verify_final_state",
+            "confirmed_applied"
+          ],
+          [
+            "activate_target",
+            "confirmed_applied"
+          ],
+          [
+            "commit_route",
+            "confirmed_applied"
+          ]
+        ],
+        "evidence_results": [
+          [
+            "sova.registry.dependency-snapshot.v1",
+            "pass"
+          ],
+          [
+            "security.deny_cross_tenant_data_access",
+            "pass"
+          ],
+          [
+            "data.idempotency_results",
+            "pass"
+          ],
+          [
+            "fence.source_writes_denied",
+            "pass"
+          ],
+          [
+            "availability.write_admission_pause",
+            "pass"
+          ],
+          [
+            "operations.restore_test",
+            "pass"
+          ],
+          [
+            "residency.backups",
+            "pass"
+          ],
+          [
+            "data.work_items",
+            "pass"
+          ],
+          [
+            "availability.client_completion_wait",
+            "pass"
+          ],
+          [
+            "authority.single_writer_after_activation",
+            "pass"
+          ],
+          [
+            "business.ORDER-01",
+            "pass"
+          ],
+          [
+            "residency.audit",
+            "pass"
+          ],
+          [
+            "data.orders",
+            "pass"
+          ],
+          [
+            "residency.business_data",
+            "pass"
+          ],
+          [
+            "security.tested_restore",
+            "pass"
+          ],
+          [
+            "route.stale_writes_rejected",
+            "pass"
+          ],
+          [
+            "security.verified_transport_encryption",
+            "pass"
+          ],
+          [
+            "sova.registry.service-contract.v1",
+            "pass"
+          ],
+          [
+            "sova.registry.strategy-qualification.v1",
+            "pass"
+          ]
+        ]
+      },
+      "actual_secret_get_status": 403,
+      "unauthorized_pod_get_status": 403,
+      "control_plane_status_counts": {
+        "200": 9,
+        "201": 6
+      },
+      "clock_passed": false,
+      "clock_samples": 239,
+      "clock_sampling_failures": 1,
+      "environment_error": "host_database_clock_skew_or_sample_failure",
+      "environment_accepted": false,
+      "runner_exit_code": 1,
+      "clock_sampling_failure_cause_established": false,
+      "resources_removed": true,
+      "qualification_issued": false,
+      "authorizes_execution": false,
+      "measured_source_sha256": {
+        "examples/qualification/orders-http-postgres-v1.json": "44c0632a619a5b42eae89bf2c2360c9478ce054440b9b2bdb22ab510dd5d71a3",
+        "examples/qualification/orders-pod-https-comparison-v2.json": "3058a04a792ec44bc9e3193d64340d2a75db8fdcdc1137b9b9743022ac65f5d4",
+        "examples/qualification/orders-pod-https-postgres-v1.json": "50b7d0c3b9bae8cda79a1add2e09f4030552723ac3fe926288485ba289e4e4cb",
+        "src/sova/qualification/__init__.py": "03e25cb600cd4fa8c72759464fc049cfe3c3da31f89c7f2ea52f5e384155a22b",
+        "src/sova/qualification/__main__.py": "c2f28ef4820e0ebb296ee474c18aeeab717a04c9c877c4ee6413aaa84e330f5c",
+        "src/sova/qualification/bounded_orders.py": "3dac6e4ae22f918d8a022e791b0f59d168ec3bb133dc172c9727ae8855e0c456",
+        "src/sova/qualification/http_orders.py": "f471b6c1e6fe33711d96f733fd0aeb79b94ff5d0f249ccd523dc5286a0aae92f",
+        "src/sova/qualification/image.py": "9abc6384c7eb53a18876ff0885d6a7ae2361343f12bfed14de443619c5f1304b",
+        "src/sova/qualification/postgres_orders.py": "b0c602dc4c9db02e0bd18c080026b38e643b4379e27c5bb353ac33aba3406eda",
+        "src/sova/qualification/requests.py": "1f701150aab8564d6c139c5803a35db478932bb6664f160c0d0f115161d1b612",
+        "src/sova/service/__init__.py": "04ad811567cd672308b8a9a50ab12084ec37843db5b8e299a79f2ded97b5f04e",
+        "src/sova/service/api.py": "dee1d3cbe0804162f733620b2c2363b6386be39a03c825b7b02fe7d2a15587b2",
+        "src/sova/service/auth.py": "42ab347486d57eacfd296cf6a8f9863217769b08cb9c51f18c081ae57d855d85",
+        "src/sova/service/catalog.py": "bdc8e6f7da60224b3683993fc5d1e603de537f96e19b58c202bd38075f7f2573",
+        "src/sova/service/composite_execution.py": "c9bc7a9c4c69db084a0d5b72a656267c459d5554370fe808c96a9b15a1473081",
+        "src/sova/service/config.py": "91dd0d4164d7eb59166e201391c361d6dde718ce769815054c70465ab17184f0",
+        "src/sova/service/control_plane.py": "41193d73e49fdd8f48f5406e7e399c6d971ca2d9f7c2d3cba09bedaebd6877b1",
+        "src/sova/service/kafka_execution.py": "025d015a2f5f6dfbe5ba8cada837e00ff300fb9218482f71d2c9f0f53bc821bd",
+        "src/sova/service/main.py": "49db1aeba20c31ccc1c24a1d505f5e576a1aabe50663b3ac28804f7dd33bbe6a",
+        "src/sova/service/mongodb_execution.py": "2872173c94c0e6edfc528bddbd7f5c2981a30a7df75f15fd6d9d80cad8d67bd0",
+        "src/sova/service/mysql_execution.py": "cc83f2435eca020ad9858a8a88dceeea2ec3d1c1b29343875634e42945b92065",
+        "src/sova/service/postgres_execution.py": "7f03a63a8c8dfb876c56cd834f031c5798295f878c875e02660fbc1a2b6cf51f",
+        "src/sova/service/quiescence.py": "cb6abf2b016654f2ba05941b8b745e60d6409d670a29cf3e0a690dc31e518bf1",
+        "src/sova/service/rabbitmq_execution.py": "8934d85b2889e41c84d3208207da8d9947f14acd5a2310b34bc3198632de2f8c",
+        "src/sova/service/redis_execution.py": "6d710dab2d971bbb61ec89b0476183633032fe4ce93370d60b8d4f976e872c27",
+        "src/sova/service/route_stores.py": "9a0990a2399dca4602dfd902cd5d382012df171ac1082c8d4566073de7ab74f3",
+        "src/sova/service/schema.py": "93f56a980cb7042f1d0031deeea5a766872c68274e5eea85f4a375d600b675c4",
+        "src/sova/service/volume_execution.py": "13d6a94fcec041dbadae519ff772d7909cdfea58dde87320e35379b67cfff0ed",
+        "src/sova/service/worker.py": "3a148ff7ec555bcaa64252747403bd547da4dca734471262691ac279bc796555",
+        "tests/contract_world.py": "27badc1d9a7d3e676a3a2c807055088a89d327392df37dd9abafe0e5ab325b44",
+        "tests/control_plane_support.py": "c0b0a83312067d62c4246a801f00b9bd4b9aa9e408c3c76bf96575d3dba8230c",
+        "tests/handoff_drive.py": "736ceb33c16d55e32865b69979c6b84dd8ab222b2a439586b095fe8ec8aa0cdf",
+        "tests/integration/test_order_http_handoff.py": "f91e0a00193b7cc230da4e471eb2eb8350db05ef369719bf571b2f753090ae3a",
+        "tests/integration/test_worker_pod_http_journey.py": "3629f80240834b2232fe29a4170a680eac9f64c4a5319f2695fa261700d25b16",
+        "tests/integration/test_worker_pod_journey.py": "f686b8eb1933320e4e86b679bb022196e61dddae973dc0481f8851088750d062",
+        "tests/postgres_business.py": "06f82150025d01115a9bc3dca3ec5cff2149d593f227cc08cd2e611c219fdc86",
+        "tests/postgres_fixtures.py": "dee72e9f8426d632dff738e475bbd7bdd65c32bdb9319bd6135d67b658601774",
+        "tests/qualification_diagnostics.py": "b80bf4e90de4c8766bab4ab1c5ca4962e5cccdf3b3bc3650dc1f57a85bab6745",
+        "tests/qualification_load_client.py": "6477aa84c077665368b5ec2afcefa4e8ea47eca19740492c5dfea7be540732a9",
+        "tests/qualification_order_pod.py": "68a59ed2b3654f3f5c1ca8d24a913ba26e1883a474ce10369192c75775a7dbff",
+        "tests/qualification_orders.py": "9963519c64a422eb61efabbdfc260f918e6a52f5e6f8972fa9c0ce0db72a18f2",
+        "tests/qualification_pod_http.py": "3aa4c6af5c78ce4461ee52f64044ea01896410fec3fb9de1c4e8b67091bac886",
+        "tests/qualification_pods.py": "e89fa204793749557efefeb1f8d8ea9693ae4487d5619620a52dbe3885a1c403",
+        "tests/qualification_postgres.py": "fe6ef4970b93a1c83068ca030a0223cabad462dbd36ada74ceec9c0725f3f6a5",
+        "tests/qualification_service.py": "af206085dc6ce587468be3280245316c0e259f3ede2cc26bd77b84ab2c232f4f",
+        "tests/unit/test_request_qualification.py": "bda58a6c8ca221a02a2fbca97ef7c6f4d11962148f0bf46d2b8a5554b50752bb"
+      }
+    }
+  ],
+  "raw_artifacts": [
+    {
+      "path": "deferred/run.json",
+      "sha256": "0cd8ab99bce025e23ef74531e5b0e944007736b791f0fd78e85876f7e6b91a02",
+      "bytes": 48441
+    },
+    {
+      "path": "deferred/results.xml",
+      "sha256": "9d7978e8cf4ddf8f7662325b3aca8c22ddbfd5980af3317ccda3f596e396b65c",
+      "bytes": 431
+    },
+    {
+      "path": "deferred/runner.log",
+      "sha256": "51a3c32c85ef617b109c21ce842816d9f857ac40f053ee36532ac878cc431aef",
+      "bytes": 40767
+    },
+    {
+      "path": "deferred/database-bootstrap.json",
+      "sha256": "6de3c41d6598a2e81fc8a114c7922d99251a5786fd78488c0bb2458c8eaabf76",
+      "bytes": 302
+    },
+    {
+      "path": "deferred/pods/environment.json",
+      "sha256": "c052f97a45176ee4decfc2670893dac9c6553f0f5188d2f365bdf27f926c8cf9",
+      "bytes": 32391
+    },
+    {
+      "path": "deferred/pods/audit/audit.log",
+      "sha256": "d156ea6376832f03e3ebe1fd0cfc7aef0e84b7d6534f08853c787edacdf7e38c",
+      "bytes": 15011
+    },
+    {
+      "path": "deferred/pods/worker-a.log",
+      "sha256": "0e8aac8d1ff9f67500f73a4d812f0016872ad497fc985a3076e23418dfbfbc5c",
+      "bytes": 210
+    },
+    {
+      "path": "deferred/pods/worker-b.log",
+      "sha256": "deeb99b99d538a5f56acab07095f551b3443d68ff30cfa0e570663b39e4b3b88",
+      "bytes": 210
+    },
+    {
+      "path": "deferred/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "deferred/pods/http/results/client.json",
+      "sha256": "11f05ceae9935523767f9930d6b2ec56755e3780e826116be7586f64b490268b",
+      "bytes": 691
+    },
+    {
+      "path": "deferred/pods/http/results/journal.json",
+      "sha256": "ead07471d51699304afc014b8bf713ecdbd348b96778664c4330b2355fdc5acd",
+      "bytes": 93675
+    },
+    {
+      "path": "deferred/pods/http/results/client.sqlite",
+      "sha256": "e3e51e6d6845ca912c80c039fd3a988974a5ae12e603bade6d9f3f75d5d66193",
+      "bytes": 114688
+    },
+    {
+      "path": "deferred/pods/http/results/traffic.jsonl",
+      "sha256": "37c5544b37beb01cf3636bf653dbafd37d8ec29e27003c85f933da78abbf5759",
+      "bytes": 26174
+    },
+    {
+      "path": "deferred/pods/http/results/independent-observation.json",
+      "sha256": "20eb128bc2dbee9a15cc8f0f74b9d3d75f4420ee5cfa2146f779670544ea1828",
+      "bytes": 24973
+    },
+    {
+      "path": "deferred/pods/http/results/reconciliation.json",
+      "sha256": "6fa18839cde9f71d94312e4c0cc9b9e9817759545d92d7cc90799c32e649022b",
+      "bytes": 15756
+    },
+    {
+      "path": "bounded/run.json",
+      "sha256": "0875093cd2572e4ee884775e21764016b6b6ee232ff6628e361102acc1540c8f",
+      "bytes": 54269
+    },
+    {
+      "path": "bounded/results.xml",
+      "sha256": "21507044009c0fb812de979bf0bcceb4793fcf28ec33bb9c5a2f5d31fe044046",
+      "bytes": 433
+    },
+    {
+      "path": "bounded/runner.log",
+      "sha256": "77511d3b47e00959c73ca4ba712fac60954b736b308dd2b4749a9531c0cca48d",
+      "bytes": 45446
+    },
+    {
+      "path": "bounded/database-bootstrap.json",
+      "sha256": "a99f3766e5816775ba66b21ce7decc708ccbc3ca49faafc6e17b140d713a2f23",
+      "bytes": 302
+    },
+    {
+      "path": "bounded/pods/environment.json",
+      "sha256": "22a29d3caf1908aac0621c366006cfafd9e6243adab36160ddde779d453593c3",
+      "bytes": 65307
+    },
+    {
+      "path": "bounded/pods/audit/audit.log",
+      "sha256": "efc7e73ce573f895a99eb9a376d38ff2292d23a65061bcc0f38e9580dd8123e3",
+      "bytes": 15011
+    },
+    {
+      "path": "bounded/pods/worker-a.log",
+      "sha256": "30e61311d993d801ebf80e7aa93f77ff76fe4c3732635f07ce59298b386cde0c",
+      "bytes": 210
+    },
+    {
+      "path": "bounded/pods/worker-b.log",
+      "sha256": "3b2720113af749b8301e1042e685b79a9cdf0ac3155a4192968885c6eb8918f0",
+      "bytes": 210
+    },
+    {
+      "path": "bounded/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "bounded/pods/http/results/client.json",
+      "sha256": "0660aeeb7151b9a0607e172648cc856b54841b0dfff4e6aeb4d29d53a07d9e63",
+      "bytes": 27312
+    },
+    {
+      "path": "bounded/pods/http/results/journal.json",
+      "sha256": "654a27d103aa08ae2522a59b1836fc60d44c0892af71d42be1d08fea215cf656",
+      "bytes": 92511
+    },
+    {
+      "path": "bounded/pods/http/results/client.sqlite",
+      "sha256": "8abe0d547dd6788e25c6019ddff6dba17c6a3e660f88d2300bca788fa2a615d3",
+      "bytes": 114688
+    },
+    {
+      "path": "bounded/pods/http/results/traffic.jsonl",
+      "sha256": "8c72b384e4406f24c29b6b71b79d53a6394a4fd7c93e0b4c68986eda33c933f0",
+      "bytes": 31741
+    },
+    {
+      "path": "bounded/pods/http/results/independent-observation.json",
+      "sha256": "4e9509b4358ac86b2e78c24873bf7c2ebe27efed78c5b5fe185dbf49eabb235c",
+      "bytes": 24973
+    },
+    {
+      "path": "bounded/pods/http/results/reconciliation.json",
+      "sha256": "830594811b22a2246ae19f39038527c21d9bcc8e93636d70c760c2ca8043793e",
+      "bytes": 15743
+    },
+    {
+      "path": "crash-control/run.json",
+      "sha256": "4dd19433b33deb524aa591e1df3aacd6a0109168c6de9a65f926221cb0e4322e",
+      "bytes": 61429
+    },
+    {
+      "path": "crash-control/results.xml",
+      "sha256": "dfb2effd4665d161af2532897dc42c02ae0fe407e0eaef1271ddbbac139819be",
+      "bytes": 433
+    },
+    {
+      "path": "crash-control/runner.log",
+      "sha256": "4b0a72ba2c55a606980b82ff17f106495fdbbf8cfeefcb34e87f159b3e58dd5a",
+      "bytes": 51403
+    },
+    {
+      "path": "crash-control/database-bootstrap.json",
+      "sha256": "c4033ceca24917c8f5b95e8ea973a432817c1ebfc95e0a3132a5d24977f41cce",
+      "bytes": 302
+    },
+    {
+      "path": "crash-control/pods/environment.json",
+      "sha256": "223f73e4a86f0f33c36152ff809958922fdebd9d098c170eb947e49f0a45aace",
+      "bytes": 32329
+    },
+    {
+      "path": "crash-control/pods/audit/audit.log",
+      "sha256": "a48ff72e5ff32905396a503d1245892ca7bd244c71ca09152c7668d1c08f2057",
+      "bytes": 34862
+    },
+    {
+      "path": "crash-control/pods/owner-terminal-watch.jsonl",
+      "sha256": "d57be9d59d13c21fbf55c738f214a2037806b32d7148fe1271507b3a860f1611",
+      "bytes": 826
+    },
+    {
+      "path": "crash-control/pods/owner-terminal-watch.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "crash-control/pods/worker-b.log",
+      "sha256": "e315e73923482fb70f5f13dafaecd25925fa3d6ede6a4f3beb7e66be2fdb9819",
+      "bytes": 1694
+    },
+    {
+      "path": "crash-control/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "crash-control/pods/http/results/client.json",
+      "sha256": "18a2b5dfabb07aa1acb6be2de33fdd59dd986a84a712c13c18d205bb093f8ac5",
+      "bytes": 725
+    },
+    {
+      "path": "crash-control/pods/http/results/journal.json",
+      "sha256": "c984b329825dee44ccc154a21b8a7e2c1b60142a54e1ac8d2f29e4dc5aa651a3",
+      "bytes": 104609
+    },
+    {
+      "path": "crash-control/pods/http/results/client.sqlite",
+      "sha256": "88090fc79c8c5bdb10484fabd070df01a4ff7b975083cc3ff887f731f1f98a9d",
+      "bytes": 118784
+    },
+    {
+      "path": "crash-control/pods/http/results/traffic.jsonl",
+      "sha256": "177ed69c429c3232f082c78fbce03ece47ccf746d970156a3b1e14cc7c664f05",
+      "bytes": 32528
+    },
+    {
+      "path": "crash-control/pods/http/results/independent-observation.json",
+      "sha256": "5cbcea54d39c1599a8da9cfbfdd845a614e2a165d54da27cda9982855a3f3969",
+      "bytes": 24973
+    },
+    {
+      "path": "crash-control/pods/http/results/reconciliation.json",
+      "sha256": "b70ba55588655f184869c32e7811cc5c76f27ec6fde7527143866e58ae63c8f9",
+      "bytes": 15809
+    },
+    {
+      "path": "components.xml",
+      "sha256": "7633a007c3920aaed8f811370b01f650520d86922d34b4f7209172e49afa41ff",
+      "bytes": 1199
+    },
+    {
+      "path": "cleanup-verification.json",
+      "sha256": "ff677931a148750b3e464c6c072153972f1336279ce48dabf54cd2654a88bf48",
+      "bytes": 1959
+    }
+  ],
+  "qualification_issued": false,
+  "authorizes_execution": false,
+  "signed_operational_evidence": false,
+  "service_continuity": "NOT_QUALIFIED",
+  "limitations": [
+    "Normal ready-target v3 and owner-loss v2 have different fault models, not an identical-condition improvement comparison",
+    "One closed-loop run per case; retry delays change actual arrival timing; not a statistical SLO estimate",
+    "One local arm64 kind node and one isolated PG17.12 server with separate databases, not AWS-to-independent-onprem migration",
+    "Synthetic plan/bootstrap IdP/local file witness/shared fixture DB certificate, no production WORM, customer identity or release qualification",
+    "Final SQL consistency does not erase first-attempt errors, attempt exhaustion or post-load completion delays",
+    "Ready health and a matching target label do not imply zero route propagation time or permit target writes before activation",
+    "Some plan/gate evidence is synthetic fixture input; HANDOFF_COMPLETE and fixture availability.client_completion_wait=pass do not override the independently measured client outcome"
+  ],
+  "cleanup": {
+    "read_only_check": true,
+    "resources": [
+      {
+        "trial": "bounded",
+        "kind": "container",
+        "name": "sova-worker-http-3ad6363295ee486884afc172b058c75d",
+        "absent": true
+      },
+      {
+        "trial": "bounded",
+        "kind": "network",
+        "name": "sova-network-worker-http-3ad6363295ee486884afc172b058c75d",
+        "absent": true
+      },
+      {
+        "trial": "bounded",
+        "kind": "container",
+        "name": "sova-pod-4a1377f50cbc-control-plane",
+        "absent": true
+      },
+      {
+        "trial": "bounded",
+        "kind": "container",
+        "name": "sova-pod-4a1377f50cbc-http-client",
+        "absent": true
+      },
+      {
+        "trial": "crash-control",
+        "kind": "container",
+        "name": "sova-worker-http-c54e6b89d2e84023986359fb64b823d1",
+        "absent": true
+      },
+      {
+        "trial": "crash-control",
+        "kind": "network",
+        "name": "sova-network-worker-http-c54e6b89d2e84023986359fb64b823d1",
+        "absent": true
+      },
+      {
+        "trial": "crash-control",
+        "kind": "container",
+        "name": "sova-pod-2590b9bd5ba4-control-plane",
+        "absent": true
+      },
+      {
+        "trial": "crash-control",
+        "kind": "container",
+        "name": "sova-pod-2590b9bd5ba4-http-client",
+        "absent": true
+      },
+      {
+        "trial": "deferred",
+        "kind": "container",
+        "name": "sova-worker-http-136d9332ec2043e589ea51a45f0873ca",
+        "absent": true
+      },
+      {
+        "trial": "deferred",
+        "kind": "network",
+        "name": "sova-network-worker-http-136d9332ec2043e589ea51a45f0873ca",
+        "absent": true
+      },
+      {
+        "trial": "deferred",
+        "kind": "container",
+        "name": "sova-pod-d505c75a0c96-control-plane",
+        "absent": true
+      },
+      {
+        "trial": "deferred",
+        "kind": "container",
+        "name": "sova-pod-d505c75a0c96-http-client",
+        "absent": true
+      }
+    ],
+    "all_run_owned_containers_and_networks_absent": true,
+    "cached_images_intentionally_retained": true
+  },
+  "previous_evidence": {
+    "document": "docs/evidence/database-bootstrap-order-20261119.json",
+    "sha256": "b3daf2d4bbcd8a7cb7087b82ea4be783b865da31cd593b1d7fa6b6e4fc0d23e6",
+    "superseded_or_erased": false,
+    "relationship": "Separate ready-target normal cutover follow-up; original worker-loss errors and earlier bootstrap timeout retained in historical documents"
+  }
+}

@@ -53,3 +53,5 @@
 [개발 기록](development/database-bootstrap-order-2026-11-19.md) · [검증 증거](evidence/database-bootstrap-order-20261119.json).
 
 대상은 로컬 kind 한 노드와 같은 전용 PostgreSQL 서버의 별도 DB다. AWS→독립 온프렘 운영 이전, 기업 인증·WORM 저장소·실제 고객 부하 자격은 별도다.
+
+후속으로 [준비된 목적지의 정상 전환](ready-target-cutover.md)을 별도 v3 프로필로 분리했다. 위 세 경우의 장애 주입·오류·복구 결과는 그대로 보존하며 정상 전환 결과로 바꾸지 않는다.
