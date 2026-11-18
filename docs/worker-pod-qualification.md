@@ -77,6 +77,6 @@ PostgreSQL은 `verify-full`과 생성한 클라이언트 인증서를 사용했�
 - DB fixture 역할들은 인증서를 공유하고 업무 어댑터는 전용 서버의 관리자 접속을 쓴다. 고객별 최소 DB 권한·운영 workload identity의 자격을 부여하지 않는다.
 - NetworkPolicy·외부 통신 거부·노드 장애·기존 세션·부하/SLO·다중 노드 HA·생산 Deployment/PDB·amd64·공급망 취약점/서명 검증은 범위 밖이다.
 
-다음은 실제 HTTP 앱과 안정 진입점에 지속 요청을 보내며 같은 중단·복구 구간의 오류·지연·멱등 처리·데이터를 함께 대조하는 것이다. EndpointSlice Ready만으로 업무 가용성을 PASS 처리하지 않아야 한다.
+후속 [실제 HTTPS 업무 요청 시험](worker-pod-http-qualification.md)에서 고정 시험 Service와 실제 앱의 지속 요청·오류·지연·멱등 결과를 대조했다. 데이터는 복구됐지만 최초 요청 오류가 있어 무중단으로 판정하지 않았다. EndpointSlice Ready만으로 업무 가용성을 PASS 처리하지 않아야 한다.
 
 [공개 증거 요약](evidence/worker-pod-qualification-20261118.json) · [개발 기록](development/worker-pod-qualification-2026-11-18.md).
