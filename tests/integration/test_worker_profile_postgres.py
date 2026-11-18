@@ -16,7 +16,9 @@ pytestmark = [pytest.mark.postgres, pytest.mark.postgres_tls]
 def test_native_worker_profile_preserves_plan_checks_and_real_data(postgres_database, http_business, tmp_path, mode):
     with service_journey(postgres_database, http_business, tmp_path) as h:
         admission = h.approve_and_admit(h.register_forward(), 'profile-approval')
-        worker, p = h.worker(), StepProfiler()
+        worker = h.worker()
+        p = StepProfiler(control_connect=h.connect, business_connect=h.business['connect'],
+                         business_connect_as=h.business['connect_as'])
         before = worker._step.__func__
         started = perf_counter_ns()
         try:
@@ -47,6 +49,10 @@ def test_native_worker_profile_preserves_plan_checks_and_real_data(postgres_data
             assert {'db.connect', 'db.cursor.execute', 'db.transaction.enter', 'db.transaction.exit',
                     'control.evidence.prove', 'control.verifier.resolve', 'control.authority.advance',
                     'probe.restore_drill', 'probe.content_equal', 'probe.single_writer'} <= {f['function'] for f in functions}
+            for step in report['steps']:
+                calls = {f['function']: f['calls'] for f in step['functions']}
+                assert calls.get('db.connect', 0) == sum(calls.get(name, 0) for name in (
+                    'factory.control.connect', 'factory.business.admin', 'factory.business.role'))
         else:
             assert not report['steps'] and not report['complete']
         h.record('worker-step-' + mode, mode=mode, worker_wall_ms=round(wall, 3), profile=report,

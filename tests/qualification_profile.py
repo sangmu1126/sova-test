@@ -48,11 +48,21 @@ def selected_functions():
 
 
 class StepProfiler:
-    def __init__(self):
+    def __init__(self, *, control_connect=None, business_connect=None, business_connect_as=None):
         self.rows = []
         self.owner = threading.get_ident()
         self.active = False
         self.selected = selected_functions()
+        for label, function in [('factory.control.connect', control_connect),
+                                ('factory.business.admin', business_connect),
+                                ('factory.business.role', business_connect_as)]:
+            if function is None:
+                continue
+            if not inspect.isfunction(function) or inspect.isgeneratorfunction(function) \
+                    or inspect.iscoroutinefunction(function) or function.__code__ in self.selected:
+                raise ContractError('Distinct synchronous connection factory code required')
+            # Only the code identity and fixed category are retained, never closures/DSNs.
+            self.selected[function.__code__] = label
 
     def measure(self, kind, function, *args, **kwargs):
         if kind not in STEPS or self.owner != threading.get_ident() or self.active or sys.getprofile() is not None:

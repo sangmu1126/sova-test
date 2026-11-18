@@ -46,6 +46,21 @@ def test_instance_wrapper_is_removed_on_context_failure_without_changing_class_m
     assert worker._step.__func__ is original and HandoffWorker._step is original
 
 
+def test_connection_factory_categories_export_code_counts_without_arguments_or_closures():
+    secret = 'private-factory-dsn'
+    def control():
+        return secret
+    def business():
+        return secret
+    p = StepProfiler(control_connect=control, business_connect=business)
+    p.measure('copy_content', lambda: (control(), control(), business()))
+    rows = {f['function']: f['calls'] for f in p.rows[0]['functions']}
+    assert rows == {'factory.control.connect': 2, 'factory.business.admin': 1}
+    assert secret not in json.dumps(p.rows) and 'business()' not in json.dumps(p.rows)
+    with pytest.raises(ContractError):
+        StepProfiler(control_connect=control, business_connect=control)
+
+
 @pytest.mark.parametrize('invalid', ['unknown', 'another-thread', 'nested', 'existing-hook'])
 def test_conflicting_or_unrecognized_observers_do_not_run_the_operation(invalid):
     p = StepProfiler()
