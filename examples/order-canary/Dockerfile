@@ -1,11 +1,11 @@
 # Build ONLY with the allowlisted context from build_canary.py, never repo root.
-FROM python:3.12.16-slim-trixie@sha256:c61cffc3bacb94ed026ff8b45d5114b7693dd0420baca0a1ace0e3d0ce9035fd
+FROM python:3.12.16-alpine3.24@sha256:218ad6ba54faeb7f1089f391c597a80c9d69ca88e561f71ebd77fb452d39249b
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1 AWS_EC2_METADATA_DISABLED=true
 WORKDIR /app
 COPY requirements.lock /app/requirements.lock
 RUN python -m pip install --no-cache-dir --only-binary=:all: --require-hashes -r requirements.lock \
-    && groupadd --gid 10001 canary \
-    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin canary
+    && addgroup -g 10001 canary \
+    && adduser -D -H -u 10001 -G canary -s /sbin/nologin canary
 COPY --chown=10001:10001 sova/ /app/sova/
 USER 10001:10001
 EXPOSE 8080
