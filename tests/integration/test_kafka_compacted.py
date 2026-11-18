@@ -68,6 +68,21 @@ def latest(b, topic, group=None):
     return {k: v for k, v in state.items() if v is not None}
 
 
+def hold_compaction(b, topic, hold):
+    """``hold``: no record of ``topic`` is compacted for an hour after it is
+    written; otherwise that setting is removed again (the topic's configuration
+    as it was staged)."""
+    from confluent_kafka.admin import AlterConfigOpType, ConfigEntry, ConfigResource
+    from confluent_kafka.admin import ResourceType
+
+    entry = (ConfigEntry("min.compaction.lag.ms", "3600000",
+                         incremental_operation=AlterConfigOpType.SET) if hold else
+             ConfigEntry("min.compaction.lag.ms", "", incremental_operation=AlterConfigOpType.DELETE))
+    resource = ConfigResource(ResourceType.TOPIC, topic, incremental_configs=[entry])
+    for future in b["admin"].incremental_alter_configs([resource]).values():
+        future.result()
+
+
 def rewrite(b):
     """The orders rewritten many times (8 KiB values) and two removed."""
     producer = Producer({**b["as_user"]("app"), "enable.idempotence": True})
@@ -157,20 +172,19 @@ def test_compaction_after_the_copy_does_not_change_the_verdict(kafka_compacted_b
     b = kafka_compacted_business
     world = KafkaWorld(b)
     apply(world.adapter(), "stage_target")
-    # The source compacts its closed segments on its own schedule. If that ran
-    # before the copy, nothing is left to compact after it: write and copy
-    # again (the earlier active segment then closes, dirty) until it does.
-    for attempt in range(3):
+    # The source compacts its closed segments on its own schedule, often before
+    # a copy ends - then nothing is left to compact after it (T12, T21). The
+    # rewrite is held from compaction until the copy is taken, then released.
+    hold_compaction(b, b["names"]["src"], True)
+    try:
         rewrite(b)
         for action in ("pause_admission", "fence_source_writes", "copy_content"):
             apply(world.adapter(), action)
         copied = compacted_away(b, b["names"]["src"])
-        deadline = time.monotonic() + 90
-        while compacted_away(b, b["names"]["src"]) <= copied and time.monotonic() < deadline:
-            time.sleep(5)  # the source compacts on its own
-        if compacted_away(b, b["names"]["src"]) > copied:
-            break
-        world.reopen_source()  # the writers again, for the next rewrite
-    else:
-        raise AssertionError("the source did not compact after any of three copies")
+    finally:
+        hold_compaction(b, b["names"]["src"], False)
+    deadline = time.monotonic() + 120
+    while compacted_away(b, b["names"]["src"]) <= copied:
+        assert time.monotonic() < deadline, "the source did not compact after the copy"
+        time.sleep(5)  # the source compacts on its own
     assert readback(world.adapter(), "copy_content") == EffectStatus.APPLIED
