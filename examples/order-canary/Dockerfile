@@ -4,9 +4,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
 # Exact vendor-fixed version; apk verifies repository signatures. A missing
 # patch fails the build rather than suppressing the scanner's findings.
-RUN apk add --no-cache 'krb5-libs=1.22.3-r0'
+RUN apk add --no-cache 'krb5-libs=1.22.3-r0' 'zlib=1.4-r0'
 COPY requirements.lock /app/requirements.lock
 RUN python -m pip install --no-cache-dir --only-binary=:all: --require-hashes -r requirements.lock \
+    && python -m pip uninstall --yes pip \
     && addgroup -g 10001 canary \
     && adduser -D -H -u 10001 -G canary -s /sbin/nologin canary
 COPY --chown=10001:10001 sova/ /app/sova/
