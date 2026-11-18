@@ -25,12 +25,17 @@ def test_real_refusal_has_optional_wait_hint_but_never_becomes_authoritative_abs
                "x-qualification-run": scope["run_id"], "idempotency-key": "one-order"}
     body, params = {"customer": "backpressure-customer", "amount": "12.34"}, {
         "customer": "backpressure-customer", "idempotency_key": "one-order"}
+    with b["connect_as"](b["names"]["src"], b["app"]) as conn:
+        assert conn.execute("SELECT 1").fetchone() == (1,)
     with b["connect"](b["names"]["src"]) as conn:
         conn.execute(sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC, {}").format(
             sql.Identifier(b["names"]["src"]), sql.Identifier(b["app"])))
-    with pytest.raises(psycopg.errors.InsufficientPrivilege) as denied:
+        assert conn.execute("SELECT has_database_privilege(%s,%s,'CONNECT')",
+                            (b["app"], b["names"]["src"])).fetchone() == (False,)
+    # libpq startup failures may expose OperationalError without SQLSTATE;
+    # don't invent a query-error classification for a connection rejection.
+    with pytest.raises(psycopg.Error) as denied:
         b["connect_as"](b["names"]["src"], b["app"])
-    assert denied.value.sqlstate == "42501"
     app = application(b, Route(b["names"]["src"]), scope, token, lookup_retry_after_seconds=hint)
     with serve(app) as origin, httpx.Client(base_url=origin, headers=headers, trust_env=False,
                                            follow_redirects=False, timeout=2) as client:
@@ -59,7 +64,9 @@ def test_real_refusal_has_optional_wait_hint_but_never_becomes_authoritative_abs
         assert conn.execute("SELECT count(*) FROM orders WHERE customer LIKE 'customer-%'").fetchone() == (50,)
     if directory := os.environ.get("SOVA_TEST_QUALIFICATION_ARTIFACTS"):
         (Path(directory) / ("lookup-contract-legacy.json" if hint is None else "lookup-contract-hinted.json")).write_text(
-            json.dumps({"injected_actual_database_connect_refusal": "42501", "post_status": post.status_code,
+            json.dumps({"app_positive_control_before_refusal": True, "actual_connect_privilege_while_refused": False,
+                "connect_refusal_exception_class": type(denied.value).__name__, "connect_refusal_sqlstate": denied.value.sqlstate,
+                "post_status": post.status_code,
                 "post_retry_after": post.headers.get("retry-after"), "lookup_status": lookup.status_code,
                 "lookup_retry_after": lookup.headers.get("retry-after"), "unauthenticated": 401,
                 "wrong_tenant": 403, "missing_after_restored_access": 404, "business_conflict": 409,
