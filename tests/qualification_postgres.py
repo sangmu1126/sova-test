@@ -194,7 +194,8 @@ def main():
         if args.suite == "pod-http":
             tests = ["tests/integration/test_worker_pod_http_journey.py"]
             measured_sources.extend([root / tests[0], root / "tests/qualification_pod_http.py",
-                                     root / "tests/qualification_order_pod.py", root / "tests/qualification_load_client.py"])
+                                     root / "tests/qualification_order_pod.py", root / "tests/qualification_load_client.py",
+                                     root / "examples/qualification/orders-pod-https-postgres-v1.json"])
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}

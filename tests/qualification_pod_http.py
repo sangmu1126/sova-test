@@ -57,7 +57,7 @@ class HttpTraffic:
         self.started = False
         self.run_id, self.token = "traffic-" + uuid4().hex, uuid4().hex
         self.root = Path(__file__).resolve().parents[1]
-        self.profile_digest = hashlib.sha256((self.root / "examples/qualification/orders-http-postgres-v1.json").read_bytes()).hexdigest()
+        self.profile_digest = hashlib.sha256((self.root / "examples/qualification/orders-pod-https-postgres-v1.json").read_bytes()).hexdigest()
         self.scope = {"version": 1, "run_id": self.run_id, "tenant_id": journey.tenant, "profile_digest": self.profile_digest}
 
     def __enter__(self):
@@ -147,6 +147,7 @@ class HttpTraffic:
         assert comparison["data_integrity"] == "SATISFIED"
         assert comparison["counts"]["confirmed_requests"] == comparison["counts"]["logical_requests"] > 3
         assert comparison["counts"]["unfinished_attempts"] == 0
+        assert client["initial_failures"] > 0, "The deliberately interrupted route had no recorded first-attempt failure"
         assert self.env.object("service", "orders")["metadata"]["uid"] == self.service_uid
         (self.results / "independent-observation.json").write_text(json.dumps(observed, indent=2) + "\n")
         (self.results / "reconciliation.json").write_text(json.dumps(comparison, indent=2) + "\n")

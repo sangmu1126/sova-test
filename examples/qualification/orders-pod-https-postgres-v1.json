@@ -1,0 +1,46 @@
+{
+  "kind": "MigrationAcceptanceProfileDraft",
+  "version": 1,
+  "profile_id": "orders-pod-https-postgres-v1",
+  "status": "DRAFT",
+  "scope": "local kind worker fault recovery, HTTPS business requests and independent SQL reconciliation; not operational qualification",
+  "business": {
+    "schema": "tests/postgres_business.py",
+    "tables": ["orders", "work_items", "idempotency_results"],
+    "identity": ["tenant", "customer", "idempotency_key"],
+    "expected_result": "confirmed",
+    "expected_work_items": 1,
+    "historical_orders": 50
+  },
+  "transports": {
+    "http": "HTTPS through one run-owned Service NodePort; generated CA and hostname validation",
+    "negative_tls_checks": ["wrong_ca", "wrong_hostname"],
+    "database": "PostgreSQL verify-full with shared run-owned fixture client certificate",
+    "connection_model": "new TLS/TCP connection per attempt; existing persistent sessions are not qualified"
+  },
+  "execution": {
+    "driver": "actual sova-service run-worker in two restricted Pods",
+    "strategy": "offline-copy",
+    "route": "registered kubernetes_service selector and endpoints",
+    "fault": "pause actual owner task, wait for real lease expiry, confirm live-owner refusal, stop old Pod normally, recover by readback",
+    "worker_cli_in_real_pods": true,
+    "operational_api_worker_acceptance": false,
+    "registration_and_identity_provider": "synthetic fixtures; API on host"
+  },
+  "load": {
+    "model": "one closed-loop client",
+    "think_time_seconds": 0.2,
+    "request_timeout_seconds": 1.0,
+    "maximum_load_seconds": 120,
+    "retries_during_initial_load": false,
+    "recovery": "explicit same-process lookup; retry same intent only after 404; every attempt retained"
+  },
+  "slo": {
+    "max_client_completion_wait_ms": null,
+    "max_initial_error_ratio": null,
+    "max_recovery_ms": null,
+    "production_load_and_repetition_profile": null
+  },
+  "qualification_issued": false,
+  "authorizes_execution": false
+}
