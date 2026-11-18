@@ -128,7 +128,7 @@ def main():
     parser.add_argument("--image", required=True, help="Full cached sha256 image ID; no tag or automatic pull")
     parser.add_argument("--security-source", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
-    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority"), default="requests",
+    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap"), default="requests",
                         help="MQ-02, service, runtime API, or worker process/fault qualification checks")
     parser.add_argument("--http-mode", choices=("cold_deferred", "prepared_deferred", "prepared_bounded"))
     args = parser.parse_args()
@@ -141,11 +141,11 @@ def main():
     root = Path(__file__).resolve().parents[1]
     args.artifacts.mkdir(parents=True, mode=0o700, exist_ok=False)
     run = {"requests": "mq02-", "service": "mq03-", "runtime": "mq03-runtime-",
-           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-"}[args.suite] + uuid4().hex
+           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-", "bootstrap": "database-bootstrap-"}[args.suite] + uuid4().hex
     container, network = "sova-" + run, "sova-network-" + run
     report = {"run_id": run, "image_id": args.image, "shared_environment_used": False,
               "qualification_issued": False, "network_created": False, "container_created": False,
-              "suite": args.suite}
+              "suite": args.suite, "http_mode": args.http_mode}
     # The worker regression fixtures leave their many tiny databases for the
     # run-owned container to dispose of. Account for template DBs and WAL, not
     # only business rows; never reset a shared database to make room.
@@ -214,6 +214,12 @@ def main():
                                  root / "src/sova/adapters/postgres_handoff_authority.py",
                                  root / "src/sova/adapters/file_authority_witness.py",
                                  root / "tests/qualification_diagnostics.py"])
+    if args.suite == "bootstrap":
+        tests = ["tests/integration/test_database_bootstrap.py",
+                 "tests/integration/test_order_service_journey.py"]
+        measured_sources.extend([*(root / t for t in tests), root / "tests/qualification_service.py",
+                                 root / "tests/qualification_diagnostics.py", root / "tests/postgres_business.py",
+                                 root / "tests/contract_world.py", root / "tests/control_plane_support.py"])
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}

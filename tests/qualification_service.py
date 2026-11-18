@@ -6,7 +6,7 @@ HTTP. The unchanged HandoffWorker executes the admitted database effects.
 """
 
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 import json
 import os
@@ -41,8 +41,48 @@ from sova.service.postgres_execution import postgres_factory
 from sova.service.worker import AdapterCatalog, HandoffWorker
 
 
+@dataclass(frozen=True)
+class ObservedDatabaseVersions:
+    source_database: str
+    target_database: str
+    source_version: str
+    target_version: str
+    source_tls: bool
+    target_tls: bool
+    observed_at: datetime
+
+    @property
+    def document(self):
+        return {"source_database": self.source_database, "target_database": self.target_database,
+                "source_version": self.source_version, "target_version": self.target_version,
+                "source_tls": self.source_tls, "target_tls": self.target_tls,
+                "observed_at": self.observed_at.isoformat(),
+                "qualification_issued": False, "authorizes_execution": False}
+
+
+def observe_database_versions(business):
+    """Two real connections, no retries or timeout overrides; metadata only."""
+    versions, encryption = {}, {}
+    for side, key in (("source", "src"), ("target", "tgt")):
+        expected = business["names"][key]
+        with business["connect"](expected) as conn:
+            database, version, encrypted = conn.execute(
+                "SELECT current_database(),current_setting('server_version'),"
+                "coalesce((SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()),false)").fetchone()
+        if database != expected:
+            raise ValueError("Version observation belongs to another fixture database")
+        versions[side], encryption[side] = version.split()[0], encrypted
+    return ObservedDatabaseVersions(business["names"]["src"], business["names"]["tgt"],
+        versions["source"], versions["target"], encryption["source"], encryption["target"], datetime.now(UTC))
+
+
 class ServiceJourney:
-    def __init__(self, postgres_database, business, directory):
+    def __init__(self, postgres_database, business, directory, *, observed_versions=None):
+        observed = observe_database_versions(business) if observed_versions is None else observed_versions
+        if (not isinstance(observed, ObservedDatabaseVersions)
+                or (observed.source_database, observed.target_database) !=
+                   (business["names"]["src"], business["names"]["tgt"])):
+            raise ValueError("Database version observation scope does not match this fixture")
         dsn, role = postgres_database
         self.connect = lambda: psycopg.connect(dsn, user=role)
         self.clock = lambda: datetime.now(UTC)
@@ -54,11 +94,8 @@ class ServiceJourney:
                                  contract=ServiceContract.from_document(data))
         # Directional test profiles must at least name the actual engine
         # versions, even though inventory/qualification remain synthetic.
-        self.database_versions = {}
-        for side, database in (("source", "src"), ("target", "tgt")):
-            with business["connect"](business["names"][database]) as conn:
-                version = conn.execute("SHOW server_version").fetchone()[0].split()[0]
-            self.database_versions[self.world[side].profile_id] = version
+        self.database_versions = {self.world["source"].profile_id: observed.source_version,
+                                  self.world["target"].profile_id: observed.target_version}
         self.bind_database_versions(self.world)
         self.app = self.world["contract"].service_id
         witness = FileAuthorityWitness(directory / "authority.log", tenant_id=self.tenant)
@@ -212,8 +249,8 @@ class ServiceJourney:
 
 
 @contextmanager
-def service_journey(postgres_database, business, directory):
-    journey = ServiceJourney(postgres_database, business, directory)
+def service_journey(postgres_database, business, directory, *, observed_versions=None):
+    journey = ServiceJourney(postgres_database, business, directory, observed_versions=observed_versions)
     app = create_app(journey.plane, journey.authenticate)
     artifacts = os.environ.get("SOVA_TEST_QUALIFICATION_ARTIFACTS")
     if artifacts:

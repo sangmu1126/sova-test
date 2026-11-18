@@ -16,7 +16,7 @@ import re
 import pytest
 from qualification_pods import (NAMESPACE, SERVICE_SOURCE, app_pod, command, owned_cluster,
                                 prepare_workload, wait_for, worker_pod)
-from qualification_service import service_journey
+from qualification_service import observe_database_versions, service_journey
 from qualification_diagnostics import capture_state
 from test_order_http_handoff import http_business as http_business  # noqa: F401
 
@@ -43,8 +43,13 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
     if not os.environ.get("SOVA_TEST_QUALIFICATION_RUN"):
         pytest.skip("Requires the dedicated --suite pods runner")
     artifacts = Path(os.environ["SOVA_TEST_QUALIFICATION_ARTIFACTS"])
+    # Observe fixture metadata before the expensive cluster bootstrap. These
+    # are actual SQL results, not supplied engine-version strings or retries.
+    observed_versions = observe_database_versions(http_business)
+    (artifacts / "database-bootstrap.json").write_text(json.dumps(observed_versions.document, indent=2) + "\n")
     with owned_cluster(artifacts / "pods") as env, ExitStack() as resources:
-        with service_journey(postgres_database, http_business, env.witness) as h:
+        env.report["database_bootstrap"] = observed_versions.document
+        with service_journey(postgres_database, http_business, env.witness, observed_versions=observed_versions) as h:
             # Preserve status-only host observations even if a fail-closed read
             # aborts the journey. No tokens or response bodies are recorded.
             env.report["control_plane_http_calls"] = h.trace
