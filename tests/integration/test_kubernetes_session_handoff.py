@@ -4,7 +4,10 @@ are refused, and new ones after the route reach the target. Counted by the
 kernel of each source Pod, not by the server itself."""
 
 from datetime import UTC, datetime
+import json
+import os
 import threading
+import time
 
 from adapter_conformance import apply, command
 import pytest
@@ -13,7 +16,7 @@ from volume_business import PYTHON, UID
 
 from sova.adapters.kubernetes.handoff_controls import KubernetesServiceRoute
 from sova.adapters.kubernetes_session_handoff import KubernetesSessionHandoffAdapter, SessionSide
-from sova.domain.contracts import EffectStatus
+from sova.domain.contracts import ContractError, EffectStatus
 
 pytestmark = pytest.mark.kubernetes
 HANDOFF = ("stage_target", "pause_admission", "fence_source_writes", "copy_content",
@@ -99,3 +102,36 @@ def test_a_source_started_again_reads_back_as_not_fenced(session_business):
     assert observe(a, "fence_source_writes").status == EffectStatus.APPLIED
     b["run"]("scale", "deployment/game-source", "--replicas=1")
     assert observe(a, "fence_source_writes").status == EffectStatus.UNKNOWN
+
+
+def test_staging_behind_a_service_measures_whether_open_connections_survive(session_business):
+    """A pause behind a Service relies on open connections flowing on after the
+    selector moves. Staging measures it with a connection of its own: kube-proxy
+    keeps them; where the cluster drops them (``SOVA_TEST_ROUTE_FLOWS=dropped``:
+    GKE Dataplane V2, measured) staging refuses the unit before a pause could
+    cut a session. Nothing of the check stays behind."""
+    b = session_business
+    a = adapter(b)
+    if os.environ.get("SOVA_TEST_ROUTE_FLOWS") == "dropped":
+        with pytest.raises(ContractError, match="Route it through a Gateway"):
+            apply(a, "stage_target")
+        seen = observe(a, "stage_target")
+        assert seen.status == EffectStatus.UNKNOWN
+        assert seen.evidence["route_flows"]["survive"] is False, seen.evidence
+    else:
+        apply(a, "stage_target")
+        seen = observe(a, "stage_target")
+        assert seen.status == EffectStatus.APPLIED, seen.evidence
+        flows = seen.evidence["route_flows"]
+        assert flows["survive"] is True and flows["exchanges_after_move"] >= 8, flows
+        apply(a, "stage_target")  # a fresh measurement is taken once, not again
+        assert observe(a, "stage_target").evidence["route_flows"]["at"] == flows["at"]
+    print("route flows:", json.dumps(seen.evidence["route_flows"]))
+    deadline = time.monotonic() + 60
+    while True:
+        left = [line for line in b["run"]("get", "pods,services", "-o", "name").split()
+                if "sova-flow-" in line]
+        if not left or time.monotonic() > deadline:
+            break
+        time.sleep(1)
+    assert not left, left

@@ -185,10 +185,12 @@ print(json.dumps({"sessions": sorted(results, key=lambda r: r["id"])}), flush=Tr
 '''
 
 RULES = [
-    {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]},
+    # pods create/delete and services create/delete: the Service dataplane check
+    {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list", "create", "delete"]},
     {"apiGroups": [""], "resources": ["pods/ephemeralcontainers"], "verbs": ["patch"]},
     {"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]},
-    {"apiGroups": [""], "resources": ["services"], "verbs": ["get", "patch"]},
+    {"apiGroups": [""], "resources": ["services"],
+     "verbs": ["get", "patch", "create", "delete"]},
     {"apiGroups": ["discovery.k8s.io"], "resources": ["endpointslices"], "verbs": ["list"]},
     {"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get", "patch"]},
 ]

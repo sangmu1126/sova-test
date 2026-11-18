@@ -247,6 +247,28 @@ class KubernetesVolumeControls(KubernetesHandoffControls):
                 return found
         raise ContractError("Too many pods to decide")
 
+    def create_check_service(self, name, *, selector, port, labels):
+        """A ClusterIP Service of a fixed shape, for a measurement of the cluster's
+        own Service dataplane (one TCP port, an equality selector)."""
+        if type(port) is not int or not 1 <= port <= 65535:
+            raise ContractError("A TCP port required")
+        body = {"apiVersion": "v1", "kind": "Service",
+                "metadata": {"name": _name(name), "labels": _selector(labels)},
+                "spec": {"type": "ClusterIP", "selector": _selector(selector),
+                         "ports": [{"name": "check", "port": port, "targetPort": port,
+                                    "protocol": "TCP"}]}}
+        return self._request("POST", self._ns("/api/v1", "services"), {}, timeout=_TIMEOUT,
+                             body=json.dumps(body).encode(), content_type="application/json",
+                             accept=(201,))
+
+    def delete_service(self, name):
+        try:
+            self._request("DELETE", self._ns("/api/v1", "services", name), {},
+                          timeout=_TIMEOUT, accept=(200, 202))
+        except KubernetesRequestRefused as refused:
+            if refused.status != 404:
+                raise
+
     def create_pod(self, body):
         return self._request("POST", self._ns("/api/v1", "pods"), {}, timeout=_TIMEOUT,
                              body=json.dumps(body).encode(), content_type="application/json",

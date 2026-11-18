@@ -8,7 +8,11 @@ serve at the same time, so the sessions are drained, not moved:
 * Pausing admission takes the source Pods out of the route and then waits for
   the sessions already open to end. Behind a Service the selector moves to a
   side that has no Pods (a new connection is refused at once; connections
-  already established keep flowing on the kernel's connection tracking).
+  already established keep flowing on the kernel's connection tracking -
+  where the cluster's Service dataplane keeps them: GKE Dataplane V2 drops
+  them, measured. So staging a unit behind a Service measures it first, with
+  a connection of its own (``flow_check``), and refuses the unit if open
+  connections do not survive: route it through a Gateway there).
   Behind a Gateway API route the rule is left without a backend (the Gateway
   answers new requests with an error; the proxy keeps the upstream of streams
   already open). Either way, what a drain needs.
@@ -34,10 +38,13 @@ serve at the same time, so the sessions are drained, not moved:
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import hashlib
 import json
 import time
 
 from sova.adapters.evidence_bounds import bounded
+from sova.adapters.kubernetes.flow_check import ServiceFlowCheck
+from sova.adapters.kubernetes.handoff_controls import KubernetesServiceRoute
 from sova.adapters.kubernetes.volume_agents import _IMAGE
 from sova.adapters.kubernetes.volume_controls import (
     KubernetesVolumeControls,
@@ -53,6 +60,8 @@ ACTIONS = frozenset({"stage_target", "verify_return_target", "start_sync", "paus
 NOTHING_DURABLE = frozenset({"start_sync", "copy_content", "apply_final_changes",
                              "verify_final_state"})
 OBSERVER = "sova-sessions"
+ROUTE_FLOWS = "sova.dev/route-flows-measured"
+FLOWS_FRESH_SECONDS = 3600.0  # a measurement older than this is taken again
 PAUSED_AT = "sova.dev/admission-paused-at"
 FRESH_SECONDS = 15.0
 
@@ -134,6 +143,8 @@ class KubernetesSessionHandoffAdapter:
         self.drain_seconds, self.on_timeout = float(drain_seconds), on_timeout
         self.app_replicas = app_replicas
         self.settle_seconds, self.start_seconds = settle_seconds, start_seconds
+        # A pause behind a Service relies on the cluster's dataplane: measured.
+        self.measure_flows = isinstance(route, KubernetesServiceRoute)
 
     # -- EffectAdapter -------------------------------------------------------
     def validate(self, command):
@@ -233,13 +244,51 @@ class KubernetesSessionHandoffAdapter:
         return seen["established"], {"pod": name, "established": seen["established"],
                                      "peers": seen["peers"][:5]}
 
+    def _flows(self):
+        """The recorded measurement of the Service dataplane, or None."""
+        found, _ = self._workload("target")
+        note = ((found.get("metadata") or {}).get("annotations") or {}).get(ROUTE_FLOWS)
+        try:
+            record = json.loads(note) if note else None
+            age = (datetime.now(UTC) - datetime.fromisoformat(record["at"])).total_seconds()
+        except (ValueError, KeyError, TypeError):
+            return None
+        return {**record, "age_seconds": round(age)}
+
+    def _measure_flows(self):
+        label = hashlib.sha256(self.adapter_id.encode()).hexdigest()[:8]
+        survive, detail = ServiceFlowCheck(self.sides["source"].controls, image=self.image,
+                                           run_as=self.run_as, label=label,
+                                           start_seconds=self.start_seconds).measure()
+        record = {"at": datetime.now(UTC).isoformat(), "survive": survive, **detail}
+        found, _ = self._workload("target")
+        self.sides["target"].controls.annotate_workload(
+            *self.sides["target"].app, found["metadata"]["resourceVersion"], ROUTE_FLOWS,
+            json.dumps(record, separators=(",", ":")))
+        return record
+
     # -- actions ---------------------------------------------------------------
     def _stage_target(self):
         self._scale("target", 0)
         self._wait(lambda: self._stopped("target")[0], self.settle_seconds)
+        if self.measure_flows:
+            record = self._flows()
+            if record is None or record["age_seconds"] > FLOWS_FRESH_SECONDS:
+                record = self._measure_flows()
+            if record.get("survive") is not True:
+                raise ContractError(
+                    "On this cluster a connection established through a Service does not "
+                    "survive its selector moving (measured): pausing this unit behind a "
+                    "Service would cut its open sessions. Route it through a Gateway.")
 
     def _check_stage_target(self):
-        return self._stopped("target")
+        stopped, detail = self._stopped("target")
+        if not self.measure_flows:
+            return stopped, detail
+        record = self._flows()
+        fresh = record is not None and record["age_seconds"] <= FLOWS_FRESH_SECONDS
+        return stopped and fresh and record.get("survive") is True, {
+            **detail, "route_flows": record}
 
     def _verify_return_target(self):
         return None  # verification only: the readback is the check
