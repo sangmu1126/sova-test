@@ -18,6 +18,7 @@ import pytest
 from qualification_pods import (NAMESPACE, SERVICE_SOURCE, app_pod, command, owned_cluster,
                                 prepare_workload, wait_for, worker_pod)
 from qualification_service import service_journey
+from qualification_diagnostics import capture_state
 from test_order_http_handoff import http_business as http_business  # noqa: F401
 
 from sova.adapters.file_authority_witness import FileAuthorityWitness
@@ -48,6 +49,7 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
             # Preserve status-only host observations even if a fail-closed read
             # aborts the journey. No tokens or response bodies are recorded.
             env.report["control_plane_http_calls"] = h.trace
+            resources.callback(capture_state, h, env)
             # Both actual CLI workers and the host API use this fixture witness.
             h.settings = replace(h.settings, witness_for=lambda tenant: FileAuthorityWitness(
                 env.witness / (tenant + ".log"), tenant_id=tenant))

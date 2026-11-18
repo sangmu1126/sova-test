@@ -190,7 +190,7 @@ def main():
     if args.suite in ("pods", "pod-http"):
         tests = ["tests/integration/test_worker_pod_journey.py"]
         measured_sources.extend([root / "tests/qualification_pods.py", root / tests[0],
-                                 root / "tests/qualification_service.py", root / "tests/contract_world.py",
+                                 root / "tests/qualification_service.py", root / "tests/qualification_diagnostics.py", root / "tests/contract_world.py",
                                  root / "tests/control_plane_support.py", root / "tests/postgres_fixtures.py",
                                  root / "tests/postgres_business.py", root / "tests/handoff_drive.py",
                                  *sorted((root / "src/sova/service").glob("*.py"))])
@@ -204,10 +204,13 @@ def main():
     if args.suite == "authority":
         tests = ["tests/integration/test_authority_read_concurrency.py",
                  "tests/integration/test_postgres_handoff_authority.py",
-                 "tests/unit/test_authority_witness.py"]
+                 "tests/unit/test_authority_witness.py",
+                 "tests/unit/test_file_witness_concurrency.py",
+                 "tests/integration/test_qualification_diagnostics.py"]
         measured_sources.extend([*(root / t for t in tests), root / "tests/handoff_support.py",
                                  root / "src/sova/adapters/postgres_handoff_authority.py",
-                                 root / "src/sova/adapters/file_authority_witness.py"])
+                                 root / "src/sova/adapters/file_authority_witness.py",
+                                 root / "tests/qualification_diagnostics.py"])
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}

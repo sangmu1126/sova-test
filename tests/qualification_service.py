@@ -20,6 +20,7 @@ from postgres_business import PROBE_INSERT, SCHEMA, TABLES, Route
 import httpx
 import psycopg
 from qualification_orders import serve
+from qualification_diagnostics import ExceptionDiagnostics
 from test_service_api import AUDIENCE, ISSUER, Issuer
 from test_service_control_plane import feeds_complete, request_of
 
@@ -194,7 +195,11 @@ class ServiceJourney:
     def status(self, unit):
         response = self.call("GET", f"{self.app_base}/units/{unit}")
         assert response.status_code == 200, response.text
-        return response.json()
+        document = response.json()
+        self.trace[-1]["authority_state"] = document.get("state")
+        self.trace[-1]["next_operation"] = document.get("next_operation")
+        self.trace[-1]["reason"] = document.get("reason")
+        return document
 
     def record(self, name, **data):
         directory = os.environ.get("SOVA_TEST_QUALIFICATION_ARTIFACTS")
@@ -209,7 +214,11 @@ class ServiceJourney:
 @contextmanager
 def service_journey(postgres_database, business, directory):
     journey = ServiceJourney(postgres_database, business, directory)
-    with serve(create_app(journey.plane, journey.authenticate)) as origin:
+    app = create_app(journey.plane, journey.authenticate)
+    artifacts = os.environ.get("SOVA_TEST_QUALIFICATION_ARTIFACTS")
+    if artifacts:
+        app = ExceptionDiagnostics(app, Path(artifacts) / "service-exceptions.jsonl")
+    with serve(app) as origin:
         with httpx.Client(base_url=origin, timeout=15, trust_env=False, follow_redirects=False) as client:
             journey.client = client
             yield journey
