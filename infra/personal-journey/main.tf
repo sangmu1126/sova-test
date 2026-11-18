@@ -171,6 +171,9 @@ resource "aws_iam_role_policy" "artifacts" {
 resource "aws_iam_instance_profile" "source" { role = aws_iam_role.source.name }
 
 resource "aws_instance" "source" {
+  # The initial SSM boot must not race attachment of its credentials or route.
+  depends_on = [aws_iam_role_policy_attachment.ssm, aws_iam_role_policy.artifacts,
+                aws_route_table_association.source]
   ami                                  = data.aws_ami.source.id
   instance_type                        = "t4g.small"
   subnet_id                            = aws_subnet.source.id
