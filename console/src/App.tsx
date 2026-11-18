@@ -29,6 +29,7 @@ import { WorkloadMap } from "./components/WorkloadMap";
 import { DependencyControls } from "./features/demo/DependencyControls";
 import { SecurityControls } from "./features/security/SecurityControls";
 import { MigrationPanel } from "./features/migration/MigrationPanel";
+import { NativePlanPanel } from "./features/native/NativePlanPanel";
 import { SecurityScenario } from "./features/security/SecurityScenario";
 import { useObservation } from "./hooks/useObservation";
 import {
@@ -111,6 +112,7 @@ function Stat({
 
 export default function App() {
   const [migrationOpen, setMigrationOpen] = useState(false);
+  const [nativeOpen, setNativeOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("security");
   const [selected, setSelected] = useState<string[]>([]);
   const [detail, setDetail] = useState<string | null>(null);
@@ -121,7 +123,10 @@ export default function App() {
   const [actionError, setActionError] = useState("");
   const [accepted, setAccepted] = useState("");
   const timeline = useRef<HTMLElement>(null);
-  const observation = useObservation(mode, pending || migrationOpen);
+  const observation = useObservation(
+    mode,
+    pending || migrationOpen || nativeOpen,
+  );
   const { dependency, security, connection, error, receivedAt, refresh } =
     observation;
   const connected = connection === "connected";
@@ -396,6 +401,7 @@ export default function App() {
                 : undefined
             }
             onClick={() => {
+              setNativeOpen(false);
               setMigrationOpen(true);
               window.scrollTo({ top: 0 });
             }}
@@ -405,8 +411,25 @@ export default function App() {
             <span className="nav-dot" />
           </button>
           <button
-            className={!migrationOpen && mode === "dependency" ? "active" : ""}
+            className={nativeOpen ? "active" : ""}
             onClick={() => {
+              setNativeOpen(true);
+              setMigrationOpen(false);
+              window.scrollTo({ top: 0 });
+            }}
+          >
+            <Database size={18} />
+            계약 계획
+            <span className="nav-dot" />
+          </button>
+          <button
+            className={
+              !migrationOpen && !nativeOpen && mode === "dependency"
+                ? "active"
+                : ""
+            }
+            onClick={() => {
+              setNativeOpen(false);
               setMigrationOpen(false);
               setMode(
                 security?.interfaces?.dependency === false
@@ -425,8 +448,13 @@ export default function App() {
             <span className="nav-dot" />
           </button>
           <button
-            className={!migrationOpen && mode === "security" ? "active" : ""}
+            className={
+              !migrationOpen && !nativeOpen && mode === "security"
+                ? "active"
+                : ""
+            }
             onClick={() => {
+              setNativeOpen(false);
               setMigrationOpen(false);
               setMode("security");
               window.scrollTo({ top: 0 });
@@ -438,9 +466,11 @@ export default function App() {
           </button>
           <button
             onClick={() =>
-              (migrationOpen
-                ? document.querySelector(".migration-history")
-                : timeline.current
+              (nativeOpen
+                ? null
+                : migrationOpen
+                  ? document.querySelector(".migration-history")
+                  : timeline.current
               )?.scrollIntoView({
                 behavior: "smooth",
                 block: "start",
@@ -469,11 +499,13 @@ export default function App() {
           <div className="breadcrumb">
             Workspace<span>/</span>
             <b>
-              {migrationOpen
-                ? "환경 이전"
-                : mode === "dependency"
-                  ? "워크로드 지도"
-                  : "보안·대응"}
+              {nativeOpen
+                ? "계약 계획"
+                : migrationOpen
+                  ? "환경 이전"
+                  : mode === "dependency"
+                    ? "워크로드 지도"
+                    : "보안·대응"}
             </b>
           </div>
           <div className="topbar-right">
@@ -495,7 +527,9 @@ export default function App() {
           </div>
         </header>
         <main>
-          {migrationOpen ? (
+          {nativeOpen ? (
+            <NativePlanPanel />
+          ) : migrationOpen ? (
             <MigrationPanel />
           ) : (
             <>

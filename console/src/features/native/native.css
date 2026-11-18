@@ -1,0 +1,93 @@
+.native-plan {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+.native-notice {
+  background: #eef3ff;
+  border: 1px solid #d6e1ff;
+  border-radius: 14px;
+  padding: 18px 22px;
+  color: #486296;
+  line-height: 1.7;
+}
+.native-card,
+.native-recovery {
+  border: 1px solid #dce4f2;
+  border-radius: 18px;
+  padding: 24px;
+  background: white;
+  min-width: 0;
+}
+.native-card h2,
+.native-recovery h2 {
+  margin: 8px 0 14px;
+  font-size: 21px;
+  overflow-wrap: anywhere;
+}
+.native-card p,
+.native-recovery p,
+.native-card li {
+  color: #62748f;
+  line-height: 1.8;
+}
+.native-card small {
+  color: #7486a1;
+}
+.native-recovery.required {
+  background: #fff7ed;
+  border-color: #edb97b;
+}
+.native-recovery.required h2 {
+  color: #944619;
+}
+.native-recovery.unavailable {
+  background: #f1f4f9;
+}
+.native-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.native-binding dl {
+  display: grid;
+  gap: 12px;
+}
+.native-binding dl > div {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 14px;
+}
+.native-binding dt {
+  color: #62748f;
+}
+.native-binding dd {
+  margin: 0;
+  font-family: monospace;
+  overflow-wrap: anywhere;
+}
+.native-table {
+  overflow-x: auto;
+}
+.native-table table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.native-table th,
+.native-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #e1e7f1;
+}
+.native-table code {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1000px) {
+  .native-facts {
+    grid-template-columns: 1fr;
+  }
+  .native-binding dl > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
