@@ -9,26 +9,30 @@ import httpx
 from sova.qualification.requests import OrderIntent, receipt_matches
 
 
+def fixed_origin(origin):
+    url = urlsplit(origin)
+    if (url.scheme not in ("https", "http") or not url.hostname or url.username
+            or url.password or url.query or url.fragment or url.path not in ("", "/")):
+        raise ValueError("A fixed HTTP origin without credentials is required")
+    if url.scheme == "http":
+        try:
+            loopback = ipaddress.ip_address(url.hostname).is_loopback
+        except ValueError:
+            loopback = url.hostname == "localhost"
+        if not loopback:
+            raise ValueError("Plain HTTP is allowed only for loopback tests")
+    return origin.rstrip("/")
+
+
 class OrderHttpClient:
     def __init__(self, origin, *, bearer_token, journal, timeout=5, client=None):
-        url = urlsplit(origin)
-        if (url.scheme not in ("https", "http") or not url.hostname or url.username
-                or url.password or url.query or url.fragment or url.path not in ("", "/")):
-            raise ValueError("A fixed HTTP origin without credentials is required")
-        if url.scheme == "http":
-            try:
-                loopback = ipaddress.ip_address(url.hostname).is_loopback
-            except ValueError:
-                loopback = url.hostname == "localhost"
-            if not loopback:
-                raise ValueError("Plain HTTP is allowed only for loopback tests")
+        self.origin = fixed_origin(origin)
         if not isinstance(bearer_token, str) or not bearer_token or any(
                 c.isspace() for c in bearer_token):
             raise ValueError("A bearer token is required")
         if type(timeout) not in (int, float) or not 0 < timeout <= 60:
             raise ValueError("A bounded request timeout is required")
         self.journal = journal
-        self.origin = origin.rstrip("/")
         self.token = bearer_token
         self._owned = client is None
         self.client = client or httpx.Client(timeout=timeout, follow_redirects=False, trust_env=False)
