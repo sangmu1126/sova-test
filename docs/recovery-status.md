@@ -1,5 +1,8 @@
 # 계약 계획의 읽기 전용 복구 보류
 
+현재 관측 형식은 **v2**다. [거버넌스 보류 연결 기록](development/governance-recovery-status-2026-11-19.md).
+이전 v1은 operation 플래그만 읽었으며 별도 거버넌스 원장의 활성 보류는 포함하지 않았다.
+
 ## 목적과 책임 경계
 
 실행 프로세스가 종료되면 권한 원장은 `SOURCE_FENCED`인데 효과 원장에는
@@ -17,13 +20,14 @@
 
 | 필드 | 의미 |
 | --- | --- |
-| `observation_version` | `handoff-recovery-status-v1` |
+| `observation_version` | `handoff-recovery-status-v2` |
 | `scope` | 현재 tenant·app·unit·plan digest·operation ID |
 | `observed_at`, `expires_at` | DB 관측 시각, 5초 유효 기한 |
 | `recovery.status` | `clear` / `required` / `unavailable` |
 | `recovery.required` | `false` / `true` / `null`; 미확인은 false가 아님 |
 | `recovery.reason` | 서버가 계산한 고정 사유 코드 |
 | `recovery.pending_effects` | 명령 지문·action·상태·revision |
+| `recovery.security_holds` | 거버넌스의 활성 보류 개수·ID, operation 플래그. 작업을 확정하지 못하면 플래그는 null |
 | `recovery.next_steps` | 운영자 확인 순서. 실행 명령이 아님 |
 | `automatic_replay_allowed`, `authorizes_execution` | 항상 `false` |
 
@@ -32,12 +36,15 @@ READ COMMITTED를 유지하여 커밋 직전의 witness를 오래된 스냅샷�
 트랜잭션은 `READ ONLY`이며 SQL 실행 제한 2초, lock 대기 제한 1초다.
 이 값은 HTTP·외부 witness I/O를 포함하는 종단 지연 보장이 아니다.
 
-현재 계획의 operation·미확정 효과·해당 operation의 실행권은 한 SQL 스냅샷으로
-읽는다. 다른 작업의 실행권을 현재 실행권으로 가져오지 않는다. 같은 앱의 다른
+현재 계획의 operation·미확정 효과·해당 operation의 실행권과 앱의 거버넌스 보류를
+한 SQL 스냅샷으로 읽는다. 다른 작업의 실행권을 현재 실행권으로 가져오지 않는다. 같은 앱의 다른
 작업에 미확정 효과가 남으면 별도로 보류한다. 명령 원문은 기존 계약으로 무결성과
 scope·계획 결속을 검사하되 응답에 포함하지 않는다.
 operation이 없거나 둘 이상이거나 결과 상한 256건을 초과하면 `unavailable`이다.
 누락·절삭된 목록을 정상 빈 목록으로 취급하지 않는다.
+거버넌스 원장의 최신 이벤트가 열린 보류만 포함하며 기존 보류 검증기를 재사용해
+문서 해시·tenant·app·ID·revision을 확인한다. 잘못된 문서나 256개를 넘는 활성 보류는
+조회 실패로 남긴다. 보류의 reason·actor·release 문서 등 원문은 응답으로 내보내지 않는다.
 
 ## 주 사유 판정 순서
 
@@ -48,12 +55,16 @@ operation이 없거나 둘 이상이거나 결과 상한 256건을 초과하면 
 | 미확정 효과 존재, 유효 실행권 없음 | `OWNER_EXPIRED_UNSETTLED` | required |
 | 완료·중단 상태인데 미확정 효과 존재 | `TERMINAL_WITH_PENDING_EFFECTS` | required |
 | 같은 앱의 다른 작업에 미확정 효과 존재 | `APPLICATION_PENDING_EFFECTS` | required |
-| operation의 보안 보류 플래그 | `SECURITY_HOLD` | required |
+| operation의 보안 보류 플래그 또는 앱의 활성 거버넌스 보류 | `SECURITY_HOLD` | required |
 | 권한 상태 SAFE_HOLD / FAILBACK_REQUIRED | `AUTHORITY_HOLD` | required |
 | 위 보류가 없는 현재 관측 | 사유 없음 | clear |
 | 미등록·모호·만료·응답 불일치 | `OBSERVATION_UNAVAILABLE` 또는 조회 거부 | unavailable |
 
-`clear`는 실행 허가·전체 보안 PASS·이전 완료가 아니다. 이 조회는 모든 보안 hold·
+UNKNOWN과 보안 보류가 함께 있으면 주 사유는 UNKNOWN을 유지하되 활성 보류를
+별도 표시한다. 보안 보류가 있으면 확인 순서의 첫 항목은 `REVIEW_SECURITY_HOLD`다.
+보안 보류만 있으면 원격 요청 정지나 명령 readback을 불필요하게 안내하지 않는다.
+
+`clear`는 실행 허가·전체 보안 PASS·이전 완료가 아니다. 이 조회는 모든
 통제·변경 피드·승인·verifier 신뢰를 다시 판정하는 게이트가 아니다.
 실행 시에는 기존 정책·실행권 검사와 인증된 원격 정지·readback 증명이 필요하다.
 
@@ -97,6 +108,8 @@ python demo/security_console.py \
 이 명령은 native API·계획·DB를 만들거나 새 이미지를 배포하지 않는다.
 새 상태 API와 실제 등록된 계획이 먼저 필요하다. 이전 이미지가 신규 관측 형식을
 제공하지 않으면 미확인으로 남는다.
+v2 API·브리지·콘솔은 함께 갱신한다. v1 관측에 보류가 없다고 추정하는 fallback은
+없다. 형식이 맞지 않는 조합은 변경을 실행하지 않고 조회 미확인으로 남는다.
 
 **운영 한계:** 같은 PC의 신뢰된 운영자와 명시적 loopback upstream을 전제로 한다.
 원격 TLS, 사용자별 위임·인가 매핑, 기업 로그인, 클라우드 배포 또는 금융 보안

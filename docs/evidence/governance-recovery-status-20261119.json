@@ -1,0 +1,411 @@
+{
+  "schema_version": 1,
+  "date_kst": "2026-11-19",
+  "observation_version": "handoff-recovery-status-v2",
+  "base_commit": "e7edac218b8c4e9a51cd6a2a3810cf79f3ede409",
+  "code_commit": "e91816f4abd29290f80dcb561fa9db1e6244998e",
+  "security_source_commit": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+  "postgres_image_id": "sha256:0d938e975177bef9f1f61f3f9dbcf2e0aa0a139568f66d3415ed8892eb97f6ac",
+  "postgres_version": "17.12 (Debian 17.12-1.pgdg13+1)",
+  "architecture": "arm64",
+  "trials": [
+    {
+      "name": "native",
+      "source_commit": "a4970a870955cdad4fa63fc9ef8ee37cdc187509",
+      "run_id": "effect-settlement-c8b1f9ad79484b879f032b0822938a09",
+      "pytest_exit_code": 2,
+      "junit": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 1,
+        "skipped": 0
+      },
+      "clock_passed": true,
+      "clock_samples": 4,
+      "container_removed": true,
+      "network_removed": true
+    },
+    {
+      "name": "verified",
+      "source_commit": "e91816f4abd29290f80dcb561fa9db1e6244998e",
+      "run_id": "effect-settlement-bc957543d3f04aea8819eaea85539247",
+      "pytest_exit_code": 0,
+      "junit": {
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "clock_passed": true,
+      "clock_samples": 156,
+      "container_removed": true,
+      "network_removed": true
+    },
+    {
+      "name": "service",
+      "source_commit": "a4970a870955cdad4fa63fc9ef8ee37cdc187509",
+      "run_id": "mq03-99c6d560626e4d8994513a6967ca7798",
+      "pytest_exit_code": 0,
+      "junit": {
+        "tests": 78,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "clock_passed": true,
+      "clock_samples": 282,
+      "container_removed": true,
+      "network_removed": true
+    }
+  ],
+  "local_boundaries": {
+    "passed": 62,
+    "failed": 0
+  },
+  "console_tests": {
+    "passed": 53,
+    "failed": 0
+  },
+  "measured_sources_verified": {
+    "verified": 325,
+    "service": 39
+  },
+  "hold_lifecycle": {
+    "before": {
+      "activation_possible": false,
+      "epoch": 1,
+      "expires_at": "2026-11-18T20:52:54.464294+00:00",
+      "next_operation": 0,
+      "observation_version": "handoff-recovery-status-v2",
+      "observed_at": "2026-11-18T20:52:49.464294+00:00",
+      "owner_environment": "aws-source",
+      "recovery": {
+        "authorizes_execution": false,
+        "automatic_replay_allowed": false,
+        "next_steps": [],
+        "pending_effects": [],
+        "reason": null,
+        "required": false,
+        "security_holds": {
+          "active_count": 0,
+          "hold_ids": [],
+          "operation_hold": false
+        },
+        "status": "clear"
+      },
+      "scope": {
+        "application_id": "orders-service",
+        "operation_id": "handoff-6e19e9a25d155cf40f9e909d",
+        "plan_digest": "c129270d9e2894901a032c241ac23544217fb9e63995c12b0db09186402389ba",
+        "tenant_id": "tenant-7b2b8206862f444fab5d4c01b5a55a55",
+        "unit_digest": "30b8489afe45638f1edded6063f885ea63f18ef213f16b5493ff08e4d7d49331"
+      },
+      "state": "SOURCE_ACTIVE"
+    },
+    "held": {
+      "activation_possible": false,
+      "epoch": 1,
+      "expires_at": "2026-11-18T20:52:54.550510+00:00",
+      "next_operation": 0,
+      "observation_version": "handoff-recovery-status-v2",
+      "observed_at": "2026-11-18T20:52:49.550510+00:00",
+      "owner_environment": "aws-source",
+      "recovery": {
+        "authorizes_execution": false,
+        "automatic_replay_allowed": false,
+        "next_steps": [
+          "REVIEW_SECURITY_HOLD"
+        ],
+        "pending_effects": [],
+        "reason": "SECURITY_HOLD",
+        "required": true,
+        "security_holds": {
+          "active_count": 2,
+          "hold_ids": [
+            "governance-1",
+            "governance-2"
+          ],
+          "operation_hold": false
+        },
+        "status": "required"
+      },
+      "scope": {
+        "application_id": "orders-service",
+        "operation_id": "handoff-6e19e9a25d155cf40f9e909d",
+        "plan_digest": "c129270d9e2894901a032c241ac23544217fb9e63995c12b0db09186402389ba",
+        "tenant_id": "tenant-7b2b8206862f444fab5d4c01b5a55a55",
+        "unit_digest": "30b8489afe45638f1edded6063f885ea63f18ef213f16b5493ff08e4d7d49331"
+      },
+      "state": "SOURCE_ACTIVE"
+    },
+    "cleared": {
+      "activation_possible": false,
+      "epoch": 1,
+      "expires_at": "2026-11-18T20:52:56.781321+00:00",
+      "next_operation": 0,
+      "observation_version": "handoff-recovery-status-v2",
+      "observed_at": "2026-11-18T20:52:51.781321+00:00",
+      "owner_environment": "aws-source",
+      "recovery": {
+        "authorizes_execution": false,
+        "automatic_replay_allowed": false,
+        "next_steps": [],
+        "pending_effects": [],
+        "reason": null,
+        "required": false,
+        "security_holds": {
+          "active_count": 0,
+          "hold_ids": [],
+          "operation_hold": false
+        },
+        "status": "clear"
+      },
+      "scope": {
+        "application_id": "orders-service",
+        "operation_id": "handoff-6e19e9a25d155cf40f9e909d",
+        "plan_digest": "c129270d9e2894901a032c241ac23544217fb9e63995c12b0db09186402389ba",
+        "tenant_id": "tenant-7b2b8206862f444fab5d4c01b5a55a55",
+        "unit_digest": "30b8489afe45638f1edded6063f885ea63f18ef213f16b5493ff08e4d7d49331"
+      },
+      "state": "SOURCE_ACTIVE"
+    },
+    "held_browser": {
+      "browser": "156.0.8078.4",
+      "desktop_sha256": "b313f6a90a1edfe4d0dbde1115b3fdb60312c012984accf328a511fd041065fb",
+      "driver": "1.56.1",
+      "executed": true,
+      "mobile_effect_row_heights": [],
+      "mobile_sha256": "ba2d246c74f4f00dd10c2b82e9b32882eef2dc791c0ff5ee7c0b5211886d9f7e",
+      "mutation_requests": 0,
+      "native_gets": 1,
+      "observed_hold": true,
+      "observed_state": "SOURCE_ACTIVE",
+      "page_errors": 0,
+      "synthetic_operator_identity": true,
+      "viewport_overflow": false
+    },
+    "cleared_browser": {
+      "browser": "156.0.8078.4",
+      "desktop_sha256": "083ba6774a365bb919670de391ed193b18929778f3f3f5179830f693b8fb7169",
+      "driver": "1.56.1",
+      "executed": true,
+      "mobile_effect_row_heights": [],
+      "mobile_sha256": "41464ab59f5ff8efe578521c8c3ffc3ebdb7cb65b41c515cf7ed0ea9131b55ea",
+      "mutation_requests": 0,
+      "native_gets": 1,
+      "observed_hold": false,
+      "observed_state": "SOURCE_ACTIVE",
+      "page_errors": 0,
+      "synthetic_operator_identity": true,
+      "viewport_overflow": false
+    },
+    "cross_app_and_tenant_holds_excluded": true,
+    "private_details_excluded": true,
+    "worker_executed": false,
+    "synthetic_release_approval": true,
+    "production_deployed": false
+  },
+  "single_release_remaining_one_asserted_in_native_test": true,
+  "mixed_unknown_and_hold": {
+    "final": {
+      "activation_possible": false,
+      "epoch": 1,
+      "expires_at": "2026-11-18T20:52:46.517728+00:00",
+      "next_operation": 3,
+      "observation_version": "handoff-recovery-status-v2",
+      "observed_at": "2026-11-18T20:52:41.517728+00:00",
+      "owner_environment": "aws-source",
+      "recovery": {
+        "authorizes_execution": false,
+        "automatic_replay_allowed": false,
+        "next_steps": [
+          "REVIEW_SECURITY_HOLD",
+          "VERIFY_REMOTE_SETTLEMENT",
+          "READBACK_EXISTING_COMMAND",
+          "REVIEW_RECOVERY_PLAN"
+        ],
+        "pending_effects": [
+          {
+            "action": "copy_content",
+            "fingerprint": "aef4a128aec64776b48a2340a4937ac66de03ee818c07d0e79d11a51b34241d1",
+            "revision": 3,
+            "status": "unknown"
+          }
+        ],
+        "reason": "EFFECT_RESULT_UNKNOWN",
+        "required": true,
+        "security_holds": {
+          "active_count": 1,
+          "hold_ids": [
+            "settlement-security-review"
+          ],
+          "operation_hold": false
+        },
+        "status": "required"
+      },
+      "scope": {
+        "application_id": "orders-service",
+        "operation_id": "handoff-c29c85ab9902d0d1639d24b4",
+        "plan_digest": "227e0f7374f2dc8aab0a359a61f2a8be36474977afabc76c2820bdf13ce32ff4",
+        "tenant_id": "tenant-c6cc346e9ac7468ba3b223716879fa9f",
+        "unit_digest": "ad09c8c3c2715e5b6e5c6d4e8ee4ca1d4107f4bd003d3983b7993b001c7e43f3"
+      },
+      "state": "SOURCE_FENCED"
+    },
+    "browser": {
+      "browser": "156.0.8078.4",
+      "desktop_sha256": "306a92d644b715b19a15f9cbaf7a9f0988e1c4533ac5e8c3a649e5c554a0ca40",
+      "driver": "1.56.1",
+      "executed": true,
+      "mobile_effect_row_heights": [
+        46
+      ],
+      "mobile_sha256": "44d14993998a1e15e68b19fdee99d18460bcf481ac4dd550eb664a34a81ba148",
+      "mutation_requests": 0,
+      "native_gets": 1,
+      "observed_hold": true,
+      "observed_state": "SOURCE_FENCED",
+      "page_errors": 0,
+      "synthetic_operator_identity": true,
+      "viewport_overflow": false
+    },
+    "wrong_tenant_denied": true,
+    "credential_replacement_denied": true
+  },
+  "rejections_verified": [
+    "active hold document digest mismatch",
+    "rehashed document with another tenant scope",
+    "257 active holds",
+    "v1 or missing governance metadata",
+    "duplicate/miscounted hold IDs",
+    "clear response while active hold remains",
+    "unknown operation flag represented as null"
+  ],
+  "collection_error_retained": {
+    "trial": "native",
+    "cause": "Fixture imported document_hash through missing compatibility alias; corrected to canonical sova_security module; no product or grant change"
+  },
+  "raw_root_local": "/Users/Sooming_/dev/softbank_2026/local-dev-records/governance-recovery-20261119",
+  "raw_files_sha256": {
+    "console-tests.log": "fbe71b1fd59f4bf5de73675425cc39423ecbd7e54e992d7af6b99e26f62e6992",
+    "console-tests.json": "37c3ba3b370a8ff83e12fef77f8bde09f5bbddd64f83161333c097993a403887",
+    "console-format.log": "3b38201247d2eb5e2e65a55480c4101c66b768fa96f2833a36dcba6f9cf282bc",
+    "local-final.log": "cfa33535d77856095f658894cce96685dd58bcda31e561849e230d882b6dd1bc",
+    "local.log": "7bd7dc75c0c25262fa78a7b66330dc899dfac58f216c9bf3601c2283881f3c2e",
+    "service.log": "61e9dd4a225f5a5a1e224d361bdc10029820788af1246f88fe0c447186f189c8",
+    "verified.log": "01570a53a7d4162111a4353390f2f535a6953959f0da42d6a2b74e2552440604",
+    "native.log": "ea7745f67f0e2e0a07a16abebd71dae21471f1d55e46e45ea0ead72c5c5d9b2c",
+    "local-final.xml": "a0cefc554c503db44261cb1d3469cd040b59da88c48a8b07faf3c9e05dadbf12",
+    "local.xml": "79fb250a99bfad736f8338fb07346624bb4b11aeae93a5dd84a84cc59f382bdc",
+    "cleanup-checks.json": "c4dbb29296c38e01ac8e56530cd6fff956e5bc520d618c16463cd2f5cfea2432",
+    "native/results.xml": "ee4240820ad9e79c592bbc38bc1d11638e6f47aac9803def6e577cd854bce838",
+    "native/postgres-test-failure.log": "f053bb8461a41b19e9d0b6ac570cb000553d9a2efd6d79cddc12b17865458cf3",
+    "native/run.json": "f0b8a3bca93413a9cae8b41e3d029d31cc88fe5cf748149f34ab76647c34f3ec",
+    "verified/runtime-worker-killed-api-2.log": "ac46f741b73b4c276b415cf561a5d98711d708911b8d82da8342d9dbd4d44587",
+    "verified/runtime-settlement-uncommitted-api-2.log": "73d123763e29b8bd0ce29690120a81fed969e7b0ef12834a91d98a86c9348a43",
+    "verified/runtime-worker-killed-api-1.log": "99cdca1a6298e1b3d6a151acab65c4d3c0b4d90f0f885e600d537884e049ce9b",
+    "verified/runtime-settlement-uncommitted-api-1.log": "91d96c7d1df2500686dfd62eeb94ab4073df6e07afaaea9d88c03f8a03cf6563",
+    "verified/runtime-effect-settlement-uncommitted.json": "9d07206912e204fcf919fa00c895f90c8bb4aa084dd55cb0511a2caf969e5936",
+    "verified/worker-worker-killed-worker-a.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "verified/runtime-governance-released-api-2.log": "858ed4922a028e386b8a7fd1c557e522417d31f92ed1cdb50973fe22e78e0bf7",
+    "verified/results.xml": "c72f911d9960494cf9bdb83e8c161a695826569ad24f049e72279bca42aaf2db",
+    "verified/worker-worker-killed-worker-b.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "verified/worker-settlement-committed-old-worker.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "verified/runtime-cleanup-settlement-committed.json": "7c821e91873ab769ccee3e621d562984c0656015a73a4bae16172a5335bfc988",
+    "verified/runtime-recovery-status-committed.json": "b2b7c128d5d1e0808dbea766deb0ce55613ce8713614cb95608ee04af22490ca",
+    "verified/runtime-effect-settlement-progress-uncommitted.json": "8147113fbb2675c391197df2b2ca44fb2f9d01b82ea1de07a74892beee40d7c8",
+    "verified/runtime-governance-held-api-1.log": "609bb59a95d81cb46d47b5fea311abc63a5da6c84ce3b5f6e437c8f4c53e6a7d",
+    "verified/runtime-worker-graceful.json": "fd8c6cceda7d0c05532f7092fea6190dd721d755bede78352fb33d9ec50a8619",
+    "verified/runtime-governance-status-lifecycle.json": "2089e9bf9a79141c8f7b3ed786860c17d8ce76bda89c24365d7c23af0782c9af",
+    "verified/runtime-effect-settlement-progress-committed.json": "a6b7b0822585da7f5607bae4f61839ff8930b1aecb69645a5c6e7db441c5a891",
+    "verified/runtime-cleanup-settlement-uncommitted.json": "3a6424499e2b408065c12c85f8a0cbffb4ae7eb0e1a481b53aefa97dfb69c0ad",
+    "verified/runtime-worker-killed.json": "00aa89d13390cfcf21a8117af703a708e4c7af7da3f161104fb3384158d86692",
+    "verified/runtime-recovery-status-uncommitted.json": "e66ca9e2962678e1e966bf9825d3f492fa727d7941cd5a9ff4c7f84fb745573b",
+    "verified/runtime-effect-settlement-committed.json": "564df1ab0b7e6e315f398a0901e86f663edcc2625e1e77ea7467e917dd409ad1",
+    "verified/run.json": "021e2c2f1a0cd84ea40f038290b8f16d01b81df448338350e3bb65dbbf3d4672",
+    "verified/runtime-worker-graceful-api-1.log": "8d018f10eb76cf6566902178397cb4201d5b51316029dce2ca02f1be7ea83319",
+    "verified/worker-worker-graceful-worker-b.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "verified/runtime-cleanup-worker-killed.json": "37d8b10e2cdb394693700ee96c2f3e1a946525e1eec59f6b2bebd3b962aa9d22",
+    "verified/runtime-cleanup-governance-released.json": "961f1963aec338e7c266e58e6291caeb4d6cefb762082297b8754f5e49c12ac3",
+    "verified/runtime-settlement-committed-api-1.log": "8fac245b5037cd7fa5e10c1dc83fac6fc40c457abf35ce67a078af0a88189f6b",
+    "verified/worker-settlement-uncommitted-old-worker.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "verified/runtime-worker-graceful-api-2.log": "ecf9262a6ad1ec6eed4e84802a1705776eb7ddf069cc713f1d090b8aea111ada",
+    "verified/runtime-cleanup-worker-graceful.json": "83ae5e986b334cf5342d0597df7410a454b81d39f31fb65d42753b98a1ebf180",
+    "verified/worker-worker-graceful-worker-a.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "verified/runtime-settlement-committed-api-2.log": "da8887e523da31707bcddeab9c7b364d389fe48a7ae7356476955767ab965c78",
+    "service/missing-committed-order.json": "5f2eb84f31e71e2d388dbf5d7b04938e955c25cec2f53c52f1364b2ae4c39d35",
+    "service/handoff-and-retry.json": "cf5435297e9501f632b05150a606a330d52e761159529d7d3a2d58482fb8caa6",
+    "service/unauthorized-no-order.json": "b1b46f3265bfd208130439375c6f1c7a53e1a0ed5b90a152cc1e891b52830794",
+    "service/stale-return-input-denied.json": "f9c9c860b98107e41972dad6e2578bcd5bf8204392a1adaa0ec370409e130536",
+    "service/results.xml": "60d5f9a1af6b92d017df1ae5edcb133b68aa8969ce04bc84d2a9e87cfd3dd129",
+    "service/fractional-cent-corruption.json": "6ed25afd45c020aa3f631091581b913b8c4d98efb0dd50c8cf9210363cb09b61",
+    "service/commit-response-lost.json": "cd1fe892195abf770992aba7fe3262c45cc57c476e05bf6451def5e319a652c5",
+    "service/service-handoff-and-failback.json": "4711f099c6bcbaea131b1e59d76788df52d2b8f7583a56cbae38d6f1235be705",
+    "service/failback-authorization-denials.json": "f20145c3f31fe43f4123d92be03538f2be7af5bcf3226f65412c0e661550092e",
+    "service/lookup-and-idempotent-retry.json": "f991f916cde43a65205d98c0ebd899dc90aabd03084b079ec8db872a48946971",
+    "service/terminal-handoff-remains-terminal.json": "17a465256aad79c8bd34f170880f77264a296deabb3c0ba36b204af2531aa4f5",
+    "service/run.json": "7fe8774f224d40b4ce1af4ef5e80dcfa71d773772affba9d8cfca43b4d91894f",
+    "verified/browser-settlement-committed/desktop.png": "790330d92db7316695e513618a329a97d143f162020ebf37553575f7abb476f2",
+    "verified/browser-settlement-committed/mobile.png": "f9e6bd9584d9464290c222c2957c768a0ae7fe50411f07e5c74a23d29d2ad187",
+    "verified/browser-settlement-uncommitted/desktop.png": "306a92d644b715b19a15f9cbaf7a9f0988e1c4533ac5e8c3a649e5c554a0ca40",
+    "verified/browser-settlement-uncommitted/mobile.png": "44d14993998a1e15e68b19fdee99d18460bcf481ac4dd550eb664a34a81ba148",
+    "verified/browser-governance-released/desktop.png": "083ba6774a365bb919670de391ed193b18929778f3f3f5179830f693b8fb7169",
+    "verified/browser-governance-released/mobile.png": "41464ab59f5ff8efe578521c8c3ffc3ebdb7cb65b41c515cf7ed0ea9131b55ea",
+    "verified/browser-governance-held/desktop.png": "b313f6a90a1edfe4d0dbde1115b3fdb60312c012984accf328a511fd041065fb",
+    "verified/browser-governance-held/mobile.png": "ba2d246c74f4f00dd10c2b82e9b32882eef2dc791c0ff5ee7c0b5211886d9f7e"
+  },
+  "raw_hashes_verified": 66,
+  "screenshots_sha256": {
+    "docs/assets/governance-recovery-status-20261119/held-desktop.png": "b313f6a90a1edfe4d0dbde1115b3fdb60312c012984accf328a511fd041065fb",
+    "docs/assets/governance-recovery-status-20261119/held-mobile.png": "ba2d246c74f4f00dd10c2b82e9b32882eef2dc791c0ff5ee7c0b5211886d9f7e",
+    "docs/assets/governance-recovery-status-20261119/released-desktop.png": "083ba6774a365bb919670de391ed193b18929778f3f3f5179830f693b8fb7169",
+    "docs/assets/governance-recovery-status-20261119/released-mobile.png": "41464ab59f5ff8efe578521c8c3ffc3ebdb7cb65b41c515cf7ed0ea9131b55ea",
+    "docs/assets/governance-recovery-status-20261119/unknown-desktop.png": "306a92d644b715b19a15f9cbaf7a9f0988e1c4533ac5e8c3a649e5c554a0ca40",
+    "docs/assets/governance-recovery-status-20261119/unknown-mobile.png": "44d14993998a1e15e68b19fdee99d18460bcf481ac4dd550eb664a34a81ba148"
+  },
+  "cleanup": [
+    {
+      "kind": "container",
+      "name": "sova-effect-settlement-c8b1f9ad79484b879f032b0822938a09",
+      "absent": true
+    },
+    {
+      "kind": "network",
+      "name": "sova-network-effect-settlement-c8b1f9ad79484b879f032b0822938a09",
+      "absent": true
+    },
+    {
+      "kind": "container",
+      "name": "sova-effect-settlement-bc957543d3f04aea8819eaea85539247",
+      "absent": true
+    },
+    {
+      "kind": "network",
+      "name": "sova-network-effect-settlement-bc957543d3f04aea8819eaea85539247",
+      "absent": true
+    },
+    {
+      "kind": "container",
+      "name": "sova-mq03-99c6d560626e4d8994513a6967ca7798",
+      "absent": true
+    },
+    {
+      "kind": "network",
+      "name": "sova-network-mq03-99c6d560626e4d8994513a6967ca7798",
+      "absent": true
+    }
+  ],
+  "worker_or_mutation_or_schema_changed": false,
+  "production_deployed": false,
+  "shared_resources_changed": false,
+  "cloud_used": false,
+  "operational_qualification": false,
+  "service_continuity": "NOT_QUALIFIED",
+  "limitations": [
+    "synthetic IdP/inventory/plan trust/local operator",
+    "hold creation/release in isolated fixture does not qualify enterprise approval or retained audit delivery",
+    "test-only remote settlement proof, not Kubernetes/provider attestation",
+    "read-only observation is not authorization",
+    "v2 API, local bridge and UI must be updated together; no v1 fallback"
+  ]
+}
