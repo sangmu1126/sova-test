@@ -45,6 +45,9 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
     artifacts = Path(os.environ["SOVA_TEST_QUALIFICATION_ARTIFACTS"])
     with owned_cluster(artifacts / "pods") as env, ExitStack() as resources:
         with service_journey(postgres_database, http_business, env.witness) as h:
+            # Preserve status-only host observations even if a fail-closed read
+            # aborts the journey. No tokens or response bodies are recorded.
+            env.report["control_plane_http_calls"] = h.trace
             # Both actual CLI workers and the host API use this fixture witness.
             h.settings = replace(h.settings, witness_for=lambda tenant: FileAuthorityWitness(
                 env.witness / (tenant + ".log"), tenant_id=tenant))
