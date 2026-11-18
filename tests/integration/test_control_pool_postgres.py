@@ -134,6 +134,37 @@ def test_pool_exhaustion_has_finite_wait_and_closed_pool_has_no_fallback(postgre
             pytest.fail('closed pool fell back to a fresh connection')
 
 
+def test_failed_reset_discards_the_backend_instead_of_lending_dirty_state(postgres_database, monkeypatch):
+    normal = ControlPool.reset
+    attempted = []
+    def reset(conn):
+        if not attempted:
+            attempted.append(True)
+            raise RuntimeError('expected reset failure')
+        normal(conn)
+    monkeypatch.setattr(ControlPool, 'reset', staticmethod(reset))
+    with ControlPool(*postgres_database, max_size=1) as pool:
+        with pool.connect() as c:
+            pid = c.info.backend_pid
+            c.execute("SET sova.tenant_id='must-not-reappear'")
+        with pool.connect() as c:
+            assert c.info.backend_pid != pid
+            assert c.execute("SELECT nullif(current_setting('sova.tenant_id',true),'')").fetchone() == (None,)
+        assert pool.pool.get_stats()['returns_bad'] == 1
+
+
+def test_dead_backend_is_replaced_before_any_caller_query(postgres_database):
+    dsn, _ = postgres_database
+    with ControlPool(*postgres_database, max_size=1) as pool:
+        with pool.connect() as c:
+            pid = c.info.backend_pid
+        with psycopg.connect(dsn, autocommit=True) as admin:
+            assert admin.execute('SELECT pg_terminate_backend(%s)', (pid,)).fetchone() == (True,)
+        with pool.connect() as c:
+            assert c.info.backend_pid != pid
+            assert c.execute('SELECT 1').fetchone() == (1,)
+
+
 @pytest.mark.parametrize('revocation', ['login', 'bypassrls'])
 def test_live_role_revocation_is_checked_even_for_existing_backend(postgres_database, revocation):
     dsn, _ = postgres_database
