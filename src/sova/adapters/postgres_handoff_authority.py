@@ -68,7 +68,8 @@ class PostgresHandoffAuthority:
         return record
 
     def _lock_unit(self, conn, application_id, unit_digest, *, exclusive):
-        key = canonical_json(["sova.authority", self.tenant_id, application_id, unit_digest])
+        key = canonical_json({"namespace": "sova.authority", "tenant_id": self.tenant_id,
+                              "application_id": application_id, "unit_digest": unit_digest})
         statement = ("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))" if exclusive else
                      "SELECT pg_advisory_xact_lock_shared(hashtextextended(%s,0))")
         conn.execute(statement, (key,))
