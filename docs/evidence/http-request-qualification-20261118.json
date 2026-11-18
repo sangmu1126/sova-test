@@ -1,0 +1,219 @@
+{
+  "kind": "LocalComponentVerificationSummary",
+  "version": 1,
+  "date_kst": "2026-11-18",
+  "scope": "MQ-01 draft and MQ-02 component integration; not operational migration qualification",
+  "branch": "feature/migration-request-qualification",
+  "source": {
+    "working_tree_base_when_tested": "aacace5c1f2ce99b4c28ade2a1f5029582fed86f",
+    "committed_snapshot_with_identical_measured_sources": "0a89d78906d7b4f35c10b39c1dd677d61eb4d966",
+    "feature_commits": [
+      "7be427fc89b4cc5b9243b1a3bf6a337e0954e681",
+      "0a89d78906d7b4f35c10b39c1dd677d61eb4d966"
+    ],
+    "security_producer": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+    "measured_source_sha256": {
+      "examples/qualification/orders-http-postgres-v1.json": "44c0632a619a5b42eae89bf2c2360c9478ce054440b9b2bdb22ab510dd5d71a3",
+      "src/sova/qualification/__init__.py": "03e25cb600cd4fa8c72759464fc049cfe3c3da31f89c7f2ea52f5e384155a22b",
+      "src/sova/qualification/__main__.py": "c2f28ef4820e0ebb296ee474c18aeeab717a04c9c877c4ee6413aaa84e330f5c",
+      "src/sova/qualification/http_orders.py": "761538de2c1645d68cde46d558b2a7d9e477bc7f1af928ff8a60d37b2bbbee35",
+      "src/sova/qualification/postgres_orders.py": "b0c602dc4c9db02e0bd18c080026b38e643b4379e27c5bb353ac33aba3406eda",
+      "src/sova/qualification/requests.py": "1f701150aab8564d6c139c5803a35db478932bb6664f160c0d0f115161d1b612",
+      "tests/integration/test_order_http_handoff.py": "f91e0a00193b7cc230da4e471eb2eb8350db05ef369719bf571b2f753090ae3a",
+      "tests/qualification_orders.py": "9963519c64a422eb61efabbdfc260f918e6a52f5e6f8972fa9c0ce0db72a18f2",
+      "tests/qualification_postgres.py": "bdde29fa24340362cd7e43944148decd1d7bbefabd4e1052539374d4b0a1dff3",
+      "tests/unit/test_request_qualification.py": "bda58a6c8ca221a02a2fbca97ef7c6f4d11962148f0bf46d2b8a5554b50752bb"
+    },
+    "all_10_source_hashes_match_committed_snapshot": true
+  },
+  "tests": {
+    "unit": 56,
+    "integration": 3,
+    "tests": 59,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "environment": {
+    "postgres_version": "17.12 (Debian 17.12-1.pgdg13+1)",
+    "image_id": "sha256:0d938e975177bef9f1f61f3f9dbcf2e0aa0a139568f66d3415ed8892eb97f6ac",
+    "architecture": "arm64",
+    "topology": "one run-owned PostgreSQL container; source/target are logical databases",
+    "http": "real loopback TCP, plaintext, run-scoped test bearer",
+    "database_tls": "verify-full and run-scoped client certificate",
+    "client_certificate_shared_by_synthetic_fixture_roles": true,
+    "missing_client_certificate_denied": true,
+    "route": "test-only in-memory Route",
+    "shared_environment_used": false,
+    "real_cloud_used": false,
+    "operational_api_worker_used": false
+  },
+  "cases": [
+    {
+      "case": "commit-response-lost",
+      "expected_resolution": "UNRESOLVED_COMMIT",
+      "data_integrity": "SATISFIED",
+      "request_resolutions": [
+        "UNRESOLVED_COMMIT"
+      ],
+      "counts": {
+        "confirmed_requests": 0,
+        "http_error_attempts": 0,
+        "logical_requests": 1,
+        "not_committed_requests": 0,
+        "submission_attempts": 1,
+        "successful_submission_responses": 0,
+        "transport_error_attempts": 1,
+        "unfinished_attempts": 0,
+        "unresolved_commits": 1
+      },
+      "service_continuity": "NOT_QUALIFIED",
+      "qualification_issued": false,
+      "authorizes_execution": false
+    },
+    {
+      "case": "fractional-cent-corruption",
+      "expected_resolution": "VIOLATION",
+      "data_integrity": "VIOLATION",
+      "request_resolutions": [
+        "VIOLATION",
+        "CONFIRMED",
+        "CONFIRMED"
+      ],
+      "counts": {
+        "confirmed_requests": 2,
+        "http_error_attempts": 1,
+        "logical_requests": 3,
+        "not_committed_requests": 0,
+        "submission_attempts": 4,
+        "successful_submission_responses": 3,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "unresolved_commits": 0
+      },
+      "service_continuity": "NOT_QUALIFIED",
+      "qualification_issued": false,
+      "authorizes_execution": false
+    },
+    {
+      "case": "handoff-and-retry",
+      "expected_resolution": "CONFIRMED",
+      "data_integrity": "SATISFIED",
+      "request_resolutions": [
+        "CONFIRMED",
+        "CONFIRMED",
+        "CONFIRMED"
+      ],
+      "counts": {
+        "confirmed_requests": 3,
+        "http_error_attempts": 1,
+        "logical_requests": 3,
+        "not_committed_requests": 0,
+        "submission_attempts": 4,
+        "successful_submission_responses": 3,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "unresolved_commits": 0
+      },
+      "service_continuity": "NOT_QUALIFIED",
+      "qualification_issued": false,
+      "authorizes_execution": false
+    },
+    {
+      "case": "lookup-and-idempotent-retry",
+      "expected_resolution": "CONFIRMED",
+      "data_integrity": "SATISFIED",
+      "request_resolutions": [
+        "CONFIRMED"
+      ],
+      "counts": {
+        "confirmed_requests": 1,
+        "http_error_attempts": 0,
+        "logical_requests": 1,
+        "not_committed_requests": 0,
+        "submission_attempts": 2,
+        "successful_submission_responses": 1,
+        "transport_error_attempts": 1,
+        "unfinished_attempts": 0,
+        "unresolved_commits": 0
+      },
+      "service_continuity": "NOT_QUALIFIED",
+      "qualification_issued": false,
+      "authorizes_execution": false
+    },
+    {
+      "case": "missing-committed-order",
+      "expected_resolution": "VIOLATION",
+      "data_integrity": "VIOLATION",
+      "request_resolutions": [
+        "VIOLATION",
+        "CONFIRMED",
+        "CONFIRMED"
+      ],
+      "counts": {
+        "confirmed_requests": 2,
+        "http_error_attempts": 1,
+        "logical_requests": 3,
+        "not_committed_requests": 0,
+        "submission_attempts": 4,
+        "successful_submission_responses": 3,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "unresolved_commits": 0
+      },
+      "service_continuity": "NOT_QUALIFIED",
+      "qualification_issued": false,
+      "authorizes_execution": false
+    },
+    {
+      "case": "unauthorized-no-order",
+      "expected_resolution": "NOT_COMMITTED",
+      "data_integrity": "SATISFIED",
+      "request_resolutions": [
+        "NOT_COMMITTED"
+      ],
+      "counts": {
+        "confirmed_requests": 0,
+        "http_error_attempts": 1,
+        "logical_requests": 1,
+        "not_committed_requests": 1,
+        "submission_attempts": 1,
+        "successful_submission_responses": 0,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "unresolved_commits": 0
+      },
+      "service_continuity": "NOT_QUALIFIED",
+      "qualification_issued": false,
+      "authorizes_execution": false
+    }
+  ],
+  "cleanup": {
+    "owned_container_removed": true,
+    "owned_network_removed": true,
+    "shared_cluster_reset_or_mutation": false
+  },
+  "raw_artifacts": {
+    "availability": "local-only",
+    "workspace_relative_directory": "local-dev-records/migration-qualification-20261118/run-05",
+    "sha256": {
+      "commit-response-lost.json": "5f5aba5b6a13b4ee5026d2d5bc22d346b0bb3d28a8cc52e72fc653ddbe626225",
+      "fractional-cent-corruption.json": "127a9fbe8521d47a22e63dc07c0d4940b2ec426d20490e0b8474ce4b52d79985",
+      "handoff-and-retry.json": "614d2a5cc641951a92ca5a1b3f74f3d4ff82165578adda9656a5519c0a9511c2",
+      "lookup-and-idempotent-retry.json": "90f3e79fda21cfb712574284508a69ac83db20be76f360fd0bed12b640c73a45",
+      "missing-committed-order.json": "2f49a6674c2486ba149e257b83a9a72649091f60626a727b22d40e2f6bc1aed1",
+      "results.xml": "4f3d343ef1d7460a4e9d049f8c1de6bcbcf05a855ddada7efb0424655f117eeb",
+      "run.json": "b6f2253a28e5c8c21b55933b1254b1287cce3ac496070867721c4ab08211fb55",
+      "unauthorized-no-order.json": "4790ace169a275d5689a5c2996deabf7b0ec87eba2c2590b7e57dd4fb377c15b"
+    }
+  },
+  "limitations": [
+    "numeric service SLO, load and repetition profile are not approved",
+    "not two independent database servers or an AWS-to-VM acceptance",
+    "not a deployed operational API/OIDC/worker/edge path or failback test",
+    "SQLite and this summary are unsigned local records, not operational WORM evidence",
+    "two initial isolated-network setup failures are retained locally; final run is not a sum of all attempts"
+  ],
+  "qualification_issued": false,
+  "authorizes_execution": false
+}
