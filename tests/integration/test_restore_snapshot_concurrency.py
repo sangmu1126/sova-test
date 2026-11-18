@@ -91,3 +91,13 @@ def test_authoritative_database_cannot_be_used_as_destructive_scratch(business, 
     with pytest.raises(ContractError, match='scratch'):
         probes.restore_drill(b['names'][which])
     assert counts(b, b['names'][which]) == before
+
+
+def test_scratch_alias_that_resolves_to_live_target_is_rejected_before_truncate(business):
+    b, probes = business, prepared(business)
+    connect = b['connect']
+    before = counts(b, b['names']['tgt'])
+    probes.admin_connect = lambda db: connect(b['names']['tgt'] if db == b['names']['scratch'] else db)
+    with pytest.raises(ContractError, match='scratch'):
+        probes.restore_drill(b['names']['scratch'])
+    assert counts(b, b['names']['tgt']) == before

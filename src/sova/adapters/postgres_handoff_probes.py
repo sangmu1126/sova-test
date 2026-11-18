@@ -206,11 +206,14 @@ class PostgresHandoffProbes:
         with self.admin_connect(self.target_db) as source, \
                 self.admin_connect(scratch_db) as scratch:
             source.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-            snapshot, isolation, read_only = source.execute(
+            snapshot, isolation, read_only, actual_source = source.execute(
                 "SELECT pg_current_snapshot()::text,current_setting('transaction_isolation'),"
-                "current_setting('transaction_read_only')").fetchone()
+                "current_setting('transaction_read_only'),current_database()").fetchone()
             if isolation != "repeatable read" or read_only != "on":
                 raise ContractError("Restore source snapshot configuration invalid")
+            actual_scratch = scratch.execute("SELECT current_database()").fetchone()[0]
+            if actual_scratch in (actual_source, self.source_db, self.target_db):
+                raise ContractError("Restore scratch must resolve to a separate database")
             with scratch.transaction():
                 expected = {}
                 for table, key in self.tables:
@@ -226,4 +229,5 @@ class PostgresHandoffProbes:
                 restored = {table: expected[table] == table_digest(scratch, table) for table, _ in self.tables}
         return all(restored.values()), {"probe": "restore_drill", "tables": restored,
             "source_snapshot": snapshot, "source_isolation": isolation, "source_read_only": True,
+            "source_database": actual_source, "scratch_database": actual_scratch,
             "comparison": "copied_snapshot", "durable_backup_qualified": False}

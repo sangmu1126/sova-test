@@ -181,7 +181,7 @@ def main():
     # The worker regression fixtures leave their many tiny databases for the
     # run-owned container to dispose of. Account for template DBs and WAL, not
     # only business rows; never reset a shared database to make room.
-    data_mib, memory_mib = (1024, 1536) if args.suite in ("worker", "startup") else (384, 512)
+    data_mib, memory_mib = (1024, 1536) if args.suite in ("worker", "startup", "restore") else (384, 512)
     report.update(data_tmpfs_mib=data_mib, container_memory_mib=memory_mib)
     report["source_commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
     report["security_source_commit"] = subprocess.check_output(
