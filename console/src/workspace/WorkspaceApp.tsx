@@ -228,7 +228,9 @@ export function WorkspaceApp() {
         await refreshDetail();
       } catch {
         if (!stopped) {
+          setDetail(null);
           setObservation(null);
+          setConfirmation(null);
           setError("현재 계획·관측을 확인하지 못했습니다.");
         }
       } finally {
@@ -317,7 +319,15 @@ export function WorkspaceApp() {
       <select
         aria-label={label}
         value={fields[name]}
-        onChange={(e) => setFields({ ...fields, [name]: e.target.value })}
+        onChange={(e) =>
+          setFields({
+            ...fields,
+            [name]: e.target.value,
+            ...(name === "source_profile" && fields.target_profile === e.target.value
+              ? { target_profile: "" }
+              : {}),
+          })
+        }
       >
         <option value="">선택하세요</option>
         {(catalog[k]?.items || [])
@@ -513,6 +523,7 @@ export function WorkspaceApp() {
                     <label>
                       등록 종류
                       <select
+                        aria-label="등록 종류"
                         value={kind}
                         onChange={(e) => setKind(e.target.value)}
                       >
