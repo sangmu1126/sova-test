@@ -24,6 +24,7 @@ FILES = (
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True, help="New private output directory")
+    parser.add_argument("--kind", choices=("app", "postgres"), default="app")
     args = parser.parse_args()
     os.umask(0o077)
     out = args.output.resolve()
@@ -32,11 +33,15 @@ def main():
     context = out / "context"
     context.mkdir(mode=0o700)
     measured = {}
-    for source in (*FILES, "examples/order-canary/Dockerfile", "examples/order-canary/requirements.lock"):
+    sources = ((*FILES, "examples/order-canary/Dockerfile", "examples/order-canary/requirements.lock")
+               if args.kind == "app" else ("examples/order-canary/Postgres.Dockerfile",))
+    for source in sources:
         path = root / source
         if path.is_symlink() or not path.is_file() or path.stat().st_size > 262144:
             raise ValueError("Bounded regular source file required")
         relative = source.removeprefix("src/") if source.startswith("src/") else Path(source).name
+        if source.endswith("Postgres.Dockerfile"):
+            relative = "Dockerfile"
         destination = context / relative
         destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         data = path.read_bytes()
@@ -72,15 +77,16 @@ def main():
             if hasher.hexdigest() != digest[7:]:
                 raise ValueError("OCI content digest mismatch")
         config = json.load(tar.extractfile("blobs/sha256/" + image["config"]["digest"][7:]))
-        if config["architecture"] != "arm64" or config["os"] != "linux" or config["config"]["User"] != "10001:10001":
+        expected_user = "10001:10001" if args.kind == "app" else "70:70"
+        if config["architecture"] != "arm64" or config["os"] != "linux" or config["config"]["User"] != expected_user:
             raise ValueError("The image is not the non-root native Linux canary")
     with archive.open("rb") as file:
         archive_digest = hashlib.file_digest(file, "sha256").hexdigest()
-    report = {"source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
+    report = {"kind": args.kind, "source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
         "sources_sha256": measured, "manifest_digest": manifest,
         "config_digest": image["config"]["digest"], "architecture": "arm64", "os": "linux",
         "archive_sha256": archive_digest,
-        "layers_verified": len(image["layers"]), "user": "10001:10001", "deployed": False}
+        "layers_verified": len(image["layers"]), "user": expected_user, "deployed": False}
     (out / "image.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({key: report[key] for key in ("manifest_digest", "config_digest", "layers_verified", "deployed")}))
 
