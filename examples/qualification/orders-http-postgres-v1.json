@@ -1,0 +1,33 @@
+{
+  "kind": "MigrationAcceptanceProfileDraft",
+  "version": 1,
+  "profile_id": "orders-http-postgres-mq02-v1",
+  "status": "DRAFT",
+  "scope": "local component integration; not operational qualification",
+  "business": {
+    "schema": "tests/postgres_business.py",
+    "tables": ["orders", "work_items", "idempotency_results"],
+    "identity": ["tenant", "customer", "idempotency_key"],
+    "amount_format": "positive decimal string with at most two fractional digits",
+    "expected_result": "confirmed",
+    "expected_work_items": 1
+  },
+  "transports": {
+    "http": "loopback-only test server; not TLS-qualified",
+    "database": "PostgreSQL verify-full TLS for the recorded integration run"
+  },
+  "execution": {
+    "driver": "existing test coordinator and effect ledger",
+    "strategy": "offline-copy",
+    "route": "test-only Route; not a production edge",
+    "operational_api_worker_acceptance": false
+  },
+  "slo": {
+    "max_client_completion_wait_ms": null,
+    "max_final_error_ratio": null,
+    "max_recovery_ms": null,
+    "load_and_repetition_profile": null
+  },
+  "qualification_issued": false,
+  "authorizes_execution": false
+}
