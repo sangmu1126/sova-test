@@ -1,0 +1,888 @@
+{
+  "kind": "MeasuredDatabaseBootstrapOrderVerification",
+  "version": 1,
+  "date_kst": "2026-11-19",
+  "base_commit": "7fc9f509d8aab729d2db285de30dc2534f9610f1",
+  "harness_source": "ad21e7747fe2d48f8f9694f994ae8e8f1c7b276b",
+  "product_source": "0abcadcb4b8ab9426c747dbee39305c90d8916c7",
+  "image_id": "sha256:bf94bd18080210a11900913116adf4de144e84a538fbbc25d9b101640574633a",
+  "security_source": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+  "product_source_changes": false,
+  "timeout_changes": false,
+  "automatic_bootstrap_retries_added": false,
+  "components": {
+    "results": {
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "clock_passed": true,
+    "source_hashes_match_recorded_commit": true
+  },
+  "trials": [
+    {
+      "name": "cold",
+      "mode": "cold_deferred",
+      "source_commit": "ad21e7747fe2d48f8f9694f994ae8e8f1c7b276b",
+      "run_id": "worker-http-8d9f3056d978444a9fc4d7bb3e20e173",
+      "cluster_uid": "8c5778ce-06f5-454b-9eb8-3de40fd3d998",
+      "results": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "database_bootstrap": {
+        "source_database": "src_1df5c34903",
+        "target_database": "tgt_1df5c34903",
+        "source_version": "17.12",
+        "target_version": "17.12",
+        "source_tls": true,
+        "target_tls": true,
+        "observed_at": "2026-11-18T16:57:19.140002+00:00",
+        "qualification_issued": false,
+        "authorizes_execution": false
+      },
+      "discovery_before_cluster_creation": true,
+      "initial_orders": 100,
+      "initial_failures": 20,
+      "initial_status_counts": {
+        "200": 80,
+        "503": 12,
+        "transport_error": 8
+      },
+      "all_status_counts": {
+        "200": 103,
+        "404": 20,
+        "503": 12,
+        "transport_error": 8
+      },
+      "phase_counts": {
+        "load": 100,
+        "recovery": 40,
+        "post_handoff_probe": 3
+      },
+      "bounded_results": {},
+      "bounded_exhaustion_reasons": {},
+      "completion_budget_satisfied": null,
+      "maximum_inline_elapsed_ms": null,
+      "maximum_load_completion_ms": 21331.030301,
+      "data_integrity": "SATISFIED",
+      "counts": {
+        "logical_requests": 103,
+        "submission_attempts": 123,
+        "successful_submission_responses": 103,
+        "http_error_attempts": 12,
+        "transport_error_attempts": 8,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 103,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "tls_controls": {
+        "verified_https": true,
+        "wrong_ca_denied": true,
+        "wrong_hostname_denied": true
+      },
+      "installed_source_match": {
+        "status": "MATCH",
+        "packages": {
+          "sova": {
+            "expected_files": 318,
+            "installed_files": 318,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          },
+          "sova_security": {
+            "expected_files": 122,
+            "installed_files": 122,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          }
+        },
+        "service_entrypoint_matches": true
+      },
+      "pod_identities": [
+        {
+          "name": "worker-a",
+          "uid": "42062dc8-7359-43fd-9a1e-f25303f07650",
+          "service_account": "worker",
+          "service_account_uid": "f87be753-722b-432b-98e2-dbaf1692782f",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://a26760c968d88d7ee8c923319a416c5e772809fba42ceaac72fe464bf9381d20"
+        },
+        {
+          "name": "worker-b",
+          "uid": "74c7aa80-82e0-4f2e-891a-2be0c1527d73",
+          "service_account": "worker",
+          "service_account_uid": "f87be753-722b-432b-98e2-dbaf1692782f",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://097b361a903bdfad8c355b1bf36f163e4a30a979a6641eb60ac9908c76a2d688"
+        }
+      ],
+      "handoff": {
+        "state": "HANDOFF_COMPLETE",
+        "original_owner": "worker-b.74c7aa80-82e0-4f2e-891a-2be0c1527d73.12445cd9d3b6",
+        "recovery_owner": "worker-a.42062dc8-7359-43fd-9a1e-f25303f07650.2187be2ffb3e",
+        "recovery_at": "2026-11-18T16:58:51.498364+00:00",
+        "route_patch_requests": 1,
+        "pod_absence_audit_observations": 0,
+        "stopped_pod_observation_http_statuses": [
+          200
+        ],
+        "effect_status": "confirmed_applied",
+        "historical_orders_preserved": 50,
+        "target_write_confirmed": true,
+        "client_continuity_qualified": false
+      },
+      "live_owner": {
+        "owner_id": "worker-b.74c7aa80-82e0-4f2e-891a-2be0c1527d73.12445cd9d3b6",
+        "lease_until": "2026-11-18T16:58:47.747421+00:00",
+        "database_observed_at": "2026-11-18T16:58:48.270222+00:00",
+        "recovery_events": 0,
+        "effect": "in_flight",
+        "authenticated_alive_observations": 1
+      },
+      "runtime_stop": {
+        "container_id": "097b361a903bdfad8c355b1bf36f163e4a30a979a6641eb60ac9908c76a2d688",
+        "observed_at": "2026-11-18T16:58:51.550521+00:00",
+        "state": "absent from CRI inventory",
+        "force_api_deletion": false,
+        "terminal_pod_watch": [
+          {
+            "type": "MODIFIED",
+            "uid": "74c7aa80-82e0-4f2e-891a-2be0c1527d73",
+            "phase": "Failed",
+            "resource_version": "618",
+            "observed_at": "2026-11-18T16:58:51.212244+00:00"
+          },
+          {
+            "type": "MODIFIED",
+            "uid": "74c7aa80-82e0-4f2e-891a-2be0c1527d73",
+            "phase": "Failed",
+            "resource_version": "620",
+            "observed_at": "2026-11-18T16:58:51.534410+00:00"
+          },
+          {
+            "type": "DELETED",
+            "uid": "74c7aa80-82e0-4f2e-891a-2be0c1527d73",
+            "phase": "Failed",
+            "resource_version": "621",
+            "observed_at": "2026-11-18T16:58:51.541600+00:00"
+          }
+        ]
+      },
+      "actual_secret_get_status": 403,
+      "unauthorized_pod_get_status": 403,
+      "target_prepared": null,
+      "control_plane_status_counts": {
+        "200": 9,
+        "201": 6
+      },
+      "clock_passed": true,
+      "clock_samples": 191,
+      "resources_removed": true,
+      "qualification_issued": false,
+      "authorizes_execution": false
+    },
+    {
+      "name": "prepared",
+      "mode": "prepared_deferred",
+      "source_commit": "ad21e7747fe2d48f8f9694f994ae8e8f1c7b276b",
+      "run_id": "worker-http-52f546df41a64024b2489ec276a04798",
+      "cluster_uid": "6f2627bb-a571-4b66-ab7c-d89b5608d8cd",
+      "results": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "database_bootstrap": {
+        "source_database": "src_5b3489f020",
+        "target_database": "tgt_5b3489f020",
+        "source_version": "17.12",
+        "target_version": "17.12",
+        "source_tls": true,
+        "target_tls": true,
+        "observed_at": "2026-11-18T16:59:21.184908+00:00",
+        "qualification_issued": false,
+        "authorizes_execution": false
+      },
+      "discovery_before_cluster_creation": true,
+      "initial_orders": 100,
+      "initial_failures": 18,
+      "initial_status_counts": {
+        "200": 82,
+        "503": 14,
+        "transport_error": 4
+      },
+      "all_status_counts": {
+        "200": 103,
+        "404": 18,
+        "503": 14,
+        "transport_error": 4
+      },
+      "phase_counts": {
+        "load": 100,
+        "recovery": 36,
+        "post_handoff_probe": 3
+      },
+      "bounded_results": {},
+      "bounded_exhaustion_reasons": {},
+      "completion_budget_satisfied": null,
+      "maximum_inline_elapsed_ms": null,
+      "maximum_load_completion_ms": 22567.859928,
+      "data_integrity": "SATISFIED",
+      "counts": {
+        "logical_requests": 103,
+        "submission_attempts": 121,
+        "successful_submission_responses": 103,
+        "http_error_attempts": 14,
+        "transport_error_attempts": 4,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 103,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "tls_controls": {
+        "verified_https": true,
+        "wrong_ca_denied": true,
+        "wrong_hostname_denied": true
+      },
+      "installed_source_match": {
+        "status": "MATCH",
+        "packages": {
+          "sova": {
+            "expected_files": 318,
+            "installed_files": 318,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          },
+          "sova_security": {
+            "expected_files": 122,
+            "installed_files": 122,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          }
+        },
+        "service_entrypoint_matches": true
+      },
+      "pod_identities": [
+        {
+          "name": "worker-a",
+          "uid": "5dcb39ba-1895-4f19-abf3-54e134cdf7cd",
+          "service_account": "worker",
+          "service_account_uid": "57a91c1d-1ae8-4fa5-8157-44443ce238c3",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://cb4ecfc16f532960e0bb9cc1f017c24f6d134709885e0c53f76b604996533c40"
+        },
+        {
+          "name": "worker-b",
+          "uid": "e34d040b-0cba-4b64-ab8c-993953b10b02",
+          "service_account": "worker",
+          "service_account_uid": "57a91c1d-1ae8-4fa5-8157-44443ce238c3",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://3ffbcfa71e55ffa5963dde57f8f0ace9a26a600d0fe6b5c03bc4de36cacb3779"
+        }
+      ],
+      "handoff": {
+        "state": "HANDOFF_COMPLETE",
+        "original_owner": "worker-a.5dcb39ba-1895-4f19-abf3-54e134cdf7cd.699852195d86",
+        "recovery_owner": "worker-b.e34d040b-0cba-4b64-ab8c-993953b10b02.aed8441e2d8c",
+        "recovery_at": "2026-11-18T17:00:57.467730+00:00",
+        "route_patch_requests": 1,
+        "pod_absence_audit_observations": 0,
+        "stopped_pod_observation_http_statuses": [
+          200
+        ],
+        "effect_status": "confirmed_applied",
+        "historical_orders_preserved": 50,
+        "target_write_confirmed": true,
+        "client_continuity_qualified": false
+      },
+      "live_owner": {
+        "owner_id": "worker-a.5dcb39ba-1895-4f19-abf3-54e134cdf7cd.699852195d86",
+        "lease_until": "2026-11-18T17:00:53.069207+00:00",
+        "database_observed_at": "2026-11-18T17:00:54.016471+00:00",
+        "recovery_events": 0,
+        "effect": "in_flight",
+        "authenticated_alive_observations": 1
+      },
+      "runtime_stop": {
+        "container_id": "cb4ecfc16f532960e0bb9cc1f017c24f6d134709885e0c53f76b604996533c40",
+        "observed_at": "2026-11-18T17:00:57.919344+00:00",
+        "state": "CONTAINER_EXITED",
+        "force_api_deletion": false,
+        "terminal_pod_watch": [
+          {
+            "type": "MODIFIED",
+            "uid": "5dcb39ba-1895-4f19-abf3-54e134cdf7cd",
+            "phase": "Failed",
+            "resource_version": "626",
+            "observed_at": "2026-11-18T17:00:56.918231+00:00"
+          },
+          {
+            "type": "MODIFIED",
+            "uid": "5dcb39ba-1895-4f19-abf3-54e134cdf7cd",
+            "phase": "Failed",
+            "resource_version": "628",
+            "observed_at": "2026-11-18T17:00:57.898538+00:00"
+          },
+          {
+            "type": "DELETED",
+            "uid": "5dcb39ba-1895-4f19-abf3-54e134cdf7cd",
+            "phase": "Failed",
+            "resource_version": "629",
+            "observed_at": "2026-11-18T17:00:57.910819+00:00"
+          }
+        ]
+      },
+      "actual_secret_get_status": 403,
+      "unauthorized_pod_get_status": 403,
+      "target_prepared": {
+        "pod_uid": "64a3f7e6-c4db-4e6b-b4c7-455bce30a6f1",
+        "health_ready": true,
+        "selected_by_route": false,
+        "business_writes_enabled_early": false,
+        "target_write_denial_sqlstate": "42501",
+        "source_positive_control": true
+      },
+      "control_plane_status_counts": {
+        "200": 8,
+        "201": 6
+      },
+      "clock_passed": true,
+      "clock_samples": 199,
+      "resources_removed": true,
+      "qualification_issued": false,
+      "authorizes_execution": false
+    },
+    {
+      "name": "bounded",
+      "mode": "prepared_bounded",
+      "source_commit": "ad21e7747fe2d48f8f9694f994ae8e8f1c7b276b",
+      "run_id": "worker-http-316dc1728a3f4baeaf8d8b39fad4f4bd",
+      "cluster_uid": "e326e13c-bb2b-4f55-b9fd-bfaa3240df45",
+      "results": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "database_bootstrap": {
+        "source_database": "src_724735d360",
+        "target_database": "tgt_724735d360",
+        "source_version": "17.12",
+        "target_version": "17.12",
+        "source_tls": true,
+        "target_tls": true,
+        "observed_at": "2026-11-18T17:01:11.997096+00:00",
+        "qualification_issued": false,
+        "authorizes_execution": false
+      },
+      "discovery_before_cluster_creation": true,
+      "initial_orders": 100,
+      "initial_failures": 1,
+      "initial_status_counts": {
+        "200": 99,
+        "503": 1
+      },
+      "all_status_counts": {
+        "200": 103,
+        "404": 1,
+        "503": 5,
+        "transport_error": 3
+      },
+      "phase_counts": {
+        "load": 100,
+        "inline_retry": 7,
+        "recovery": 2,
+        "post_handoff_probe": 3
+      },
+      "bounded_results": {
+        "CONFIRMED": 99,
+        "EXHAUSTED": 1
+      },
+      "bounded_exhaustion_reasons": {
+        "attempt_limit": 1
+      },
+      "completion_budget_satisfied": false,
+      "maximum_inline_elapsed_ms": 2511.294,
+      "maximum_load_completion_ms": 23176.934552,
+      "data_integrity": "SATISFIED",
+      "counts": {
+        "logical_requests": 103,
+        "submission_attempts": 104,
+        "successful_submission_responses": 103,
+        "http_error_attempts": 1,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 103,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "tls_controls": {
+        "verified_https": true,
+        "wrong_ca_denied": true,
+        "wrong_hostname_denied": true
+      },
+      "installed_source_match": {
+        "status": "MATCH",
+        "packages": {
+          "sova": {
+            "expected_files": 318,
+            "installed_files": 318,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          },
+          "sova_security": {
+            "expected_files": 122,
+            "installed_files": 122,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          }
+        },
+        "service_entrypoint_matches": true
+      },
+      "pod_identities": [
+        {
+          "name": "worker-a",
+          "uid": "be82a5c4-4383-4a8e-a0f4-224cda9e81c1",
+          "service_account": "worker",
+          "service_account_uid": "831978f0-686f-4fa2-9e97-aea114f649e0",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://aa9b63238355c191eaccce9de8c55cc3879d7cbe72d58ab316e5386e9661f9cc"
+        },
+        {
+          "name": "worker-b",
+          "uid": "e223cace-2093-47e0-85be-f7033f63f7f5",
+          "service_account": "worker",
+          "service_account_uid": "831978f0-686f-4fa2-9e97-aea114f649e0",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://f113cbbadbebc1240c8ccda82b9c930ba92cbf0af648ed64e5a4ef2b1fb169b7"
+        }
+      ],
+      "handoff": {
+        "state": "HANDOFF_COMPLETE",
+        "original_owner": "worker-b.e223cace-2093-47e0-85be-f7033f63f7f5.fbac4a2a30f0",
+        "recovery_owner": "worker-a.be82a5c4-4383-4a8e-a0f4-224cda9e81c1.62f41fae4196",
+        "recovery_at": "2026-11-18T17:02:58.416241+00:00",
+        "route_patch_requests": 1,
+        "pod_absence_audit_observations": 0,
+        "stopped_pod_observation_http_statuses": [
+          200
+        ],
+        "effect_status": "confirmed_applied",
+        "historical_orders_preserved": 50,
+        "target_write_confirmed": true,
+        "client_continuity_qualified": false
+      },
+      "live_owner": {
+        "owner_id": "worker-b.e223cace-2093-47e0-85be-f7033f63f7f5.fbac4a2a30f0",
+        "lease_until": "2026-11-18T17:02:54.349983+00:00",
+        "database_observed_at": "2026-11-18T17:02:55.104357+00:00",
+        "recovery_events": 0,
+        "effect": "in_flight",
+        "authenticated_alive_observations": 1
+      },
+      "runtime_stop": {
+        "container_id": "f113cbbadbebc1240c8ccda82b9c930ba92cbf0af648ed64e5a4ef2b1fb169b7",
+        "observed_at": "2026-11-18T17:02:58.521159+00:00",
+        "state": "absent from CRI inventory",
+        "force_api_deletion": false,
+        "terminal_pod_watch": [
+          {
+            "type": "MODIFIED",
+            "uid": "e223cace-2093-47e0-85be-f7033f63f7f5",
+            "phase": "Failed",
+            "resource_version": "621",
+            "observed_at": "2026-11-18T17:02:58.035695+00:00"
+          },
+          {
+            "type": "MODIFIED",
+            "uid": "e223cace-2093-47e0-85be-f7033f63f7f5",
+            "phase": "Failed",
+            "resource_version": "623",
+            "observed_at": "2026-11-18T17:02:58.493632+00:00"
+          },
+          {
+            "type": "DELETED",
+            "uid": "e223cace-2093-47e0-85be-f7033f63f7f5",
+            "phase": "Failed",
+            "resource_version": "624",
+            "observed_at": "2026-11-18T17:02:58.516895+00:00"
+          }
+        ]
+      },
+      "actual_secret_get_status": 403,
+      "unauthorized_pod_get_status": 403,
+      "target_prepared": {
+        "pod_uid": "d4c03625-d488-4d25-b0de-eb7019284cf6",
+        "health_ready": true,
+        "selected_by_route": false,
+        "business_writes_enabled_early": false,
+        "target_write_denial_sqlstate": "42501",
+        "source_positive_control": true
+      },
+      "control_plane_status_counts": {
+        "200": 8,
+        "201": 6
+      },
+      "clock_passed": true,
+      "clock_samples": 202,
+      "resources_removed": true,
+      "qualification_issued": false,
+      "authorizes_execution": false
+    }
+  ],
+  "raw_artifacts": [
+    {
+      "path": "cold/run.json",
+      "sha256": "19d59d69b950067c1d7d77b70c59e384c632dc27c1fb11ad50cc0fcf57e4a3a1",
+      "bytes": 50288
+    },
+    {
+      "path": "cold/results.xml",
+      "sha256": "32eec88e12bc3fb0cbfdf130dd02703b7b4eac1b89b4b775a87091a4e0ab32c3",
+      "bytes": 433
+    },
+    {
+      "path": "cold/runner.log",
+      "sha256": "fe071543653809cbcbc6600d59d81d8fd79afd2e5836edeab0354d3386b1ff53",
+      "bytes": 42448
+    },
+    {
+      "path": "cold/database-bootstrap.json",
+      "sha256": "a408f1985dcd1bd895ed08cd5c37e9bfa1e15b9c61489cec84c7f40db740f68b",
+      "bytes": 302
+    },
+    {
+      "path": "cold/pods/environment.json",
+      "sha256": "a4518374af03486756b44a16ddbbb4d82ba346676b4e190a221462824e509690",
+      "bytes": 31936
+    },
+    {
+      "path": "cold/pods/audit/audit.log",
+      "sha256": "a416c8d9746b4432f5805450eb5a0ac35dbd6210278a9f20c8f0785319f50964",
+      "bytes": 32378
+    },
+    {
+      "path": "cold/pods/owner-terminal-watch.jsonl",
+      "sha256": "27eaae9f929792ca700370eaac4ea7ba7bb802b83cc242b31b1ffbcd787615cb",
+      "bytes": 826
+    },
+    {
+      "path": "cold/pods/owner-terminal-watch.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "cold/pods/worker-a.log",
+      "sha256": "c0ebce256bbffe0226b758bdf5333215deedc62a392a7a6f8f41abfa9b2f141e",
+      "bytes": 1898
+    },
+    {
+      "path": "cold/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "cold/pods/http/results/client.json",
+      "sha256": "ae6174f928d02d3248d24bb49680a42a4ce991b6b81d8c643831107b434a3ea6",
+      "bytes": 720
+    },
+    {
+      "path": "cold/pods/http/results/journal.json",
+      "sha256": "c61bf523aad90392ee7ecfa0c400ad8b040efb4857ec1d55ccae310fd6f2af9e",
+      "bytes": 103875
+    },
+    {
+      "path": "cold/pods/http/results/client.sqlite",
+      "sha256": "65e1d490e15afa57afa49bd0d67ba79d0bd7b71ce46e954c23a848031ba59de4",
+      "bytes": 118784
+    },
+    {
+      "path": "cold/pods/http/results/traffic.jsonl",
+      "sha256": "cf59a876006bebc743cdb7d37dcb8b9b0c599a7cf54cfc8cd8d8ed43064aa45a",
+      "bytes": 32054
+    },
+    {
+      "path": "cold/pods/http/results/independent-observation.json",
+      "sha256": "30e8025fa99d086c2910b6419fd8e756c5545beb26aad03eb9cfc1693fbcabfd",
+      "bytes": 24973
+    },
+    {
+      "path": "cold/pods/http/results/reconciliation.json",
+      "sha256": "558d6eab44623a6887c094a210307b57234fa52e25b0fbe1191fa4ad58a040af",
+      "bytes": 15808
+    },
+    {
+      "path": "prepared/run.json",
+      "sha256": "8b772d6ea53bee1032e670db4f8da1b317ca4ac3a62b167e5e386b7bcf162969",
+      "bytes": 52137
+    },
+    {
+      "path": "prepared/results.xml",
+      "sha256": "6512dd70e67b0909bb6b91a671d6214eee473c0b465e40930a4005bc278484c8",
+      "bytes": 433
+    },
+    {
+      "path": "prepared/runner.log",
+      "sha256": "40b44ff279603deac111de39a93976af46de54fd2cffc5f46e74394f7e494863",
+      "bytes": 43929
+    },
+    {
+      "path": "prepared/database-bootstrap.json",
+      "sha256": "9645326eac87d086685f4a8d744455a6f3109ba591090eb63977bcc6f40ff572",
+      "bytes": 302
+    },
+    {
+      "path": "prepared/pods/environment.json",
+      "sha256": "67dd04f1a3ed167f47bdabb3ecdf096cfe37d8797b4f9ac2c349f8c0bd9c5fba",
+      "bytes": 31814
+    },
+    {
+      "path": "prepared/pods/audit/audit.log",
+      "sha256": "ea996086b05ac3923be6d238be7e4a02f06985f7b856f963b86e31a363384cc6",
+      "bytes": 34799
+    },
+    {
+      "path": "prepared/pods/owner-terminal-watch.jsonl",
+      "sha256": "a88f96a0c9d57df6f3849a65fb4270b3c7af9ed79f7bc453dbc682755a94cad3",
+      "bytes": 826
+    },
+    {
+      "path": "prepared/pods/owner-terminal-watch.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "prepared/pods/worker-b.log",
+      "sha256": "a3baa877478d09120b3f5974e3cb27d6073ca06ee0e4195b5ba09493eb9cb939",
+      "bytes": 1898
+    },
+    {
+      "path": "prepared/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "prepared/pods/http/results/client.json",
+      "sha256": "640e55444c00a7e787a50fc6782205ca7fb41d280aef03a5c4943f5261a325e4",
+      "bytes": 725
+    },
+    {
+      "path": "prepared/pods/http/results/journal.json",
+      "sha256": "3a9c6c0b3f84b136da8889e858c4aa091818748524dbafbb3cb93907e1c0c79b",
+      "bytes": 102267
+    },
+    {
+      "path": "prepared/pods/http/results/client.sqlite",
+      "sha256": "fc90b5dc83365efc9eab40459cd1cda612769df53b1d57edb190c3ffc9c3cd9e",
+      "bytes": 118784
+    },
+    {
+      "path": "prepared/pods/http/results/traffic.jsonl",
+      "sha256": "a6071e71b6bccec08ea316c6ebc5ff6f1ef19f247c809fd04580feb257aa8b19",
+      "bytes": 31169
+    },
+    {
+      "path": "prepared/pods/http/results/independent-observation.json",
+      "sha256": "518aeee6648bc35223bce8e6a24fcc8493a1dd92332c47195c3f59a859660c00",
+      "bytes": 24973
+    },
+    {
+      "path": "prepared/pods/http/results/reconciliation.json",
+      "sha256": "f8901bf268f826a6d1a036d0173f1c4cc7f97f82893e7344ca32aa21c0caefa2",
+      "bytes": 15800
+    },
+    {
+      "path": "bounded/run.json",
+      "sha256": "9fbb92b7dcc40300f7ef0a364dae1f016548f78e1cff64a3e6022d289a6e71f3",
+      "bytes": 52890
+    },
+    {
+      "path": "bounded/results.xml",
+      "sha256": "24efd555405ce98a3316fb57cb966515ecfde5ea699a4dbf19dabccce7db4c96",
+      "bytes": 433
+    },
+    {
+      "path": "bounded/runner.log",
+      "sha256": "6cbfd5d57b314a07011c77dba0c009e05b98334dc6be547deb5806755f16d424",
+      "bytes": 44544
+    },
+    {
+      "path": "bounded/database-bootstrap.json",
+      "sha256": "7188fe9f349afd03260014683e20ea11f39750951e7269d668485aca068f2972",
+      "bytes": 302
+    },
+    {
+      "path": "bounded/pods/environment.json",
+      "sha256": "e5a1d1c4a129ba66815bc4bb20f66bd91ec1599e3d34de7c490f5b0cf3aa7c7b",
+      "bytes": 62434
+    },
+    {
+      "path": "bounded/pods/audit/audit.log",
+      "sha256": "1c570b166a849d4baf004d707d59cb08dd00a5a340cc5088191388cfef1e2402",
+      "bytes": 37220
+    },
+    {
+      "path": "bounded/pods/owner-terminal-watch.jsonl",
+      "sha256": "e372cccdbe42f790eb3c46572e251c44b09dd265461aab370e26d93a7f24ac04",
+      "bytes": 826
+    },
+    {
+      "path": "bounded/pods/owner-terminal-watch.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "bounded/pods/worker-a.log",
+      "sha256": "04315899efcde58c5fc3715f868c46a680b74aa494edf7a429e91e899f525fe3",
+      "bytes": 1898
+    },
+    {
+      "path": "bounded/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "bounded/pods/http/results/client.json",
+      "sha256": "3809de4c6a8d158af481ca9cff75a0daa7bcb761a4e37df3578c413b118e1186",
+      "bytes": 27334
+    },
+    {
+      "path": "bounded/pods/http/results/journal.json",
+      "sha256": "b1d656a84c80a8488dc8f1fed8debe996c15f5b18b593ca508a0e884cd522f5d",
+      "bytes": 91777
+    },
+    {
+      "path": "bounded/pods/http/results/client.sqlite",
+      "sha256": "1e32db8f5be4b0e57efe5e1264451589628f7da366498cc2cf17434d20d4fb88",
+      "bytes": 114688
+    },
+    {
+      "path": "bounded/pods/http/results/traffic.jsonl",
+      "sha256": "b1693c3179f6221ccfdcfc9c85c439aadee328914f136817cf0c2a5285f9a0b0",
+      "bytes": 31193
+    },
+    {
+      "path": "bounded/pods/http/results/independent-observation.json",
+      "sha256": "bb212562db4653dec541290a3501b274cbd3087b32dfc8b72cee87fa314e1800",
+      "bytes": 24973
+    },
+    {
+      "path": "bounded/pods/http/results/reconciliation.json",
+      "sha256": "5bff06af4ea77b38151d36a215f1185d15ae4faf1b7075a5bf8f02628853a17d",
+      "bytes": 15744
+    },
+    {
+      "path": "components/run.json",
+      "sha256": "a4ea4075c38e9a4c5532978358c40037fd50617fe72837abf6e7183d0de5ad0e",
+      "bytes": 23255
+    },
+    {
+      "path": "components/results.xml",
+      "sha256": "084be8abc1d64eae8ba28183d9f597a3fac24d272f7209b0d848e95595304acb",
+      "bytes": 1325
+    },
+    {
+      "path": "components/runner.log",
+      "sha256": "77d57360f378af0091de98605bf592ce65ecfd7dd813b5781209473d17b10a8c",
+      "bytes": 19798
+    }
+  ],
+  "raw_evidence_root": "/Users/Sooming_/dev/softbank_2026/local-dev-records/database-bootstrap-order-20261119",
+  "qualification_issued": false,
+  "authorizes_execution": false,
+  "service_continuity": "NOT_QUALIFIED",
+  "signed_operational_evidence": false,
+  "limitations": [
+    "Version metadata is not a signed trust/identity/authorization receipt; live permission, TLS, fencing and recovery checks remain mandatory",
+    "One closed-loop client/run per case; retries change actual arrival timing; not a statistical improvement estimate",
+    "One local arm64 kind node and one isolated PG17.12 server with separate databases; not AWS-to-independent-onprem migration",
+    "Synthetic plan/bootstrap IdP/local file witness/shared fixture DB certificate; no WORM, cloud operation or production load/SLO qualification",
+    "Moving setup queries does not establish CPU/memory contention as the cause of the earlier timeout or prove timeouts can never recur"
+  ],
+  "measured_source_sha256": {
+    "examples/qualification/orders-http-postgres-v1.json": "44c0632a619a5b42eae89bf2c2360c9478ce054440b9b2bdb22ab510dd5d71a3",
+    "examples/qualification/orders-pod-https-comparison-v2.json": "3058a04a792ec44bc9e3193d64340d2a75db8fdcdc1137b9b9743022ac65f5d4",
+    "examples/qualification/orders-pod-https-postgres-v1.json": "50b7d0c3b9bae8cda79a1add2e09f4030552723ac3fe926288485ba289e4e4cb",
+    "src/sova/qualification/__init__.py": "03e25cb600cd4fa8c72759464fc049cfe3c3da31f89c7f2ea52f5e384155a22b",
+    "src/sova/qualification/__main__.py": "c2f28ef4820e0ebb296ee474c18aeeab717a04c9c877c4ee6413aaa84e330f5c",
+    "src/sova/qualification/bounded_orders.py": "3dac6e4ae22f918d8a022e791b0f59d168ec3bb133dc172c9727ae8855e0c456",
+    "src/sova/qualification/http_orders.py": "f471b6c1e6fe33711d96f733fd0aeb79b94ff5d0f249ccd523dc5286a0aae92f",
+    "src/sova/qualification/image.py": "9abc6384c7eb53a18876ff0885d6a7ae2361343f12bfed14de443619c5f1304b",
+    "src/sova/qualification/postgres_orders.py": "b0c602dc4c9db02e0bd18c080026b38e643b4379e27c5bb353ac33aba3406eda",
+    "src/sova/qualification/requests.py": "1f701150aab8564d6c139c5803a35db478932bb6664f160c0d0f115161d1b612",
+    "src/sova/service/__init__.py": "04ad811567cd672308b8a9a50ab12084ec37843db5b8e299a79f2ded97b5f04e",
+    "src/sova/service/api.py": "dee1d3cbe0804162f733620b2c2363b6386be39a03c825b7b02fe7d2a15587b2",
+    "src/sova/service/auth.py": "42ab347486d57eacfd296cf6a8f9863217769b08cb9c51f18c081ae57d855d85",
+    "src/sova/service/catalog.py": "bdc8e6f7da60224b3683993fc5d1e603de537f96e19b58c202bd38075f7f2573",
+    "src/sova/service/composite_execution.py": "c9bc7a9c4c69db084a0d5b72a656267c459d5554370fe808c96a9b15a1473081",
+    "src/sova/service/config.py": "91dd0d4164d7eb59166e201391c361d6dde718ce769815054c70465ab17184f0",
+    "src/sova/service/control_plane.py": "41193d73e49fdd8f48f5406e7e399c6d971ca2d9f7c2d3cba09bedaebd6877b1",
+    "src/sova/service/kafka_execution.py": "025d015a2f5f6dfbe5ba8cada837e00ff300fb9218482f71d2c9f0f53bc821bd",
+    "src/sova/service/main.py": "49db1aeba20c31ccc1c24a1d505f5e576a1aabe50663b3ac28804f7dd33bbe6a",
+    "src/sova/service/mongodb_execution.py": "2872173c94c0e6edfc528bddbd7f5c2981a30a7df75f15fd6d9d80cad8d67bd0",
+    "src/sova/service/mysql_execution.py": "cc83f2435eca020ad9858a8a88dceeea2ec3d1c1b29343875634e42945b92065",
+    "src/sova/service/postgres_execution.py": "7f03a63a8c8dfb876c56cd834f031c5798295f878c875e02660fbc1a2b6cf51f",
+    "src/sova/service/quiescence.py": "cb6abf2b016654f2ba05941b8b745e60d6409d670a29cf3e0a690dc31e518bf1",
+    "src/sova/service/rabbitmq_execution.py": "8934d85b2889e41c84d3208207da8d9947f14acd5a2310b34bc3198632de2f8c",
+    "src/sova/service/redis_execution.py": "6d710dab2d971bbb61ec89b0476183633032fe4ce93370d60b8d4f976e872c27",
+    "src/sova/service/route_stores.py": "9a0990a2399dca4602dfd902cd5d382012df171ac1082c8d4566073de7ab74f3",
+    "src/sova/service/schema.py": "93f56a980cb7042f1d0031deeea5a766872c68274e5eea85f4a375d600b675c4",
+    "src/sova/service/volume_execution.py": "13d6a94fcec041dbadae519ff772d7909cdfea58dde87320e35379b67cfff0ed",
+    "src/sova/service/worker.py": "3a148ff7ec555bcaa64252747403bd547da4dca734471262691ac279bc796555",
+    "tests/contract_world.py": "27badc1d9a7d3e676a3a2c807055088a89d327392df37dd9abafe0e5ab325b44",
+    "tests/control_plane_support.py": "c0b0a83312067d62c4246a801f00b9bd4b9aa9e408c3c76bf96575d3dba8230c",
+    "tests/handoff_drive.py": "736ceb33c16d55e32865b69979c6b84dd8ab222b2a439586b095fe8ec8aa0cdf",
+    "tests/integration/test_order_http_handoff.py": "f91e0a00193b7cc230da4e471eb2eb8350db05ef369719bf571b2f753090ae3a",
+    "tests/integration/test_worker_pod_http_journey.py": "3629f80240834b2232fe29a4170a680eac9f64c4a5319f2695fa261700d25b16",
+    "tests/integration/test_worker_pod_journey.py": "88a887903c8d1d3e294e1abde3b8168f333000bddb8a974e3081d7c51ae59708",
+    "tests/postgres_business.py": "06f82150025d01115a9bc3dca3ec5cff2149d593f227cc08cd2e611c219fdc86",
+    "tests/postgres_fixtures.py": "dee72e9f8426d632dff738e475bbd7bdd65c32bdb9319bd6135d67b658601774",
+    "tests/qualification_diagnostics.py": "b80bf4e90de4c8766bab4ab1c5ca4962e5cccdf3b3bc3650dc1f57a85bab6745",
+    "tests/qualification_load_client.py": "8c3b0073af69cc775aa51afef9c2d43b6086ef712ce3474e1df8c309b405272d",
+    "tests/qualification_order_pod.py": "68a59ed2b3654f3f5c1ca8d24a913ba26e1883a474ce10369192c75775a7dbff",
+    "tests/qualification_orders.py": "9963519c64a422eb61efabbdfc260f918e6a52f5e6f8972fa9c0ce0db72a18f2",
+    "tests/qualification_pod_http.py": "8289373d04a77ff445c00f77b0a4f5a3bac3b183369ae370d905478a76a97b23",
+    "tests/qualification_pods.py": "e89fa204793749557efefeb1f8d8ea9693ae4487d5619620a52dbe3885a1c403",
+    "tests/qualification_postgres.py": "ee0ae03c3b626e22832fb85f62e67edf1bacc1c75eb0285709e51c0bb8106d93",
+    "tests/qualification_service.py": "af206085dc6ce587468be3280245316c0e259f3ede2cc26bd77b84ab2c232f4f",
+    "tests/unit/test_request_qualification.py": "bda58a6c8ca221a02a2fbca97ef7c6f4d11962148f0bf46d2b8a5554b50752bb"
+  },
+  "prior_failure": {
+    "kind": "FixtureSourceVersionDiscoveryConnectionTimeout",
+    "root": "/Users/Sooming_/dev/softbank_2026/local-dev-records/authority-read-concurrency-20261119/accepted-cold",
+    "business_load_started": false,
+    "results_sha256": "9e758a3bf0fee1aaed6f8e54936ddada75801dbc18416e01273f952daed0ef96",
+    "run_sha256": "98ef86bb810da1f3ecc5dd6164959280714d47568afe2f1d400c3eb74b174d13",
+    "evidence_document": "docs/evidence/authority-read-concurrency-20261119.json",
+    "superseded_or_erased": false,
+    "underlying_cause_established": false
+  },
+  "feature_commits": [
+    "ad21e7747fe2d48f8f9694f994ae8e8f1c7b276b"
+  ],
+  "cleanup_verification": {
+    "path": "cleanup-verification.json",
+    "sha256": "308888e82606ae59a689cbf60cfa7e0afcf026429483890a6ea07d38f2ec7a89",
+    "resource_names_checked": 14,
+    "all_absent": true,
+    "cached_images_retained": true
+  }
+}
