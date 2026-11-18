@@ -24,10 +24,13 @@ try {
   });
   await page.goto(config.origin + "/console/");
   await page.getByRole("button", { name: "계약 계획", exact: true }).click();
-  await page.waitForFunction(({ state, required }) => {
+  await page.waitForFunction(({ state, required, reason_text }) => {
     const text = document.querySelector("main")?.innerText || "";
-    return text.includes(state) && text.includes(required ? "효과 결과 미확인" : "현재 관측에서 복구 보류 없음");
+    return text.includes(state) && text.includes(required ? (reason_text || "효과 결과 미확인") : "현재 관측에서 복구 보류 없음");
   }, config.expected);
+  if (config.expected.hold_count !== undefined) {
+    await page.getByRole("heading", { name: `거버넌스 원장의 활성 보안 보류 ${config.expected.hold_count}개`, exact: true }).waitFor();
+  }
   const nativeControls = await page.locator(".native-plan button").allTextContents();
   if (nativeControls.length !== 1 || !nativeControls[0].includes("원장 새로고침")) throw new Error("Unexpected mutation control");
   await page.screenshot({ path: join(config.directory, "desktop.png"), fullPage: true });

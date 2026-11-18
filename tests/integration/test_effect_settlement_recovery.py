@@ -26,6 +26,10 @@ import json
 
 from sova.domain.contracts import ContractError
 from sova.adapters.postgres_plans import PostgresLifecycleRepository
+from sova.adapters.postgres_governance import PostgresSecurityHolds
+from sova.domain.contracts import ResourceScope
+from sova.security.domain.governance import SecurityHold, HoldRelease
+from datetime import timedelta
 from sova.ports.execution import RecoveryRequired
 from sova.qualification.requests import OrderIntent, reconcile
 from sova.service.worker import Execution
@@ -208,13 +212,20 @@ def test_real_effect_is_not_replayed_and_recovery_requires_remote_settlement(
                 assert count==(1 if mode=='committed' else 0)
                 assert target_rows==(53 if mode=='committed' else 0)
                 final = execution(h)
+                if mode=='uncommitted':
+                    PostgresSecurityHolds(h.connect,tenant_id=h.tenant).open_hold(SecurityHold(
+                        'settlement-security-review',ResourceScope(h.tenant,h.app,
+                            h.world['source'].profile_id,'database'),'fixture-raiser',
+                        'Fixture-only investigation after UNKNOWN',h.clock()-timedelta(seconds=1)))
                 final_view = bridge.state()
                 assert final_view['state']==('HANDOFF_COMPLETE' if mode=='committed' else 'SOURCE_FENCED')
                 assert final_view['recovery']['status']==('clear' if mode=='committed' else 'required')
                 assert final_view['recovery']['reason']==(None if mode=='committed' else 'EFFECT_RESULT_UNKNOWN')
                 assert final_view['recovery']['authorizes_execution'] is False
+                assert final_view['recovery']['security_holds']['active_count']==(mode=='uncommitted')
                 browser = observe_browser(h, bridge,
-                    {'state':final_view['state'], 'required':mode=='uncommitted'}, tmp_path)
+                    {'state':final_view['state'], 'required':mode=='uncommitted',
+                     'hold_count':int(mode=='uncommitted')}, tmp_path)
                 # The next GET must fail after credential replacement. A prior
                 # successful observation is never returned from a bridge cache.
                 bridge_token.write_text(h.issuer.token('another-tenant','auditor')['authorization'].removeprefix('Bearer '))
@@ -249,3 +260,64 @@ def test_real_effect_is_not_replayed_and_recovery_requires_remote_settlement(
                     settlement_observations=settlement.observations if settlement else [],
                     successor_calls=calls, old_trace=old.events() if old else [],
                     progress_only=True, verification_completed=False)
+
+
+def test_actual_governance_holds_and_release_reach_the_native_console(
+        postgres_database, http_business, tmp_path):
+    with runtime_service_journey(postgres_database,http_business,tmp_path,
+                                  case_name='governance-held') as h:
+        admission=h.approve_and_admit(h.register_forward(),'governance-approval')
+        unit=admission['unit_digest']
+        credential=private_file(tmp_path/'governance-token',h.issuer.token(h.tenant,'auditor')['authorization'].removeprefix('Bearer '))
+        registration=private_file(tmp_path/'governance-config',json.dumps({'origin':h.origin,
+            'tenant_id':h.tenant,'application_id':h.app,'unit_digest':unit,'token_file':str(credential)}))
+        bridge=NativeStatusBridge(registration)
+        original_history=h.status(unit)['history']
+        holds=PostgresSecurityHolds(h.connect,tenant_id=h.tenant)
+        source=h.world['source'].profile_id
+        scope=ResourceScope(h.tenant,h.app,source,'database')
+        raised=h.clock()-timedelta(seconds=1)
+        # Other app/tenant incidents must not enter this application's snapshot.
+        holds.open_hold(SecurityHold('other-app-hold',ResourceScope(h.tenant,h.app+'-other',source,'database'),
+            'fixture-raiser','PRIVATE-DETAIL-NOT-EXPORTED',raised))
+        other=PostgresSecurityHolds(h.connect,tenant_id=h.tenant+'-other')
+        other.open_hold(SecurityHold('other-tenant-hold',ResourceScope(h.tenant+'-other',h.app,source,'database'),
+            'fixture-raiser','PRIVATE-DETAIL-NOT-EXPORTED',raised))
+        before=bridge.state()
+        assert before['recovery']['status']=='clear'
+        for hold_id in ('governance-1','governance-2'):
+            holds.open_hold(SecurityHold(hold_id,scope,'fixture-raiser','PRIVATE-DETAIL-NOT-EXPORTED',raised))
+        held=bridge.state()
+        assert held['state']=='SOURCE_ACTIVE'
+        assert held['recovery']['reason']=='SECURITY_HOLD'
+        assert held['recovery']['security_holds']=={'active_count':2,
+            'hold_ids':['governance-1','governance-2'],'operation_hold':False}
+        assert held['recovery']['next_steps']==['REVIEW_SECURITY_HOLD']
+        assert 'PRIVATE-DETAIL' not in json.dumps(held)
+        held_browser=observe_browser(h,bridge,{'state':'SOURCE_ACTIVE','required':True,
+            'reason_text':'보안 보류','hold_count':2},tmp_path)
+        plan=PostgresLifecycleRepository(h.connect,tenant_id=h.tenant).get_plan(h.app,admission['plan_id'])
+        partial=None
+        for hold_id in ('governance-1','governance-2'):
+            approved=h.clock()-timedelta(milliseconds=50)
+            holds.release_hold(h.app,HoldRelease(hold_id,scope,plan.revisions,1,
+                'fixture-requester','fixture-approver','fixture-only reviewed release',
+                'fixture-evidence','a'*64,approved,approved+timedelta(minutes=1)))
+            partial=bridge.state()
+            if hold_id=='governance-1':
+                assert partial['recovery']['security_holds']['hold_ids']==['governance-2']
+                assert partial['recovery']['required'] is True
+        cleared=partial
+        assert cleared['recovery']['status']=='clear'
+        assert cleared['recovery']['security_holds']['active_count']==0
+        assert cleared['recovery']['next_steps']==[]
+        h.case_name='governance-released'
+        cleared_browser=observe_browser(h,bridge,{'state':'SOURCE_ACTIVE','required':False,
+            'hold_count':0},tmp_path)
+        # No worker ran and no authority/history transition was caused by reads.
+        assert held['epoch']==cleared['epoch']==before['epoch']
+        assert h.status(unit)['history']==original_history
+        h.record('governance-status-lifecycle',before=before,held=held,cleared=cleared,
+            held_browser=held_browser,cleared_browser=cleared_browser,
+            cross_app_and_tenant_holds_excluded=True,private_details_excluded=True,
+            worker_executed=False,synthetic_release_approval=True,production_deployed=False)
