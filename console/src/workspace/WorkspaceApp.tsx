@@ -103,6 +103,8 @@ export function WorkspaceApp() {
     rows: "",
   });
   const [approvalId, setApprovalId] = useState("");
+  const [planKind, setPlanKind] = useState("forward");
+  const [forwardPlan, setForwardPlan] = useState("");
   const [confirmation, setConfirmation] = useState<{
     title: string;
     application: string;
@@ -298,6 +300,8 @@ export function WorkspaceApp() {
     setDetail(null);
     setObservation(null);
     setConfirmation(null);
+    setPlanKind("forward");
+    setForwardPlan("");
     setFields({
       snapshot_id: "",
       source_profile: "",
@@ -323,7 +327,8 @@ export function WorkspaceApp() {
           setFields({
             ...fields,
             [name]: e.target.value,
-            ...(name === "source_profile" && fields.target_profile === e.target.value
+            ...(name === "source_profile" &&
+            fields.target_profile === e.target.value
               ? { target_profile: "" }
               : {}),
           })
@@ -506,11 +511,72 @@ export function WorkspaceApp() {
               {Object.values(catalog).some(
                 (page) => page.next_after !== null,
               ) && (
-                <p className="workspace-message">
-                  한 페이지에 표시되지 않은 등록이 있습니다. 대상 ID를 기존 조회
-                  API로 확인해 등록 범위를 좁히세요. 전체 목록을 확인한 것으로
-                  표시하지 않습니다.
-                </p>
+                <section className="native-card">
+                  <h2>등록 목록 더 읽기</h2>
+                  <p>
+                    한 번에 20건씩 읽습니다. 다음 페이지가 있으면 전체 목록이
+                    아닙니다.
+                  </p>
+                  {kinds
+                    .filter((k) => catalog[k]?.next_after)
+                    .map((k) => (
+                      <button
+                        key={k}
+                        className="button secondary"
+                        disabled={busy}
+                        onClick={() => {
+                          const cursor = catalog[k].next_after;
+                          setBusy(true);
+                          void api<Page<Item>>(
+                            `/registrations/${k}?after=${segment(cursor || "")}`,
+                          )
+                            .then((page) =>
+                              setCatalog((current) => ({
+                                ...current,
+                                [k]: {
+                                  items: [...current[k].items, ...page.items],
+                                  next_after: page.next_after,
+                                },
+                              })),
+                            )
+                            .catch(() =>
+                              setError(
+                                "등록 목록의 다음 페이지를 읽지 못했습니다.",
+                              ),
+                            )
+                            .finally(() => setBusy(false));
+                        }}
+                      >
+                        {kindNames[k]} 다음 20건
+                      </button>
+                    ))}
+                </section>
+              )}
+              {plans.next_after && (
+                <button
+                  className="button secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    const selected = application;
+                    setBusy(true);
+                    void api<Page<Plan>>(
+                      `/applications/${segment(selected)}/plans?after=${segment(plans.next_after || "")}`,
+                    )
+                      .then((page) => {
+                        if (context.current.application === selected)
+                          setPlans((current) => ({
+                            items: [...current.items, ...page.items],
+                            next_after: page.next_after,
+                          }));
+                      })
+                      .catch(() =>
+                        setError("계획 목록의 다음 페이지를 읽지 못했습니다."),
+                      )
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  계획 다음 20건
+                </button>
               )}
               {tab === "register" && (
                 <div className="workspace-two">
@@ -627,6 +693,33 @@ export function WorkspaceApp() {
                     고정합니다.
                   </p>
                   <div className="workspace-form">
+                    <label>
+                      계획 종류
+                      <select
+                        aria-label="계획 종류"
+                        value={planKind}
+                        onChange={(e) => setPlanKind(e.target.value)}
+                      >
+                        <option value="forward">환경 이전</option>
+                        <option value="failback">
+                          별도 승인 후 출발지 복귀
+                        </option>
+                      </select>
+                    </label>
+                    {planKind === "failback" && (
+                      <label>
+                        복귀 기준 계획 ID
+                        <input
+                          aria-label="복귀 기준 계획 ID"
+                          value={forwardPlan}
+                          onChange={(e) => setForwardPlan(e.target.value)}
+                        />
+                        <small>
+                          복귀 검토가 요청된 원래 계획과 역방향 자격을
+                          사용합니다.
+                        </small>
+                      </label>
+                    )}
                     {select(
                       "snapshot_id",
                       "dependency_snapshot",
@@ -678,6 +771,7 @@ export function WorkspaceApp() {
                       busy ||
                       !has("planner") ||
                       !application ||
+                      (planKind === "failback" && !forwardPlan) ||
                       Object.values(fields).some((v) => !v)
                     }
                     onClick={() =>
@@ -686,15 +780,20 @@ export function WorkspaceApp() {
                           status: string;
                           plan_id?: string;
                           blockers?: unknown[];
-                        }>("/plans", {
-                          service_id: application,
-                          ...fields,
-                          rows: Number(fields.rows),
-                          nodes: fields.nodes
-                            .split(",")
-                            .map((s) => s.trim())
-                            .filter(Boolean),
-                        });
+                        }>(
+                          planKind === "failback"
+                            ? `${base}/plans/${segment(forwardPlan)}/failback-plans`
+                            : "/plans",
+                          {
+                            service_id: application,
+                            ...fields,
+                            rows: Number(fields.rows),
+                            nodes: fields.nodes
+                              .split(",")
+                              .map((s) => s.trim())
+                              .filter(Boolean),
+                          },
+                        );
                         if (result.status !== "COMPILED" || !result.plan_id) {
                           setNotice(JSON.stringify(result.blockers || result));
                           throw new Error(
@@ -829,7 +928,70 @@ export function WorkspaceApp() {
               )}
               {tab === "observe" &&
                 (fresh ? (
-                  <NativePlanView data={observation} />
+                  <>
+                    <NativePlanView data={observation} />
+                    {detail &&
+                      has("operator") &&
+                      [
+                        "TARGET_ACTIVE_OBSERVED",
+                        "ROUTE_CONFIRMED",
+                        "STABILIZING",
+                        "FAILBACK_REQUIRED",
+                      ].includes(observation.state) && (
+                        <section className="native-card">
+                          <h2>출발지 복귀 검토</h2>
+                          <p>
+                            이 요청만으로 DB나 경로를 되돌리지 않습니다.
+                            목적지의 신규 데이터를 보존할 역방향 계획과 별도
+                            승인이 필요합니다.
+                          </p>
+                          <button
+                            className="button secondary"
+                            disabled={
+                              busy || observation.state === "FAILBACK_REQUIRED"
+                            }
+                            onClick={() =>
+                              setConfirmation({
+                                title:
+                                  "현재 계획을 복귀 검토 상태로 전환할까요?",
+                                application,
+                                planId,
+                                digest: detail.plan_digest,
+                                run: () =>
+                                  api(
+                                    `${base}/plans/${segment(planId)}/failback-requests`,
+                                    { reason: "operator_requested" },
+                                  ),
+                              })
+                            }
+                          >
+                            복귀 검토 요청
+                          </button>
+                          {observation.state === "FAILBACK_REQUIRED" && (
+                            <button
+                              className="button primary"
+                              disabled={busy}
+                              onClick={() => {
+                                setPlanKind("failback");
+                                setForwardPlan(planId);
+                                setFields({
+                                  snapshot_id: "",
+                                  source_profile: "",
+                                  target_profile: "",
+                                  manifest: "",
+                                  qualification: "",
+                                  nodes: "",
+                                  rows: "",
+                                });
+                                setTab("plan");
+                              }}
+                            >
+                              별도 복귀 계획 작성
+                            </button>
+                          )}
+                        </section>
+                      )}
+                  </>
                 ) : (
                   <section className="native-card">
                     <h2>현재 실행 관측 없음</h2>
