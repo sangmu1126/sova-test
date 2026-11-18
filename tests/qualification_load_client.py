@@ -116,7 +116,7 @@ def main():
                         await asyncio.sleep(.05)
                         continue
                     intent = OrderIntent(f"request-{number:05d}", "load-" + config["run_id"], f"key-{number:05d}", "12.34")
-                    if config.get("mode") == "prepared_bounded":
+                    if config.get("mode") in ("prepared_bounded", "ready_bounded"):
                         outcome = await bounded.complete(intent)
                         bounded_results.append(outcome)
                         if outcome["result"] != "CONFIRMED":

@@ -56,14 +56,17 @@ class HttpTraffic:
         self.results.chmod(0o777)  # generated fixture trace/journal only
         self.name = env.run + "-http-client"
         self.started = False
+        self.activation_calls = 0
         self.run_id, self.token = "traffic-" + uuid4().hex, uuid4().hex
         self.root = Path(__file__).resolve().parents[1]
         self.mode = os.environ.get("SOVA_TEST_HTTP_MODE", "cold_deferred")
         self.comparison = "SOVA_TEST_HTTP_MODE" in os.environ
-        if self.mode not in ("cold_deferred", "prepared_deferred", "prepared_bounded"):
+        if self.mode not in ("cold_deferred", "prepared_deferred", "prepared_bounded", "ready_deferred", "ready_bounded"):
             raise ValueError("Unknown HTTP comparison mode")
-        self.prepared = self.mode.startswith("prepared_")
-        profile = "orders-pod-https-comparison-v2.json" if self.comparison else "orders-pod-https-postgres-v1.json"
+        self.ready_before_switch = self.mode.startswith("ready_")
+        self.prepared = self.mode.startswith("prepared_") or self.ready_before_switch
+        profile = ("orders-ready-target-v3.json" if self.ready_before_switch else
+                   "orders-pod-https-comparison-v2.json" if self.comparison else "orders-pod-https-postgres-v1.json")
         self.profile_digest = hashlib.sha256((self.root / "examples/qualification" / profile).read_bytes()).hexdigest()
         self.scope = {"version": 1, "run_id": self.run_id, "tenant_id": journey.tenant, "profile_digest": self.profile_digest}
 
@@ -106,10 +109,11 @@ class HttpTraffic:
         env.report["http_mode"] = self.mode
         if self.prepared:
             target = self.pod("orders-target", "target")
-            target["metadata"]["labels"]["side"] = "prepared"
+            target["metadata"]["labels"]["side"] = "target" if self.ready_before_switch else "prepared"
             env.apply(target)
             env.kube("-n", NAMESPACE, "wait", "--for=condition=Ready", "pod/orders-target", "--timeout=60s")
             self.target_uid = env.object("pod", "orders-target")["metadata"]["uid"]
+            assert env.object("service", "orders")["spec"]["selector"] == {"app": "orders", "side": "source"}
             with h.business["connect_as"](h.business["names"]["src"], h.business["app"]) as connection:
                 assert connection.execute("SELECT 1").fetchone() == (1,)
             try:
@@ -119,11 +123,14 @@ class HttpTraffic:
             except psycopg.Error as error:
                 assert error.sqlstate == "42501", "Prepared target denial was not an authorization failure"
             env.report["target_prepared"] = {"pod_uid": self.target_uid, "health_ready": True,
-                "selected_by_route": False, "business_writes_enabled_early": False,
+                "selected_by_route": False, "matching_target_label_ready": self.ready_before_switch,
+                "target_label": target["metadata"]["labels"]["side"], "business_writes_enabled_early": False,
                 "target_write_denial_sqlstate": "42501", "source_positive_control": True}
         return self
 
     def activate_target(self):
+        self.activation_calls += 1
+        assert not self.ready_before_switch, "Normal ready-target cutover must not expose the target late"
         if self.prepared:
             assert self.env.object("pod", "orders-target")["metadata"]["uid"] == self.target_uid
             self.env.kube("-n", NAMESPACE, "patch", "pod", "orders-target", "--type=merge", "-p",
@@ -186,7 +193,7 @@ class HttpTraffic:
         assert comparison["counts"]["unfinished_attempts"] == 0
         if self.mode == "cold_deferred":
             assert client["initial_failures"] > 0, "The deliberately interrupted route had no recorded first-attempt failure"
-        if self.mode == "prepared_bounded":
+        if self.mode in ("prepared_bounded", "ready_bounded"):
             assert len(client["bounded_results"]) == 100
             assert all(r["result"] in ("CONFIRMED", "EXHAUSTED", "REJECTED") for r in client["bounded_results"])
             client["completion_budget_satisfied"] = all(r["result"] == "CONFIRMED" for r in client["bounded_results"])

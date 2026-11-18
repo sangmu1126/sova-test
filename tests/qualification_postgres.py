@@ -130,7 +130,7 @@ def main():
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
     parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap"), default="requests",
                         help="MQ-02, service, runtime API, or worker process/fault qualification checks")
-    parser.add_argument("--http-mode", choices=("cold_deferred", "prepared_deferred", "prepared_bounded"))
+    parser.add_argument("--http-mode", choices=("cold_deferred", "prepared_deferred", "prepared_bounded", "ready_deferred", "ready_bounded"))
     args = parser.parse_args()
     if args.http_mode and args.suite != "pod-http":
         parser.error("HTTP comparison mode requires --suite pod-http")
@@ -200,7 +200,8 @@ def main():
                                      root / "tests/qualification_order_pod.py", root / "tests/qualification_load_client.py",
                                      root / "examples/qualification/orders-pod-https-postgres-v1.json"])
             if args.http_mode:
-                measured_sources.append(root / "examples/qualification/orders-pod-https-comparison-v2.json")
+                measured_sources.append(root / "examples/qualification" / ("orders-ready-target-v3.json"
+                    if args.http_mode.startswith("ready_") else "orders-pod-https-comparison-v2.json"))
     if args.suite == "authority":
         tests = ["tests/integration/test_authority_read_concurrency.py",
                  "tests/integration/test_postgres_handoff_authority.py",

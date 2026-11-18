@@ -1,0 +1,47 @@
+{
+  "kind": "MigrationAcceptanceProfileDraft",
+  "version": 3,
+  "profile_id": "orders-ready-target-v3",
+  "status": "DRAFT",
+  "scope": "normal handoff in an isolated local cluster; paired with separate preserved worker-loss tests",
+  "cases": {
+    "ready_deferred": "target Pod and target selector label ready before admission; no owner fault; failed orders recovered after load",
+    "ready_bounded": "same ready target and no owner fault; unchanged finite same-key completion policy"
+  },
+  "readiness": {
+    "target_ready_before_admission": true,
+    "target_label_present_before_admission": true,
+    "target_selected_by_source_route": false,
+    "target_writes_before_activation": "denied with SQLSTATE 42501",
+    "target_label_mutation_after_route_switch": false
+  },
+  "load": {
+    "logical_orders": 100,
+    "model": "single closed-loop client; fresh connection for every attempt",
+    "think_time_seconds": 0.2,
+    "maximum_load_seconds": 120,
+    "post_handoff_probe_orders": 3
+  },
+  "completion": {
+    "deadline_seconds": 5,
+    "maximum_attempts_including_lookups": 8,
+    "per_attempt_absolute_network_timeout_seconds": 1,
+    "lookup_before_resubmission": true,
+    "retryable_statuses": [503, null],
+    "full_jitter_cap_seconds": 0.5,
+    "fixture_seed": 0,
+    "exhaustion_is_not_erased_by_later_recovery": true
+  },
+  "execution": "two actual CLI worker Pods execute the unchanged approval/ownership/effect pipeline; no pause, delete or other injected worker fault",
+  "verification": "actual target responses in the initial load, one authenticated route PATCH, no recovery event, all effect confirmations, independent SQL reconciliation",
+  "fault_recovery_control": "orders-pod-https-comparison-v2.json preserves separate owner-loss/live-Pod-refusal/recovery cases; no cross-profile error-rate comparison",
+  "limitations": [
+    "Ready health and matching labels do not prove zero routing-propagation time or authorize early writes",
+    "normal handoff and injected worker-loss are different scenarios",
+    "closed-loop arrival times differ with retries; one run is not a statistical improvement estimate",
+    "one local kind node and one PG server with separate fixture databases; no cloud continuity qualification"
+  ],
+  "production_slo": null,
+  "qualification_issued": false,
+  "authorizes_execution": false
+}

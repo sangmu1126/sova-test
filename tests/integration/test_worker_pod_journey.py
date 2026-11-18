@@ -1,7 +1,8 @@
 """Actual image CLI, Pod identity, alive-owner refusal and stopped-Pod recovery.
 
 Real Kubernetes, SQL and TLS; synthetic plan/identity-provider/bootstrap data.
-Endpoint fixtures do not serve an HTTP business app. No cloud or production
+An optional traffic fixture serves real HTTPS orders; the bare Pod journey
+uses endpoint fixtures. No cloud or production
 network/WORM-store qualification is claimed.
 """
 
@@ -37,6 +38,56 @@ def sql_state(h):
         effects = conn.execute("SELECT status FROM sova_control.effects WHERE application_id=%s "
                                "AND command_document->>'action'='commit_route'", (h.app,)).fetchall()
     return row, recovery, effects
+
+
+def denied_pod_observation(env, observer_pod, lost, uid, denied_uid):
+    observer = ("import json; from sova.service.quiescence import in_cluster_pod_state; "
+                f"print(json.dumps({{'state':in_cluster_pod_state({NAMESPACE!r})({lost!r},{uid!r})}}))")
+    assert json.loads(env.exec(observer_pod, observer)) == {"state": None}
+    events = [e for e in env.audit_events() if e.get("stage") == "ResponseComplete"
+              and e.get("responseStatus", {}).get("code") == 403
+              and e.get("objectRef", {}).get("resource") == "pods"
+              and e.get("objectRef", {}).get("name") == lost
+              and e.get("user", {}).get("uid") == denied_uid]
+    assert events, "Unknown Pod observation was not tied to an actual RBAC 403"
+    env.report["unauthorized_pod_observation_status"] = 403
+    env.report["unauthorized_pod_observation"] = "unknown"
+
+
+def complete_ready_handoff(h, env, traffic, admitted, pods, service_accounts):
+    """Normal cutover; owner-loss recovery is verified in the separate v2 cases."""
+    assert traffic.ready_before_switch and traffic.prepared and traffic.activation_calls == 0
+    status = wait_for(lambda: (s if (s := h.status(admitted["unit_digest"]))["state"]
+                              == "HANDOFF_COMPLETE" else None), 90, "normal handoff completion by actual workers")
+    _, recovered, effects = sql_state(h)
+    assert recovered == [] and effects == [("confirmed_applied",)]
+    patches = [e for e in env.audit_events() if e.get("stage") == "ResponseComplete"
+               and e.get("verb") == "patch" and e.get("objectRef", {}).get("resource") == "services"
+               and e["objectRef"].get("name") == "orders" and e.get("responseStatus", {}).get("code") == 200]
+    assert len(patches) == 1 and patches[0]["user"]["uid"] == service_accounts["worker"]
+    pod_uids = {p["metadata"]["uid"] for p in pods.values()}
+    mutator = patches[0]["user"]["extra"]["authentication.kubernetes.io/pod-uid"]
+    assert len(mutator) == 1 and mutator[0] in pod_uids
+    assert any(status["history"][-1]["actor"].startswith(name+"."+p["metadata"]["uid"]+".")
+               for name,p in pods.items())
+    assert env.object("pod", "orders-target")["metadata"]["uid"] == traffic.target_uid
+    assert env.object("pod", "orders-target")["metadata"]["labels"]["side"] == "target"
+    env.report["http_business"] = traffic.finish()
+    assert traffic.activation_calls == 0
+    target_load = [e for e in traffic.events() if e["phase"] in ("load", "inline_retry")
+                   and e["status"] == 200 and e["side"] == "target"]
+    assert len(target_load) >= 3, "No target business responses during measured load"
+    confirmed = env.report["http_business"]["reconciliation"]["counts"]["confirmed_requests"]
+    with h.business["connect_as"](h.business["names"]["tgt"], h.business["app"]) as conn:
+        assert conn.execute("SELECT count(*) FROM orders WHERE customer LIKE 'customer-%'").fetchone()[0] == 50
+        assert conn.execute("SELECT count(*) FROM orders").fetchone()[0] == 50 + confirmed
+    env.report["handoff"] = {"state": status["state"], "owner_fault_injected": False,
+        "recovery_events": 0, "route_patch_requests": 1, "route_mutator_pod_uid": mutator[0],
+        "final_actor": status["history"][-1]["actor"], "effect_status": "confirmed_applied",
+        "historical_orders_preserved": 50, "target_write_confirmed": True,
+        "target_load_successes": len(target_load), "late_target_activation_calls": traffic.activation_calls,
+        "client_continuity_qualified": False}
+    env.phase("normal ready-target handoff completed by actual workers without injected owner loss")
 
 
 def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_factory=None):
@@ -112,11 +163,18 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
                 "print(json.dumps({'status':r.status_code}))")
             assert json.loads(env.exec("worker-b", secret_probe)) == {"status": 403}
             env.report["actual_worker_secret_read_status"] = 403
+            if traffic and traffic.ready_before_switch:
+                denied_pod_observation(env, traffic.observer_pod, "worker-a",
+                                       pods["worker-a"]["metadata"]["uid"], service_accounts["denied"])
             if traffic:
                 traffic.start()
                 env.phase("continuous HTTPS orders started at fixed Service origin")
             admitted = h.admit("pod-worker-approval")
+            env.report["owner_fault_injected"] = not (traffic and traffic.ready_before_switch)
             env.phase("work admitted after identity and authorization observations")
+            if traffic and traffic.ready_before_switch:
+                complete_ready_handoff(h, env, traffic, admitted, pods, service_accounts)
+                return
 
             def route_started():
                 route = env.object("service", "orders")["spec"]["selector"]
@@ -171,18 +229,8 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
 
             # A different real SA cannot read Pods. 403 must become unknown,
             # never a fabricated False/dead-Pod observation.
-            observer = ("import json; from sova.service.quiescence import in_cluster_pod_state; "
-                        f"print(json.dumps({{'state':in_cluster_pod_state({NAMESPACE!r})({lost!r},{uid!r})}}))")
-            denied = json.loads(env.exec(traffic.observer_pod if traffic else "orders-source", observer))
-            assert denied == {"state": None}
-            denied_events = [e for e in env.audit_events() if e.get("stage") == "ResponseComplete"
-                             and e.get("responseStatus", {}).get("code") == 403
-                             and e.get("objectRef", {}).get("resource") == "pods"
-                             and e.get("objectRef", {}).get("name") == lost
-                             and e.get("user", {}).get("uid") == service_accounts["denied"]]
-            assert denied_events, "Unknown observation was not tied to an actual RBAC 403"
-            env.report["unauthorized_pod_observation_status"] = 403
-            env.report["unauthorized_pod_observation"] = "unknown"
+            denied_pod_observation(env, traffic.observer_pod if traffic else "orders-source",
+                                   lost, uid, service_accounts["denied"])
 
             env.phase("lease expired but recovery refused for live or unauthorized Pod observation")
             # Normal kubelet deletion, not --force/zero grace (which by itself
