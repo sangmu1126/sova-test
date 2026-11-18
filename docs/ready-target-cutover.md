@@ -50,6 +50,8 @@ python tests/qualification_postgres.py --suite pod-http --http-mode ready_bounde
 
 [시계 관측 진단 후속 작업](clock-observation-diagnostics.md)에서 비밀값 없는 시각·단계·예외 분류와 불완전 감시 거부를 추가했다. 새 대조의 관측 성공은 위 실패의 삭제나 원인 해결 판정으로 사용하지 않는다.
 
+[조회 backpressure 후속 비교](lookup-backpressure.md)에서는 별도로 발견한 복원 스냅샷 경합을 수정한 새 이미지에서 두 모드를 실행했다. 조회의 1초 안내를 연결해도 호출 한도 소진 1건은 남았다. 이 문서의 기존 실행·이미지·오류 수치를 새 결과로 대체하지 않는다.
+
 ## 판정 범위
 
 Ready 상태가 경로 전파 지연 0초를 증명하지 않는다. source 쓰기 차단 중 503이나 연결 오류가 실제로 발생할 수 있다. 최종 SQL 일치가 최초 응답 성공이나 요청별 완료 한도 충족을 의미하지도 않는다.
