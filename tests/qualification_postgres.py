@@ -160,7 +160,7 @@ def main():
     parser.add_argument("--image", required=True, help="Full cached sha256 image ID; no tag or automatic pull")
     parser.add_argument("--security-source", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
-    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap", "clocks", "backpressure", "restore", "timing"), default="requests",
+    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap", "clocks", "backpressure", "restore", "timing", "profile"), default="requests",
                         help="MQ-02, service, runtime API, or worker process/fault qualification checks")
     parser.add_argument("--http-mode", choices=("cold_deferred", "prepared_deferred", "prepared_bounded", "ready_deferred", "ready_bounded", "ready_backpressure"))
     args = parser.parse_args()
@@ -173,7 +173,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     args.artifacts.mkdir(parents=True, mode=0o700, exist_ok=False)
     run = {"requests": "mq02-", "service": "mq03-", "runtime": "mq03-runtime-",
-           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-", "bootstrap": "database-bootstrap-", "clocks": "clock-observation-", "backpressure": "lookup-backpressure-", "restore": "restore-snapshot-", "timing": "cutover-timing-"}[args.suite] + uuid4().hex
+           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-", "bootstrap": "database-bootstrap-", "clocks": "clock-observation-", "backpressure": "lookup-backpressure-", "restore": "restore-snapshot-", "timing": "cutover-timing-", "profile": "worker-profile-"}[args.suite] + uuid4().hex
     container, network = "sova-" + run, "sova-network-" + run
     report = {"run_id": run, "image_id": args.image, "shared_environment_used": False,
               "qualification_issued": False, "network_created": False, "container_created": False,
@@ -281,6 +281,13 @@ def main():
             root / 'tests/qualification_service.py', root / 'tests/contract_world.py',
             root / 'tests/control_plane_support.py', root / 'tests/handoff_drive.py',
             root / 'tests/postgres_business.py'])
+    if args.suite == "profile":
+        tests = ['tests/unit/test_qualification_profile.py', 'tests/integration/test_worker_profile_postgres.py']
+        measured_sources.extend([*(root / t for t in tests), root / 'tests/qualification_profile.py',
+            root / 'tests/qualification_timing.py', root / 'tests/qualification_service.py',
+            root / 'tests/contract_world.py', root / 'tests/control_plane_support.py',
+            root / 'tests/handoff_drive.py', root / 'tests/postgres_fixtures.py', root / 'tests/postgres_business.py',
+            *sorted((root / 'src/sova').rglob('*.py'))])
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}
