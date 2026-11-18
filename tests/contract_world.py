@@ -92,7 +92,8 @@ def build_world(now, *, contract=None, strategy="offline-copy", operations=None,
         "test-record", contract.tenant_id, contract.service_id, contract.fingerprint,
         manifest.fingerprint, source.fingerprint, target.fingerprint,
         MigrationProfile.SINGLE_AUTHORITY, tuple(operations), 2000,
-        now - timedelta(minutes=1), now + timedelta(minutes=5), "test-verifier",
+        now - timedelta(minutes=1),
+        now + max(timedelta(minutes=5), valid_for + timedelta(minutes=1)), "test-verifier",
         "b" * 64, "c" * 64, "d" * 64, EvidenceGrade.LIVE, properties,
     )
     snapshot = replace(
