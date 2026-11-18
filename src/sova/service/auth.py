@@ -30,6 +30,10 @@ class Unauthenticated(ContractError):
     pass
 
 
+class AuthenticationUnavailable(ContractError):
+    """No new principal can be verified while its configured provider fails."""
+
+
 def _b64(part):
     return base64.urlsafe_b64decode(part + "=" * (-len(part) % 4))
 

@@ -24,7 +24,7 @@ from sova.adapters.postgres_registrations import RegistrationConflict
 from sova.adapters.registration import registry_codec as codecs
 from sova.domain.contracts import ContractError
 from sova.ports.plans import RecordNotFound, RepositoryConflict
-from sova.service.auth import Unauthenticated
+from sova.service.auth import AuthenticationUnavailable, Unauthenticated
 from sova.service.control_plane import Forbidden, NotFound, PlanRequest
 
 log = logging.getLogger("sova.api")
@@ -52,6 +52,10 @@ def create_app(plane, authenticate, *, ready=lambda: True):
     @app.exception_handler(Forbidden)
     async def forbidden(request, error):
         return JSONResponse({"error": str(error)}, status_code=403)
+
+    @app.exception_handler(AuthenticationUnavailable)
+    async def authentication_unavailable(request, error):
+        return JSONResponse({"error": "identity provider unavailable"}, status_code=503)
 
     @app.exception_handler(RegistrationConflict)
     async def conflict(request, error):

@@ -96,7 +96,7 @@ def serve_api(env=os.environ, *, host="0.0.0.0", port=8080):
     import uvicorn
 
     from sova.service.api import create_app
-    from sova.service.auth import BearerAuthenticator
+    from sova.service.auth import AuthenticationUnavailable, BearerAuthenticator
     from sova.service.config import ServiceConfig
     from sova.service.control_plane import ControlPlane
 
@@ -104,9 +104,14 @@ def serve_api(env=os.environ, *, host="0.0.0.0", port=8080):
     connect = _connect(config)
 
     def fetch_jwks():
-        response = httpx.get(config.jwks_url, timeout=5.0, follow_redirects=False)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = httpx.get(config.jwks_url, timeout=5.0, follow_redirects=False)
+            response.raise_for_status()
+            return response.json()
+        except (httpx.HTTPError, ValueError):
+            # Do not turn a provider/TLS failure into a valid principal or leak
+            # a URL, proxy response or certificate path to the caller.
+            raise AuthenticationUnavailable("Identity provider unavailable") from None
 
     authenticate = BearerAuthenticator(
         issuer=config.issuer, audience=config.audience, fetch_jwks=fetch_jwks,
@@ -189,6 +194,7 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("migrate", help="Apply the schema and the runtime grants")
     api = commands.add_parser("serve-api", help="Serve the HTTP API")
+    api.add_argument("--host", default="0.0.0.0", help="Listen address; use 127.0.0.1 for host-local tests")
     api.add_argument("--port", type=int, default=8080)
     worker = commands.add_parser("run-worker", help="Run a handoff worker")
     worker.add_argument("--health-port", type=int, default=8081)
@@ -199,7 +205,7 @@ def main(argv=None):
         if args.command == "migrate":
             return migrate()
         if args.command == "serve-api":
-            return serve_api(port=args.port)
+            return serve_api(host=args.host, port=args.port)
         return run_worker(health_port=args.health_port, poll_seconds=args.poll_seconds)
     except Exception:
         log.exception("%s failed", args.command)
