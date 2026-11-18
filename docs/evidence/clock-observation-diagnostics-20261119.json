@@ -1,0 +1,2219 @@
+{
+  "kind": "MeasuredClockObservationDiagnosticsVerification",
+  "version": 1,
+  "date_kst": "2026-11-19",
+  "base_commit": "7b183af805af4f2fc270e8991bd1995528ebcc7d",
+  "harness_source": "4b5953539bfb0029077d7147256e28fd5301570a",
+  "product_source": "0abcadcb4b8ab9426c747dbee39305c90d8916c7",
+  "product_image_id": "sha256:bf94bd18080210a11900913116adf4de144e84a538fbbc25d9b101640574633a",
+  "security_source": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+  "product_changes": false,
+  "timeouts_changed": false,
+  "automatic_failed_sample_retry_added": false,
+  "sampling_interval_seconds": 0.5,
+  "db_connect_timeout_seconds": 2,
+  "allowed_skew_lower_bound_seconds": 1,
+  "sampler_shutdown_join_seconds": 5,
+  "diagnostic_fields": [
+    "phase",
+    "stage",
+    "host_before",
+    "host_after",
+    "elapsed_ms",
+    "exception_class",
+    "sqlstate"
+  ],
+  "excluded_fields": [
+    "message",
+    "repr",
+    "args",
+    "diag",
+    "pgconn",
+    "DSN",
+    "hostname",
+    "key_path",
+    "tokens",
+    "password"
+  ],
+  "components": {
+    "test_count": 13,
+    "deterministic_unit_tests": 10,
+    "actual_tls_database_tests": 3,
+    "standalone_10_unit_run_overlaps_13_test_suite": true,
+    "real_cases": [
+      "actual DB timestamp start/periodic/stop",
+      "actual TLS hostname refusal",
+      "actual SQLSTATE 22012 from an explicitly injected SELECT 1/0 query"
+    ],
+    "unit_faults": [
+      "driver connect/query/close errors with sensitive messages",
+      "startup failure",
+      "final observation failure",
+      "later periodic success retains earlier failure",
+      "unexpected background error",
+      "unjoined sampler",
+      "skew exceeds original limit",
+      "untrusted exception subclass metadata"
+    ],
+    "faults_reproduce_historical_cause": false
+  },
+  "runs": {
+    "components": {
+      "source_commit": "4b5953539bfb0029077d7147256e28fd5301570a",
+      "run_id": "clock-observation-3b2233056ebf407e81a8d6e9ed8fb243",
+      "tests": {
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "clock_checks": {
+        "max_allowed_skew_seconds": 1,
+        "passed": true,
+        "samples": [
+          {
+            "database": "2026-11-18T17:26:58.521993+00:00",
+            "elapsed_ms": 17.355,
+            "host_after": "2026-11-18T17:26:58.525353+00:00",
+            "host_before": "2026-11-18T17:26:58.508005+00:00",
+            "phase": "start",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:26:59.039180+00:00",
+            "elapsed_ms": 11.072,
+            "host_after": "2026-11-18T17:26:59.041659+00:00",
+            "host_before": "2026-11-18T17:26:59.030605+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:26:59.423358+00:00",
+            "elapsed_ms": 9.748,
+            "host_after": "2026-11-18T17:26:59.425745+00:00",
+            "host_before": "2026-11-18T17:26:59.416000+00:00",
+            "phase": "stop",
+            "skew_lower_bound_seconds": 0.0
+          }
+        ],
+        "sampling_failure_count": 0,
+        "sampling_interval_seconds": 0.5,
+        "stop_join_seconds": 5,
+        "thread_stopped": true,
+        "version": 2
+      },
+      "environment_accepted": true,
+      "environment_error": null,
+      "runner_exit_code": 0,
+      "source_hashes_match_commit": true,
+      "measured_sources_sha256": {
+        "examples/qualification/orders-http-postgres-v1.json": "44c0632a619a5b42eae89bf2c2360c9478ce054440b9b2bdb22ab510dd5d71a3",
+        "src/sova/qualification/__init__.py": "03e25cb600cd4fa8c72759464fc049cfe3c3da31f89c7f2ea52f5e384155a22b",
+        "src/sova/qualification/__main__.py": "c2f28ef4820e0ebb296ee474c18aeeab717a04c9c877c4ee6413aaa84e330f5c",
+        "src/sova/qualification/bounded_orders.py": "3dac6e4ae22f918d8a022e791b0f59d168ec3bb133dc172c9727ae8855e0c456",
+        "src/sova/qualification/http_orders.py": "f471b6c1e6fe33711d96f733fd0aeb79b94ff5d0f249ccd523dc5286a0aae92f",
+        "src/sova/qualification/image.py": "9abc6384c7eb53a18876ff0885d6a7ae2361343f12bfed14de443619c5f1304b",
+        "src/sova/qualification/postgres_orders.py": "b0c602dc4c9db02e0bd18c080026b38e643b4379e27c5bb353ac33aba3406eda",
+        "src/sova/qualification/requests.py": "1f701150aab8564d6c139c5803a35db478932bb6664f160c0d0f115161d1b612",
+        "tests/integration/test_clock_observation_postgres.py": "50e6337210acc3ac3234a383aebea5399bedfec64a173540d804f9c42222e496",
+        "tests/integration/test_order_http_handoff.py": "f91e0a00193b7cc230da4e471eb2eb8350db05ef369719bf571b2f753090ae3a",
+        "tests/qualification_orders.py": "9963519c64a422eb61efabbdfc260f918e6a52f5e6f8972fa9c0ce0db72a18f2",
+        "tests/qualification_postgres.py": "a1ab7334240a9a00c56647a2748aed84db6297c9abd16ce6de890b2a7a9476c5",
+        "tests/unit/test_qualification_clock.py": "b436a8bbebd0dbdf6d8988c584a004419a2518e4690d463184dfc238141003fc",
+        "tests/unit/test_request_qualification.py": "bda58a6c8ca221a02a2fbca97ef7c6f4d11962148f0bf46d2b8a5554b50752bb"
+      },
+      "db_image": "sha256:0d938e975177bef9f1f61f3f9dbcf2e0aa0a139568f66d3415ed8892eb97f6ac",
+      "architecture": "arm64",
+      "missing_client_certificate_denied": true,
+      "db_tls_verified": true,
+      "container_removed": true,
+      "network_removed": true
+    },
+    "crash-control": {
+      "source_commit": "4b5953539bfb0029077d7147256e28fd5301570a",
+      "run_id": "worker-http-2b98cc933ca44557b3eff9696d305440",
+      "tests": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "clock_checks": {
+        "max_allowed_skew_seconds": 1,
+        "passed": true,
+        "samples": [
+          {
+            "database": "2026-11-18T17:27:32.791040+00:00",
+            "elapsed_ms": 32.965,
+            "host_after": "2026-11-18T17:27:32.799389+00:00",
+            "host_before": "2026-11-18T17:27:32.766493+00:00",
+            "phase": "start",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:33.316165+00:00",
+            "elapsed_ms": 18.584,
+            "host_after": "2026-11-18T17:27:33.320941+00:00",
+            "host_before": "2026-11-18T17:27:33.302413+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:33.841016+00:00",
+            "elapsed_ms": 25.152,
+            "host_after": "2026-11-18T17:27:33.846484+00:00",
+            "host_before": "2026-11-18T17:27:33.821380+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:34.362277+00:00",
+            "elapsed_ms": 15.131,
+            "host_after": "2026-11-18T17:27:34.366263+00:00",
+            "host_before": "2026-11-18T17:27:34.351168+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:34.904754+00:00",
+            "elapsed_ms": 42.197,
+            "host_after": "2026-11-18T17:27:34.910610+00:00",
+            "host_before": "2026-11-18T17:27:34.868247+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:35.444414+00:00",
+            "elapsed_ms": 48.378,
+            "host_after": "2026-11-18T17:27:35.459141+00:00",
+            "host_before": "2026-11-18T17:27:35.410811+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:35.973382+00:00",
+            "elapsed_ms": 18.549,
+            "host_after": "2026-11-18T17:27:35.977887+00:00",
+            "host_before": "2026-11-18T17:27:35.959349+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:36.484461+00:00",
+            "elapsed_ms": 9.977,
+            "host_after": "2026-11-18T17:27:36.487972+00:00",
+            "host_before": "2026-11-18T17:27:36.478011+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:36.995971+00:00",
+            "elapsed_ms": 9.877,
+            "host_after": "2026-11-18T17:27:36.999872+00:00",
+            "host_before": "2026-11-18T17:27:36.989989+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:37.511701+00:00",
+            "elapsed_ms": 14.987,
+            "host_after": "2026-11-18T17:27:37.515049+00:00",
+            "host_before": "2026-11-18T17:27:37.500061+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:38.034013+00:00",
+            "elapsed_ms": 22.6,
+            "host_after": "2026-11-18T17:27:38.038513+00:00",
+            "host_before": "2026-11-18T17:27:38.015930+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:38.579674+00:00",
+            "elapsed_ms": 44.394,
+            "host_after": "2026-11-18T17:27:38.589236+00:00",
+            "host_before": "2026-11-18T17:27:38.544868+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:39.110200+00:00",
+            "elapsed_ms": 27.792,
+            "host_after": "2026-11-18T17:27:39.118229+00:00",
+            "host_before": "2026-11-18T17:27:39.090458+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:39.677938+00:00",
+            "elapsed_ms": 67.456,
+            "host_after": "2026-11-18T17:27:39.686671+00:00",
+            "host_before": "2026-11-18T17:27:39.619249+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:40.235388+00:00",
+            "elapsed_ms": 50.822,
+            "host_after": "2026-11-18T17:27:40.241083+00:00",
+            "host_before": "2026-11-18T17:27:40.190278+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:40.786444+00:00",
+            "elapsed_ms": 51.35,
+            "host_after": "2026-11-18T17:27:40.793851+00:00",
+            "host_before": "2026-11-18T17:27:40.742517+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:41.393336+00:00",
+            "elapsed_ms": 109.128,
+            "host_after": "2026-11-18T17:27:41.404809+00:00",
+            "host_before": "2026-11-18T17:27:41.295563+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:41.928119+00:00",
+            "elapsed_ms": 25.388,
+            "host_after": "2026-11-18T17:27:41.932139+00:00",
+            "host_before": "2026-11-18T17:27:41.906756+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:42.448318+00:00",
+            "elapsed_ms": 19.645,
+            "host_after": "2026-11-18T17:27:42.452187+00:00",
+            "host_before": "2026-11-18T17:27:42.432558+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:42.964941+00:00",
+            "elapsed_ms": 16.879,
+            "host_after": "2026-11-18T17:27:42.969459+00:00",
+            "host_before": "2026-11-18T17:27:42.952584+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:43.481221+00:00",
+            "elapsed_ms": 15.115,
+            "host_after": "2026-11-18T17:27:43.485768+00:00",
+            "host_before": "2026-11-18T17:27:43.470675+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:44.028759+00:00",
+            "elapsed_ms": 47.787,
+            "host_after": "2026-11-18T17:27:44.034756+00:00",
+            "host_before": "2026-11-18T17:27:43.986998+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:44.548745+00:00",
+            "elapsed_ms": 13.809,
+            "host_after": "2026-11-18T17:27:44.552536+00:00",
+            "host_before": "2026-11-18T17:27:44.538732+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:45.075736+00:00",
+            "elapsed_ms": 26.54,
+            "host_after": "2026-11-18T17:27:45.080206+00:00",
+            "host_before": "2026-11-18T17:27:45.053672+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:45.591058+00:00",
+            "elapsed_ms": 11.575,
+            "host_after": "2026-11-18T17:27:45.596868+00:00",
+            "host_before": "2026-11-18T17:27:45.585325+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:46.181525+00:00",
+            "elapsed_ms": 86.904,
+            "host_after": "2026-11-18T17:27:46.185815+00:00",
+            "host_before": "2026-11-18T17:27:46.098438+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:46.698543+00:00",
+            "elapsed_ms": 16.869,
+            "host_after": "2026-11-18T17:27:46.702853+00:00",
+            "host_before": "2026-11-18T17:27:46.686042+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:47.235696+00:00",
+            "elapsed_ms": 37.884,
+            "host_after": "2026-11-18T17:27:47.241554+00:00",
+            "host_before": "2026-11-18T17:27:47.203703+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:47.754531+00:00",
+            "elapsed_ms": 15.372,
+            "host_after": "2026-11-18T17:27:47.758640+00:00",
+            "host_before": "2026-11-18T17:27:47.743284+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:48.269067+00:00",
+            "elapsed_ms": 14.017,
+            "host_after": "2026-11-18T17:27:48.277199+00:00",
+            "host_before": "2026-11-18T17:27:48.263190+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:48.793394+00:00",
+            "elapsed_ms": 22.874,
+            "host_after": "2026-11-18T17:27:48.800642+00:00",
+            "host_before": "2026-11-18T17:27:48.777791+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:49.314132+00:00",
+            "elapsed_ms": 18.313,
+            "host_after": "2026-11-18T17:27:49.319860+00:00",
+            "host_before": "2026-11-18T17:27:49.301568+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:49.861743+00:00",
+            "elapsed_ms": 43.482,
+            "host_after": "2026-11-18T17:27:49.868398+00:00",
+            "host_before": "2026-11-18T17:27:49.824954+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:50.400792+00:00",
+            "elapsed_ms": 39.37,
+            "host_after": "2026-11-18T17:27:50.408327+00:00",
+            "host_before": "2026-11-18T17:27:50.368909+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:50.937240+00:00",
+            "elapsed_ms": 36.484,
+            "host_after": "2026-11-18T17:27:50.945294+00:00",
+            "host_before": "2026-11-18T17:27:50.908868+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:51.464054+00:00",
+            "elapsed_ms": 23.02,
+            "host_after": "2026-11-18T17:27:51.470652+00:00",
+            "host_before": "2026-11-18T17:27:51.447668+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:51.990365+00:00",
+            "elapsed_ms": 26.075,
+            "host_after": "2026-11-18T17:27:51.997949+00:00",
+            "host_before": "2026-11-18T17:27:51.971906+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:52.504386+00:00",
+            "elapsed_ms": 12.199,
+            "host_after": "2026-11-18T17:27:52.510289+00:00",
+            "host_before": "2026-11-18T17:27:52.498104+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:53.023520+00:00",
+            "elapsed_ms": 18.848,
+            "host_after": "2026-11-18T17:27:53.029309+00:00",
+            "host_before": "2026-11-18T17:27:53.010474+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:53.539919+00:00",
+            "elapsed_ms": 14.436,
+            "host_after": "2026-11-18T17:27:53.546233+00:00",
+            "host_before": "2026-11-18T17:27:53.531816+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:54.066237+00:00",
+            "elapsed_ms": 28.886,
+            "host_after": "2026-11-18T17:27:54.075591+00:00",
+            "host_before": "2026-11-18T17:27:54.046709+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:54.591963+00:00",
+            "elapsed_ms": 21.519,
+            "host_after": "2026-11-18T17:27:54.597619+00:00",
+            "host_before": "2026-11-18T17:27:54.576110+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:55.117226+00:00",
+            "elapsed_ms": 21.941,
+            "host_after": "2026-11-18T17:27:55.123853+00:00",
+            "host_before": "2026-11-18T17:27:55.101948+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:55.635486+00:00",
+            "elapsed_ms": 18.183,
+            "host_after": "2026-11-18T17:27:55.642294+00:00",
+            "host_before": "2026-11-18T17:27:55.624125+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:56.145197+00:00",
+            "elapsed_ms": 7.475,
+            "host_after": "2026-11-18T17:27:56.150829+00:00",
+            "host_before": "2026-11-18T17:27:56.143369+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:56.662067+00:00",
+            "elapsed_ms": 17.235,
+            "host_after": "2026-11-18T17:27:56.668322+00:00",
+            "host_before": "2026-11-18T17:27:56.651202+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:57.173973+00:00",
+            "elapsed_ms": 10.111,
+            "host_after": "2026-11-18T17:27:57.179800+00:00",
+            "host_before": "2026-11-18T17:27:57.169704+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:57.688927+00:00",
+            "elapsed_ms": 13.326,
+            "host_after": "2026-11-18T17:27:57.694973+00:00",
+            "host_before": "2026-11-18T17:27:57.681671+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:58.210599+00:00",
+            "elapsed_ms": 21.546,
+            "host_after": "2026-11-18T17:27:58.216689+00:00",
+            "host_before": "2026-11-18T17:27:58.195164+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:58.720733+00:00",
+            "elapsed_ms": 9.423,
+            "host_after": "2026-11-18T17:27:58.726437+00:00",
+            "host_before": "2026-11-18T17:27:58.717031+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:59.232124+00:00",
+            "elapsed_ms": 11.706,
+            "host_after": "2026-11-18T17:27:59.238422+00:00",
+            "host_before": "2026-11-18T17:27:59.226735+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:27:59.741279+00:00",
+            "elapsed_ms": 8.222,
+            "host_after": "2026-11-18T17:27:59.747267+00:00",
+            "host_before": "2026-11-18T17:27:59.739053+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:00.256400+00:00",
+            "elapsed_ms": 15.614,
+            "host_after": "2026-11-18T17:28:00.264223+00:00",
+            "host_before": "2026-11-18T17:28:00.248637+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:00.773439+00:00",
+            "elapsed_ms": 11.1,
+            "host_after": "2026-11-18T17:28:00.779588+00:00",
+            "host_before": "2026-11-18T17:28:00.768511+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:01.699061+00:00",
+            "elapsed_ms": 425.475,
+            "host_after": "2026-11-18T17:28:01.708514+00:00",
+            "host_before": "2026-11-18T17:28:01.283139+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:02.215090+00:00",
+            "elapsed_ms": 11.85,
+            "host_after": "2026-11-18T17:28:02.220979+00:00",
+            "host_before": "2026-11-18T17:28:02.209142+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:02.725900+00:00",
+            "elapsed_ms": 10.671,
+            "host_after": "2026-11-18T17:28:02.731795+00:00",
+            "host_before": "2026-11-18T17:28:02.721147+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:03.297374+00:00",
+            "elapsed_ms": 71.278,
+            "host_after": "2026-11-18T17:28:03.306392+00:00",
+            "host_before": "2026-11-18T17:28:03.235172+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:03.925985+00:00",
+            "elapsed_ms": 123.378,
+            "host_after": "2026-11-18T17:28:03.933467+00:00",
+            "host_before": "2026-11-18T17:28:03.810100+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:04.446627+00:00",
+            "elapsed_ms": 19.253,
+            "host_after": "2026-11-18T17:28:04.453571+00:00",
+            "host_before": "2026-11-18T17:28:04.434343+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:04.991865+00:00",
+            "elapsed_ms": 49.369,
+            "host_after": "2026-11-18T17:28:05.005241+00:00",
+            "host_before": "2026-11-18T17:28:04.955901+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:05.552710+00:00",
+            "elapsed_ms": 59.129,
+            "host_after": "2026-11-18T17:28:05.567285+00:00",
+            "host_before": "2026-11-18T17:28:05.508255+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:06.159697+00:00",
+            "elapsed_ms": 98.958,
+            "host_after": "2026-11-18T17:28:06.170342+00:00",
+            "host_before": "2026-11-18T17:28:06.071330+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:06.683897+00:00",
+            "elapsed_ms": 20.568,
+            "host_after": "2026-11-18T17:28:06.691636+00:00",
+            "host_before": "2026-11-18T17:28:06.671120+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:07.204028+00:00",
+            "elapsed_ms": 16.235,
+            "host_after": "2026-11-18T17:28:07.211280+00:00",
+            "host_before": "2026-11-18T17:28:07.195150+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:07.717922+00:00",
+            "elapsed_ms": 12.192,
+            "host_after": "2026-11-18T17:28:07.724377+00:00",
+            "host_before": "2026-11-18T17:28:07.712282+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:08.232852+00:00",
+            "elapsed_ms": 13.951,
+            "host_after": "2026-11-18T17:28:08.239451+00:00",
+            "host_before": "2026-11-18T17:28:08.225507+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:08.746261+00:00",
+            "elapsed_ms": 9.947,
+            "host_after": "2026-11-18T17:28:08.753285+00:00",
+            "host_before": "2026-11-18T17:28:08.743357+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:09.260323+00:00",
+            "elapsed_ms": 13.135,
+            "host_after": "2026-11-18T17:28:09.266608+00:00",
+            "host_before": "2026-11-18T17:28:09.253485+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:09.799530+00:00",
+            "elapsed_ms": 39.717,
+            "host_after": "2026-11-18T17:28:09.809531+00:00",
+            "host_before": "2026-11-18T17:28:09.769837+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:10.325104+00:00",
+            "elapsed_ms": 21.869,
+            "host_after": "2026-11-18T17:28:10.333153+00:00",
+            "host_before": "2026-11-18T17:28:10.311298+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:10.837239+00:00",
+            "elapsed_ms": 10.637,
+            "host_after": "2026-11-18T17:28:10.843994+00:00",
+            "host_before": "2026-11-18T17:28:10.833371+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:11.351379+00:00",
+            "elapsed_ms": 9.14,
+            "host_after": "2026-11-18T17:28:11.357683+00:00",
+            "host_before": "2026-11-18T17:28:11.348564+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:11.876930+00:00",
+            "elapsed_ms": 26.537,
+            "host_after": "2026-11-18T17:28:11.884959+00:00",
+            "host_before": "2026-11-18T17:28:11.858474+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:12.459457+00:00",
+            "elapsed_ms": 90.729,
+            "host_after": "2026-11-18T17:28:12.477522+00:00",
+            "host_before": "2026-11-18T17:28:12.386813+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:12.986451+00:00",
+            "elapsed_ms": 14.631,
+            "host_after": "2026-11-18T17:28:12.993070+00:00",
+            "host_before": "2026-11-18T17:28:12.978452+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:13.502532+00:00",
+            "elapsed_ms": 16.097,
+            "host_after": "2026-11-18T17:28:13.509669+00:00",
+            "host_before": "2026-11-18T17:28:13.493597+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:14.017127+00:00",
+            "elapsed_ms": 13.865,
+            "host_after": "2026-11-18T17:28:14.023846+00:00",
+            "host_before": "2026-11-18T17:28:14.009983+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:14.538312+00:00",
+            "elapsed_ms": 23.961,
+            "host_after": "2026-11-18T17:28:14.548469+00:00",
+            "host_before": "2026-11-18T17:28:14.524521+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:15.063982+00:00",
+            "elapsed_ms": 22.24,
+            "host_after": "2026-11-18T17:28:15.071192+00:00",
+            "host_before": "2026-11-18T17:28:15.049005+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:15.588516+00:00",
+            "elapsed_ms": 22.149,
+            "host_after": "2026-11-18T17:28:15.596670+00:00",
+            "host_before": "2026-11-18T17:28:15.574554+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:16.112232+00:00",
+            "elapsed_ms": 18.127,
+            "host_after": "2026-11-18T17:28:16.118911+00:00",
+            "host_before": "2026-11-18T17:28:16.100794+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:16.731536+00:00",
+            "elapsed_ms": 124.046,
+            "host_after": "2026-11-18T17:28:16.748376+00:00",
+            "host_before": "2026-11-18T17:28:16.624346+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:17.350016+00:00",
+            "elapsed_ms": 109.912,
+            "host_after": "2026-11-18T17:28:17.362934+00:00",
+            "host_before": "2026-11-18T17:28:17.252795+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:17.873309+00:00",
+            "elapsed_ms": 12.661,
+            "host_after": "2026-11-18T17:28:17.880273+00:00",
+            "host_before": "2026-11-18T17:28:17.867621+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:18.426451+00:00",
+            "elapsed_ms": 51.154,
+            "host_after": "2026-11-18T17:28:18.431609+00:00",
+            "host_before": "2026-11-18T17:28:18.380473+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:19.056595+00:00",
+            "elapsed_ms": 135.361,
+            "host_after": "2026-11-18T17:28:19.067881+00:00",
+            "host_before": "2026-11-18T17:28:18.932626+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:19.616558+00:00",
+            "elapsed_ms": 51.133,
+            "host_after": "2026-11-18T17:28:19.620306+00:00",
+            "host_before": "2026-11-18T17:28:19.569227+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:20.206221+00:00",
+            "elapsed_ms": 89.987,
+            "host_after": "2026-11-18T17:28:20.211602+00:00",
+            "host_before": "2026-11-18T17:28:20.121720+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:20.802431+00:00",
+            "elapsed_ms": 110.55,
+            "host_after": "2026-11-18T17:28:20.823938+00:00",
+            "host_before": "2026-11-18T17:28:20.713358+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:21.651145+00:00",
+            "elapsed_ms": 350.509,
+            "host_after": "2026-11-18T17:28:21.675655+00:00",
+            "host_before": "2026-11-18T17:28:21.325153+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:22.207375+00:00",
+            "elapsed_ms": 37.274,
+            "host_after": "2026-11-18T17:28:22.213606+00:00",
+            "host_before": "2026-11-18T17:28:22.176351+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:22.777497+00:00",
+            "elapsed_ms": 67.19,
+            "host_after": "2026-11-18T17:28:22.782352+00:00",
+            "host_before": "2026-11-18T17:28:22.714906+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:23.309859+00:00",
+            "elapsed_ms": 32.626,
+            "host_after": "2026-11-18T17:28:23.315744+00:00",
+            "host_before": "2026-11-18T17:28:23.283153+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:23.840543+00:00",
+            "elapsed_ms": 24.602,
+            "host_after": "2026-11-18T17:28:23.842413+00:00",
+            "host_before": "2026-11-18T17:28:23.817817+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:24.388884+00:00",
+            "elapsed_ms": 50.119,
+            "host_after": "2026-11-18T17:28:24.393193+00:00",
+            "host_before": "2026-11-18T17:28:24.342993+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:24.915212+00:00",
+            "elapsed_ms": 26.446,
+            "host_after": "2026-11-18T17:28:24.919779+00:00",
+            "host_before": "2026-11-18T17:28:24.893405+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:25.444064+00:00",
+            "elapsed_ms": 30.47,
+            "host_after": "2026-11-18T17:28:25.450512+00:00",
+            "host_before": "2026-11-18T17:28:25.420078+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:26.043073+00:00",
+            "elapsed_ms": 98.645,
+            "host_after": "2026-11-18T17:28:26.051055+00:00",
+            "host_before": "2026-11-18T17:28:25.952545+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:26.710758+00:00",
+            "elapsed_ms": 165.372,
+            "host_after": "2026-11-18T17:28:26.717714+00:00",
+            "host_before": "2026-11-18T17:28:26.552349+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:27.288737+00:00",
+            "elapsed_ms": 79.534,
+            "host_after": "2026-11-18T17:28:27.298462+00:00",
+            "host_before": "2026-11-18T17:28:27.218940+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:27.854690+00:00",
+            "elapsed_ms": 59.662,
+            "host_after": "2026-11-18T17:28:27.860142+00:00",
+            "host_before": "2026-11-18T17:28:27.800067+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:28.382665+00:00",
+            "elapsed_ms": 23.662,
+            "host_after": "2026-11-18T17:28:28.385659+00:00",
+            "host_before": "2026-11-18T17:28:28.362034+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:28.922602+00:00",
+            "elapsed_ms": 42.31,
+            "host_after": "2026-11-18T17:28:28.928561+00:00",
+            "host_before": "2026-11-18T17:28:28.886292+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:29.446754+00:00",
+            "elapsed_ms": 15.245,
+            "host_after": "2026-11-18T17:28:29.448811+00:00",
+            "host_before": "2026-11-18T17:28:29.433587+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:29.978118+00:00",
+            "elapsed_ms": 27.472,
+            "host_after": "2026-11-18T17:28:29.980795+00:00",
+            "host_before": "2026-11-18T17:28:29.953327+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:30.501604+00:00",
+            "elapsed_ms": 18.583,
+            "host_after": "2026-11-18T17:28:30.504237+00:00",
+            "host_before": "2026-11-18T17:28:30.485666+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:31.019244+00:00",
+            "elapsed_ms": 16.401,
+            "host_after": "2026-11-18T17:28:31.022482+00:00",
+            "host_before": "2026-11-18T17:28:31.006102+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:31.533777+00:00",
+            "elapsed_ms": 13.196,
+            "host_after": "2026-11-18T17:28:31.536184+00:00",
+            "host_before": "2026-11-18T17:28:31.523011+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:32.050398+00:00",
+            "elapsed_ms": 15.26,
+            "host_after": "2026-11-18T17:28:32.052428+00:00",
+            "host_before": "2026-11-18T17:28:32.037184+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:32.571296+00:00",
+            "elapsed_ms": 26.827,
+            "host_after": "2026-11-18T17:28:32.579474+00:00",
+            "host_before": "2026-11-18T17:28:32.552677+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:33.099157+00:00",
+            "elapsed_ms": 21.9,
+            "host_after": "2026-11-18T17:28:33.101710+00:00",
+            "host_before": "2026-11-18T17:28:33.079816+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:33.682604+00:00",
+            "elapsed_ms": 89.507,
+            "host_after": "2026-11-18T17:28:33.692332+00:00",
+            "host_before": "2026-11-18T17:28:33.602843+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:34.226609+00:00",
+            "elapsed_ms": 36.63,
+            "host_after": "2026-11-18T17:28:34.231457+00:00",
+            "host_before": "2026-11-18T17:28:34.194804+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:34.771187+00:00",
+            "elapsed_ms": 41.72,
+            "host_after": "2026-11-18T17:28:34.776684+00:00",
+            "host_before": "2026-11-18T17:28:34.735000+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:35.322293+00:00",
+            "elapsed_ms": 49.887,
+            "host_after": "2026-11-18T17:28:35.327731+00:00",
+            "host_before": "2026-11-18T17:28:35.277860+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:35.904640+00:00",
+            "elapsed_ms": 84.152,
+            "host_after": "2026-11-18T17:28:35.912419+00:00",
+            "host_before": "2026-11-18T17:28:35.828300+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:36.429640+00:00",
+            "elapsed_ms": 16.357,
+            "host_after": "2026-11-18T17:28:36.431933+00:00",
+            "host_before": "2026-11-18T17:28:36.415589+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:36.942466+00:00",
+            "elapsed_ms": 9.338,
+            "host_after": "2026-11-18T17:28:36.944512+00:00",
+            "host_before": "2026-11-18T17:28:36.935186+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:37.462969+00:00",
+            "elapsed_ms": 20.245,
+            "host_after": "2026-11-18T17:28:37.466193+00:00",
+            "host_before": "2026-11-18T17:28:37.445967+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:37.978284+00:00",
+            "elapsed_ms": 16.736,
+            "host_after": "2026-11-18T17:28:37.983537+00:00",
+            "host_before": "2026-11-18T17:28:37.966816+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:38.491504+00:00",
+            "elapsed_ms": 9.169,
+            "host_after": "2026-11-18T17:28:38.493406+00:00",
+            "host_before": "2026-11-18T17:28:38.484245+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:39.002992+00:00",
+            "elapsed_ms": 12.729,
+            "host_after": "2026-11-18T17:28:39.007051+00:00",
+            "host_before": "2026-11-18T17:28:38.994307+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:39.540491+00:00",
+            "elapsed_ms": 37.604,
+            "host_after": "2026-11-18T17:28:39.544744+00:00",
+            "host_before": "2026-11-18T17:28:39.507160+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:40.058074+00:00",
+            "elapsed_ms": 16.411,
+            "host_after": "2026-11-18T17:28:40.061292+00:00",
+            "host_before": "2026-11-18T17:28:40.044901+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:40.602858+00:00",
+            "elapsed_ms": 47.728,
+            "host_after": "2026-11-18T17:28:40.613553+00:00",
+            "host_before": "2026-11-18T17:28:40.565841+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:41.138487+00:00",
+            "elapsed_ms": 27.664,
+            "host_after": "2026-11-18T17:28:41.141878+00:00",
+            "host_before": "2026-11-18T17:28:41.114218+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:41.697030+00:00",
+            "elapsed_ms": 63.219,
+            "host_after": "2026-11-18T17:28:41.706071+00:00",
+            "host_before": "2026-11-18T17:28:41.642957+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:42.230921+00:00",
+            "elapsed_ms": 30.838,
+            "host_after": "2026-11-18T17:28:42.237644+00:00",
+            "host_before": "2026-11-18T17:28:42.206816+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:42.755222+00:00",
+            "elapsed_ms": 19.316,
+            "host_after": "2026-11-18T17:28:42.759129+00:00",
+            "host_before": "2026-11-18T17:28:42.739833+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:43.269315+00:00",
+            "elapsed_ms": 10.045,
+            "host_after": "2026-11-18T17:28:43.271363+00:00",
+            "host_before": "2026-11-18T17:28:43.261330+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:43.830769+00:00",
+            "elapsed_ms": 59.162,
+            "host_after": "2026-11-18T17:28:43.834758+00:00",
+            "host_before": "2026-11-18T17:28:43.775605+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:44.362614+00:00",
+            "elapsed_ms": 29.827,
+            "host_after": "2026-11-18T17:28:44.365038+00:00",
+            "host_before": "2026-11-18T17:28:44.335201+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:44.894781+00:00",
+            "elapsed_ms": 36.369,
+            "host_after": "2026-11-18T17:28:44.901727+00:00",
+            "host_before": "2026-11-18T17:28:44.865384+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:45.878953+00:00",
+            "elapsed_ms": 480.988,
+            "host_after": "2026-11-18T17:28:45.888923+00:00",
+            "host_before": "2026-11-18T17:28:45.408016+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:46.420530+00:00",
+            "elapsed_ms": 39.566,
+            "host_after": "2026-11-18T17:28:46.429537+00:00",
+            "host_before": "2026-11-18T17:28:46.389956+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:46.964255+00:00",
+            "elapsed_ms": 38.543,
+            "host_after": "2026-11-18T17:28:46.968342+00:00",
+            "host_before": "2026-11-18T17:28:46.929832+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:47.479962+00:00",
+            "elapsed_ms": 8.88,
+            "host_after": "2026-11-18T17:28:47.482377+00:00",
+            "host_before": "2026-11-18T17:28:47.473508+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:47.992858+00:00",
+            "elapsed_ms": 10.366,
+            "host_after": "2026-11-18T17:28:47.995174+00:00",
+            "host_before": "2026-11-18T17:28:47.984815+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:48.638465+00:00",
+            "elapsed_ms": 167.264,
+            "host_after": "2026-11-18T17:28:48.665964+00:00",
+            "host_before": "2026-11-18T17:28:48.498684+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:49.286446+00:00",
+            "elapsed_ms": 129.027,
+            "host_after": "2026-11-18T17:28:49.296265+00:00",
+            "host_before": "2026-11-18T17:28:49.167257+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:50.177594+00:00",
+            "elapsed_ms": 360.99,
+            "host_after": "2026-11-18T17:28:50.236482+00:00",
+            "host_before": "2026-11-18T17:28:49.874166+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:50.779220+00:00",
+            "elapsed_ms": 47.171,
+            "host_after": "2026-11-18T17:28:50.783947+00:00",
+            "host_before": "2026-11-18T17:28:50.736790+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:51.307737+00:00",
+            "elapsed_ms": 17.705,
+            "host_after": "2026-11-18T17:28:51.310226+00:00",
+            "host_before": "2026-11-18T17:28:51.292547+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:51.838730+00:00",
+            "elapsed_ms": 29.466,
+            "host_after": "2026-11-18T17:28:51.841174+00:00",
+            "host_before": "2026-11-18T17:28:51.811708+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:52.362348+00:00",
+            "elapsed_ms": 22.629,
+            "host_after": "2026-11-18T17:28:52.364236+00:00",
+            "host_before": "2026-11-18T17:28:52.341632+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:52.872183+00:00",
+            "elapsed_ms": 9.333,
+            "host_after": "2026-11-18T17:28:52.874280+00:00",
+            "host_before": "2026-11-18T17:28:52.864957+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:53.383443+00:00",
+            "elapsed_ms": 10.628,
+            "host_after": "2026-11-18T17:28:53.385287+00:00",
+            "host_before": "2026-11-18T17:28:53.374682+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:53.931971+00:00",
+            "elapsed_ms": 46.547,
+            "host_after": "2026-11-18T17:28:53.936663+00:00",
+            "host_before": "2026-11-18T17:28:53.890157+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:54.458551+00:00",
+            "elapsed_ms": 24.086,
+            "host_after": "2026-11-18T17:28:54.462081+00:00",
+            "host_before": "2026-11-18T17:28:54.438010+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:55.027330+00:00",
+            "elapsed_ms": 73.637,
+            "host_after": "2026-11-18T17:28:55.037320+00:00",
+            "host_before": "2026-11-18T17:28:54.963673+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:55.601645+00:00",
+            "elapsed_ms": 66.765,
+            "host_after": "2026-11-18T17:28:55.605961+00:00",
+            "host_before": "2026-11-18T17:28:55.539232+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:56.161726+00:00",
+            "elapsed_ms": 63.008,
+            "host_after": "2026-11-18T17:28:56.171103+00:00",
+            "host_before": "2026-11-18T17:28:56.108149+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:56.684725+00:00",
+            "elapsed_ms": 16.361,
+            "host_after": "2026-11-18T17:28:56.688153+00:00",
+            "host_before": "2026-11-18T17:28:56.671827+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:57.200655+00:00",
+            "elapsed_ms": 8.695,
+            "host_after": "2026-11-18T17:28:57.202475+00:00",
+            "host_before": "2026-11-18T17:28:57.193789+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:57.745613+00:00",
+            "elapsed_ms": 45.563,
+            "host_after": "2026-11-18T17:28:57.749220+00:00",
+            "host_before": "2026-11-18T17:28:57.703505+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:58.402355+00:00",
+            "elapsed_ms": 173.184,
+            "host_after": "2026-11-18T17:28:58.423262+00:00",
+            "host_before": "2026-11-18T17:28:58.250018+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:58.939130+00:00",
+            "elapsed_ms": 16.23,
+            "host_after": "2026-11-18T17:28:58.942376+00:00",
+            "host_before": "2026-11-18T17:28:58.926171+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:59.460197+00:00",
+            "elapsed_ms": 11.122,
+            "host_after": "2026-11-18T17:28:59.462280+00:00",
+            "host_before": "2026-11-18T17:28:59.451167+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:28:59.975809+00:00",
+            "elapsed_ms": 13.265,
+            "host_after": "2026-11-18T17:28:59.978490+00:00",
+            "host_before": "2026-11-18T17:28:59.965253+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:00.493162+00:00",
+            "elapsed_ms": 8.995,
+            "host_after": "2026-11-18T17:29:00.495492+00:00",
+            "host_before": "2026-11-18T17:29:00.486509+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:01.005993+00:00",
+            "elapsed_ms": 14.931,
+            "host_after": "2026-11-18T17:29:01.011011+00:00",
+            "host_before": "2026-11-18T17:29:00.996108+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:01.519445+00:00",
+            "elapsed_ms": 9.404,
+            "host_after": "2026-11-18T17:29:01.521572+00:00",
+            "host_before": "2026-11-18T17:29:01.512180+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:02.049930+00:00",
+            "elapsed_ms": 31.956,
+            "host_after": "2026-11-18T17:29:02.056876+00:00",
+            "host_before": "2026-11-18T17:29:02.024934+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:02.576204+00:00",
+            "elapsed_ms": 11.795,
+            "host_after": "2026-11-18T17:29:02.578744+00:00",
+            "host_before": "2026-11-18T17:29:02.566965+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:03.093812+00:00",
+            "elapsed_ms": 11.788,
+            "host_after": "2026-11-18T17:29:03.095757+00:00",
+            "host_before": "2026-11-18T17:29:03.083977+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:03.607346+00:00",
+            "elapsed_ms": 14.258,
+            "host_after": "2026-11-18T17:29:03.610429+00:00",
+            "host_before": "2026-11-18T17:29:03.596185+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:04.224010+00:00",
+            "elapsed_ms": 109.049,
+            "host_after": "2026-11-18T17:29:04.227643+00:00",
+            "host_before": "2026-11-18T17:29:04.118636+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:04.735808+00:00",
+            "elapsed_ms": 8.919,
+            "host_after": "2026-11-18T17:29:04.737924+00:00",
+            "host_before": "2026-11-18T17:29:04.729011+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:05.256208+00:00",
+            "elapsed_ms": 21.843,
+            "host_after": "2026-11-18T17:29:05.263468+00:00",
+            "host_before": "2026-11-18T17:29:05.241670+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:05.785615+00:00",
+            "elapsed_ms": 22.575,
+            "host_after": "2026-11-18T17:29:05.789243+00:00",
+            "host_before": "2026-11-18T17:29:05.766682+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:06.306337+00:00",
+            "elapsed_ms": 22.397,
+            "host_after": "2026-11-18T17:29:06.312223+00:00",
+            "host_before": "2026-11-18T17:29:06.289858+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:06.825740+00:00",
+            "elapsed_ms": 9.417,
+            "host_after": "2026-11-18T17:29:06.827899+00:00",
+            "host_before": "2026-11-18T17:29:06.818489+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:07.350572+00:00",
+            "elapsed_ms": 15.348,
+            "host_after": "2026-11-18T17:29:07.353333+00:00",
+            "host_before": "2026-11-18T17:29:07.338012+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:07.875070+00:00",
+            "elapsed_ms": 20.794,
+            "host_after": "2026-11-18T17:29:07.879440+00:00",
+            "host_before": "2026-11-18T17:29:07.858677+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:08.412294+00:00",
+            "elapsed_ms": 35.779,
+            "host_after": "2026-11-18T17:29:08.415882+00:00",
+            "host_before": "2026-11-18T17:29:08.380116+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:08.942291+00:00",
+            "elapsed_ms": 29.424,
+            "host_after": "2026-11-18T17:29:08.946752+00:00",
+            "host_before": "2026-11-18T17:29:08.917332+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:09.459751+00:00",
+            "elapsed_ms": 12.071,
+            "host_after": "2026-11-18T17:29:09.462104+00:00",
+            "host_before": "2026-11-18T17:29:09.450039+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:09.986686+00:00",
+            "elapsed_ms": 21.076,
+            "host_after": "2026-11-18T17:29:09.989508+00:00",
+            "host_before": "2026-11-18T17:29:09.968458+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:10.497496+00:00",
+            "elapsed_ms": 9.488,
+            "host_after": "2026-11-18T17:29:10.499921+00:00",
+            "host_before": "2026-11-18T17:29:10.490460+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:11.023210+00:00",
+            "elapsed_ms": 29.125,
+            "host_after": "2026-11-18T17:29:11.033676+00:00",
+            "host_before": "2026-11-18T17:29:11.004625+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:11.569574+00:00",
+            "elapsed_ms": 37.427,
+            "host_after": "2026-11-18T17:29:11.573449+00:00",
+            "host_before": "2026-11-18T17:29:11.536042+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:12.086819+00:00",
+            "elapsed_ms": 15.542,
+            "host_after": "2026-11-18T17:29:12.089941+00:00",
+            "host_before": "2026-11-18T17:29:12.074425+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:12.609217+00:00",
+            "elapsed_ms": 19.74,
+            "host_after": "2026-11-18T17:29:12.612063+00:00",
+            "host_before": "2026-11-18T17:29:12.592338+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:13.119537+00:00",
+            "elapsed_ms": 8.351,
+            "host_after": "2026-11-18T17:29:13.121817+00:00",
+            "host_before": "2026-11-18T17:29:13.113477+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:13.629159+00:00",
+            "elapsed_ms": 8.725,
+            "host_after": "2026-11-18T17:29:13.631471+00:00",
+            "host_before": "2026-11-18T17:29:13.622749+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:14.152052+00:00",
+            "elapsed_ms": 21.757,
+            "host_after": "2026-11-18T17:29:14.155076+00:00",
+            "host_before": "2026-11-18T17:29:14.133318+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:14.661382+00:00",
+            "elapsed_ms": 8.499,
+            "host_after": "2026-11-18T17:29:14.663789+00:00",
+            "host_before": "2026-11-18T17:29:14.655302+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:15.195438+00:00",
+            "elapsed_ms": 33.193,
+            "host_after": "2026-11-18T17:29:15.200211+00:00",
+            "host_before": "2026-11-18T17:29:15.167054+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:15.747906+00:00",
+            "elapsed_ms": 50.522,
+            "host_after": "2026-11-18T17:29:15.753063+00:00",
+            "host_before": "2026-11-18T17:29:15.702574+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:16.402210+00:00",
+            "elapsed_ms": 149.995,
+            "host_after": "2026-11-18T17:29:16.409055+00:00",
+            "host_before": "2026-11-18T17:29:16.259100+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:16.926409+00:00",
+            "elapsed_ms": 20.072,
+            "host_after": "2026-11-18T17:29:16.929769+00:00",
+            "host_before": "2026-11-18T17:29:16.909713+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:17.458625+00:00",
+            "elapsed_ms": 29.51,
+            "host_after": "2026-11-18T17:29:17.464019+00:00",
+            "host_before": "2026-11-18T17:29:17.434546+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:17.997018+00:00",
+            "elapsed_ms": 27.498,
+            "host_after": "2026-11-18T17:29:18.000372+00:00",
+            "host_before": "2026-11-18T17:29:17.972882+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:18.510101+00:00",
+            "elapsed_ms": 10.655,
+            "host_after": "2026-11-18T17:29:18.512055+00:00",
+            "host_before": "2026-11-18T17:29:18.501415+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:19.030378+00:00",
+            "elapsed_ms": 19.831,
+            "host_after": "2026-11-18T17:29:19.032262+00:00",
+            "host_before": "2026-11-18T17:29:19.012441+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:19.542357+00:00",
+            "elapsed_ms": 11.779,
+            "host_after": "2026-11-18T17:29:19.544254+00:00",
+            "host_before": "2026-11-18T17:29:19.532516+00:00",
+            "phase": "periodic",
+            "skew_lower_bound_seconds": 0.0
+          },
+          {
+            "database": "2026-11-18T17:29:20.034141+00:00",
+            "elapsed_ms": 10.681,
+            "host_after": "2026-11-18T17:29:20.035956+00:00",
+            "host_before": "2026-11-18T17:29:20.025271+00:00",
+            "phase": "stop",
+            "skew_lower_bound_seconds": 0.0
+          }
+        ],
+        "sampling_failure_count": 0,
+        "sampling_interval_seconds": 0.5,
+        "stop_join_seconds": 5,
+        "thread_stopped": true,
+        "version": 2
+      },
+      "environment_accepted": true,
+      "environment_error": null,
+      "runner_exit_code": 0,
+      "source_hashes_match_commit": true,
+      "measured_sources_sha256": {
+        "examples/qualification/orders-http-postgres-v1.json": "44c0632a619a5b42eae89bf2c2360c9478ce054440b9b2bdb22ab510dd5d71a3",
+        "examples/qualification/orders-pod-https-comparison-v2.json": "3058a04a792ec44bc9e3193d64340d2a75db8fdcdc1137b9b9743022ac65f5d4",
+        "examples/qualification/orders-pod-https-postgres-v1.json": "50b7d0c3b9bae8cda79a1add2e09f4030552723ac3fe926288485ba289e4e4cb",
+        "src/sova/qualification/__init__.py": "03e25cb600cd4fa8c72759464fc049cfe3c3da31f89c7f2ea52f5e384155a22b",
+        "src/sova/qualification/__main__.py": "c2f28ef4820e0ebb296ee474c18aeeab717a04c9c877c4ee6413aaa84e330f5c",
+        "src/sova/qualification/bounded_orders.py": "3dac6e4ae22f918d8a022e791b0f59d168ec3bb133dc172c9727ae8855e0c456",
+        "src/sova/qualification/http_orders.py": "f471b6c1e6fe33711d96f733fd0aeb79b94ff5d0f249ccd523dc5286a0aae92f",
+        "src/sova/qualification/image.py": "9abc6384c7eb53a18876ff0885d6a7ae2361343f12bfed14de443619c5f1304b",
+        "src/sova/qualification/postgres_orders.py": "b0c602dc4c9db02e0bd18c080026b38e643b4379e27c5bb353ac33aba3406eda",
+        "src/sova/qualification/requests.py": "1f701150aab8564d6c139c5803a35db478932bb6664f160c0d0f115161d1b612",
+        "src/sova/service/__init__.py": "04ad811567cd672308b8a9a50ab12084ec37843db5b8e299a79f2ded97b5f04e",
+        "src/sova/service/api.py": "dee1d3cbe0804162f733620b2c2363b6386be39a03c825b7b02fe7d2a15587b2",
+        "src/sova/service/auth.py": "42ab347486d57eacfd296cf6a8f9863217769b08cb9c51f18c081ae57d855d85",
+        "src/sova/service/catalog.py": "bdc8e6f7da60224b3683993fc5d1e603de537f96e19b58c202bd38075f7f2573",
+        "src/sova/service/composite_execution.py": "c9bc7a9c4c69db084a0d5b72a656267c459d5554370fe808c96a9b15a1473081",
+        "src/sova/service/config.py": "91dd0d4164d7eb59166e201391c361d6dde718ce769815054c70465ab17184f0",
+        "src/sova/service/control_plane.py": "41193d73e49fdd8f48f5406e7e399c6d971ca2d9f7c2d3cba09bedaebd6877b1",
+        "src/sova/service/kafka_execution.py": "025d015a2f5f6dfbe5ba8cada837e00ff300fb9218482f71d2c9f0f53bc821bd",
+        "src/sova/service/main.py": "49db1aeba20c31ccc1c24a1d505f5e576a1aabe50663b3ac28804f7dd33bbe6a",
+        "src/sova/service/mongodb_execution.py": "2872173c94c0e6edfc528bddbd7f5c2981a30a7df75f15fd6d9d80cad8d67bd0",
+        "src/sova/service/mysql_execution.py": "cc83f2435eca020ad9858a8a88dceeea2ec3d1c1b29343875634e42945b92065",
+        "src/sova/service/postgres_execution.py": "7f03a63a8c8dfb876c56cd834f031c5798295f878c875e02660fbc1a2b6cf51f",
+        "src/sova/service/quiescence.py": "cb6abf2b016654f2ba05941b8b745e60d6409d670a29cf3e0a690dc31e518bf1",
+        "src/sova/service/rabbitmq_execution.py": "8934d85b2889e41c84d3208207da8d9947f14acd5a2310b34bc3198632de2f8c",
+        "src/sova/service/redis_execution.py": "6d710dab2d971bbb61ec89b0476183633032fe4ce93370d60b8d4f976e872c27",
+        "src/sova/service/route_stores.py": "9a0990a2399dca4602dfd902cd5d382012df171ac1082c8d4566073de7ab74f3",
+        "src/sova/service/schema.py": "93f56a980cb7042f1d0031deeea5a766872c68274e5eea85f4a375d600b675c4",
+        "src/sova/service/volume_execution.py": "13d6a94fcec041dbadae519ff772d7909cdfea58dde87320e35379b67cfff0ed",
+        "src/sova/service/worker.py": "3a148ff7ec555bcaa64252747403bd547da4dca734471262691ac279bc796555",
+        "tests/contract_world.py": "27badc1d9a7d3e676a3a2c807055088a89d327392df37dd9abafe0e5ab325b44",
+        "tests/control_plane_support.py": "c0b0a83312067d62c4246a801f00b9bd4b9aa9e408c3c76bf96575d3dba8230c",
+        "tests/handoff_drive.py": "736ceb33c16d55e32865b69979c6b84dd8ab222b2a439586b095fe8ec8aa0cdf",
+        "tests/integration/test_order_http_handoff.py": "f91e0a00193b7cc230da4e471eb2eb8350db05ef369719bf571b2f753090ae3a",
+        "tests/integration/test_worker_pod_http_journey.py": "3629f80240834b2232fe29a4170a680eac9f64c4a5319f2695fa261700d25b16",
+        "tests/integration/test_worker_pod_journey.py": "f686b8eb1933320e4e86b679bb022196e61dddae973dc0481f8851088750d062",
+        "tests/postgres_business.py": "06f82150025d01115a9bc3dca3ec5cff2149d593f227cc08cd2e611c219fdc86",
+        "tests/postgres_fixtures.py": "dee72e9f8426d632dff738e475bbd7bdd65c32bdb9319bd6135d67b658601774",
+        "tests/qualification_diagnostics.py": "b80bf4e90de4c8766bab4ab1c5ca4962e5cccdf3b3bc3650dc1f57a85bab6745",
+        "tests/qualification_load_client.py": "6477aa84c077665368b5ec2afcefa4e8ea47eca19740492c5dfea7be540732a9",
+        "tests/qualification_order_pod.py": "68a59ed2b3654f3f5c1ca8d24a913ba26e1883a474ce10369192c75775a7dbff",
+        "tests/qualification_orders.py": "9963519c64a422eb61efabbdfc260f918e6a52f5e6f8972fa9c0ce0db72a18f2",
+        "tests/qualification_pod_http.py": "3aa4c6af5c78ce4461ee52f64044ea01896410fec3fb9de1c4e8b67091bac886",
+        "tests/qualification_pods.py": "e89fa204793749557efefeb1f8d8ea9693ae4487d5619620a52dbe3885a1c403",
+        "tests/qualification_postgres.py": "a1ab7334240a9a00c56647a2748aed84db6297c9abd16ce6de890b2a7a9476c5",
+        "tests/qualification_service.py": "af206085dc6ce587468be3280245316c0e259f3ede2cc26bd77b84ab2c232f4f",
+        "tests/unit/test_request_qualification.py": "bda58a6c8ca221a02a2fbca97ef7c6f4d11962148f0bf46d2b8a5554b50752bb"
+      },
+      "db_image": "sha256:0d938e975177bef9f1f61f3f9dbcf2e0aa0a139568f66d3415ed8892eb97f6ac",
+      "architecture": "arm64",
+      "missing_client_certificate_denied": true,
+      "db_tls_verified": true,
+      "container_removed": true,
+      "network_removed": true,
+      "cluster_uid": "d6753703-bbf7-42e0-9df1-f3076ed813c7",
+      "installed_pod_source_match": {
+        "status": "MATCH",
+        "packages": {
+          "sova": {
+            "expected_files": 318,
+            "installed_files": 318,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          },
+          "sova_security": {
+            "expected_files": 122,
+            "installed_files": 122,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          }
+        },
+        "service_entrypoint_matches": true
+      },
+      "pod_identities": [
+        {
+          "name": "worker-a",
+          "uid": "b9cad3bf-0f1e-4e3f-895e-e7ff5f23c383",
+          "service_account": "worker",
+          "service_account_uid": "338f2df0-89c7-4e39-af6b-4ecaeb8da884",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://c32037a9f2dec1c8447f13b919da14968dd292d9ac64da809d925ac536b6eb96"
+        },
+        {
+          "name": "worker-b",
+          "uid": "c5dc379b-0bc2-432f-89f7-31a584afca94",
+          "service_account": "worker",
+          "service_account_uid": "338f2df0-89c7-4e39-af6b-4ecaeb8da884",
+          "image_id": "sha256:4f873aa3534deec1ed9cabebb25afcf05ae4d7ee181fee7ae3755091ce91d6b0",
+          "container_id": "containerd://0f1fb66150de580b9f4479c79834cd391d19d10abf2a8d6a9c36b4a1676dfb3e"
+        }
+      ],
+      "initial_orders": 100,
+      "initial_failures": 15,
+      "initial_status_counts": {
+        "200": 85,
+        "503": 10,
+        "transport_error": 5
+      },
+      "all_status_counts": {
+        "200": 103,
+        "404": 15,
+        "503": 10,
+        "transport_error": 5
+      },
+      "phase_counts": {
+        "load": 100,
+        "post_handoff_probe": 3,
+        "recovery": 30
+      },
+      "maximum_load_completion_ms": 21751.050469,
+      "reconciliation_counts": {
+        "logical_requests": 103,
+        "submission_attempts": 118,
+        "successful_submission_responses": 103,
+        "http_error_attempts": 10,
+        "transport_error_attempts": 5,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 103,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "data_integrity": "SATISFIED",
+      "tls_controls": {
+        "verified_https": true,
+        "wrong_ca_denied": true,
+        "wrong_hostname_denied": true
+      },
+      "live_owner": {
+        "owner_id": "worker-a.b9cad3bf-0f1e-4e3f-895e-e7ff5f23c383.9bb00978fccd",
+        "lease_until": "2026-11-18T17:29:04.615445+00:00",
+        "database_observed_at": "2026-11-18T17:29:05.083606+00:00",
+        "recovery_events": 0,
+        "effect": "in_flight",
+        "authenticated_alive_observations": 1
+      },
+      "runtime_stop": {
+        "container_id": "c32037a9f2dec1c8447f13b919da14968dd292d9ac64da809d925ac536b6eb96",
+        "observed_at": "2026-11-18T17:29:08.853227+00:00",
+        "state": "absent from CRI inventory",
+        "force_api_deletion": false,
+        "terminal_pod_watch": [
+          {
+            "type": "MODIFIED",
+            "uid": "b9cad3bf-0f1e-4e3f-895e-e7ff5f23c383",
+            "phase": "Failed",
+            "resource_version": "621",
+            "observed_at": "2026-11-18T17:29:08.051618+00:00"
+          },
+          {
+            "type": "MODIFIED",
+            "uid": "b9cad3bf-0f1e-4e3f-895e-e7ff5f23c383",
+            "phase": "Failed",
+            "resource_version": "623",
+            "observed_at": "2026-11-18T17:29:08.815215+00:00"
+          },
+          {
+            "type": "DELETED",
+            "uid": "b9cad3bf-0f1e-4e3f-895e-e7ff5f23c383",
+            "phase": "Failed",
+            "resource_version": "624",
+            "observed_at": "2026-11-18T17:29:08.830597+00:00"
+          }
+        ]
+      },
+      "handoff": {
+        "state": "HANDOFF_COMPLETE",
+        "original_owner": "worker-a.b9cad3bf-0f1e-4e3f-895e-e7ff5f23c383.9bb00978fccd",
+        "recovery_owner": "worker-b.c5dc379b-0bc2-432f-89f7-31a584afca94.31e0b1da013e",
+        "recovery_at": "2026-11-18T17:29:08.224533+00:00",
+        "route_patch_requests": 1,
+        "pod_absence_audit_observations": 0,
+        "stopped_pod_observation_http_statuses": [
+          200
+        ],
+        "effect_status": "confirmed_applied",
+        "historical_orders_preserved": 50,
+        "target_write_confirmed": true,
+        "client_continuity_qualified": false
+      },
+      "secret_get_status": 403,
+      "unauthorized_pod_get_status": 403,
+      "unauthorized_pod_observation": "unknown",
+      "final_sql_diagnostics": {
+        "authority": [
+          [
+            "HANDOFF_COMPLETE",
+            10,
+            null,
+            "9"
+          ]
+        ],
+        "effects": [
+          [
+            "stage_target",
+            "confirmed_applied"
+          ],
+          [
+            "pause_admission",
+            "confirmed_applied"
+          ],
+          [
+            "fence_source_writes",
+            "confirmed_applied"
+          ],
+          [
+            "copy_content",
+            "confirmed_applied"
+          ],
+          [
+            "verify_final_state",
+            "confirmed_applied"
+          ],
+          [
+            "activate_target",
+            "confirmed_applied"
+          ],
+          [
+            "commit_route",
+            "confirmed_applied"
+          ]
+        ],
+        "evidence_results": [
+          [
+            "sova.registry.dependency-snapshot.v1",
+            "pass"
+          ],
+          [
+            "security.deny_cross_tenant_data_access",
+            "pass"
+          ],
+          [
+            "availability.write_admission_pause",
+            "pass"
+          ],
+          [
+            "residency.backups",
+            "pass"
+          ],
+          [
+            "data.idempotency_results",
+            "pass"
+          ],
+          [
+            "security.tested_restore",
+            "pass"
+          ],
+          [
+            "fence.source_writes_denied",
+            "pass"
+          ],
+          [
+            "availability.client_completion_wait",
+            "pass"
+          ],
+          [
+            "residency.audit",
+            "pass"
+          ],
+          [
+            "operations.restore_test",
+            "pass"
+          ],
+          [
+            "authority.single_writer_after_activation",
+            "pass"
+          ],
+          [
+            "route.stale_writes_rejected",
+            "pass"
+          ],
+          [
+            "data.work_items",
+            "pass"
+          ],
+          [
+            "security.verified_transport_encryption",
+            "pass"
+          ],
+          [
+            "data.orders",
+            "pass"
+          ],
+          [
+            "residency.business_data",
+            "pass"
+          ],
+          [
+            "business.ORDER-01",
+            "pass"
+          ],
+          [
+            "sova.registry.service-contract.v1",
+            "pass"
+          ],
+          [
+            "sova.registry.strategy-qualification.v1",
+            "pass"
+          ]
+        ]
+      }
+    }
+  },
+  "historical_failure": {
+    "root": "/Users/Sooming_/dev/softbank_2026/local-dev-records/ready-target-cutover-20261119/crash-control",
+    "run_json_sha256": "4dd19433b33deb524aa591e1df3aacd6a0109168c6de9a65f926221cb0e4322e",
+    "result_xml_sha256": "dfb2effd4665d161af2532897dc42c02ae0fe407e0eaef1271ddbbac139819be",
+    "functional_test_passed": true,
+    "environment_accepted": false,
+    "clock_sample_failure_count": 1,
+    "clock_records": 239,
+    "original_diagnostic": {
+      "error": "clock_sample_failed"
+    },
+    "underlying_cause_established": false,
+    "superseded_or_erased": false
+  },
+  "cleanup": {
+    "read_only_check": true,
+    "resources": [
+      {
+        "trial": "components",
+        "kind": "container",
+        "name": "sova-clock-observation-3b2233056ebf407e81a8d6e9ed8fb243",
+        "absent": true
+      },
+      {
+        "trial": "components",
+        "kind": "network",
+        "name": "sova-network-clock-observation-3b2233056ebf407e81a8d6e9ed8fb243",
+        "absent": true
+      },
+      {
+        "trial": "crash-control",
+        "kind": "container",
+        "name": "sova-worker-http-2b98cc933ca44557b3eff9696d305440",
+        "absent": true
+      },
+      {
+        "trial": "crash-control",
+        "kind": "network",
+        "name": "sova-network-worker-http-2b98cc933ca44557b3eff9696d305440",
+        "absent": true
+      },
+      {
+        "trial": "crash-control",
+        "kind": "container",
+        "name": "sova-pod-c1ccb45330b6-control-plane",
+        "absent": true
+      },
+      {
+        "trial": "crash-control",
+        "kind": "container",
+        "name": "sova-pod-c1ccb45330b6-http-client",
+        "absent": true
+      }
+    ],
+    "all_run_owned_containers_and_networks_absent": true,
+    "cached_images_intentionally_retained": true
+  },
+  "raw_root": "/Users/Sooming_/dev/softbank_2026/local-dev-records/clock-observation-diagnostics-20261119",
+  "raw_artifacts": [
+    {
+      "path": "components/run.json",
+      "sha256": "b4a131d54894244fc0cc11ee214bdfa1aa2602730acda4f9858a1e1c44906c82",
+      "bytes": 3948
+    },
+    {
+      "path": "components/results.xml",
+      "sha256": "6fe5d7dc060562fb3942c7ded8197793a2e8ac26bbd9cfc2ed4190f1d59532a4",
+      "bytes": 2340
+    },
+    {
+      "path": "components/runner.log",
+      "sha256": "28e04cbcf10a027c043998fddc7c279da5f7d5f25ee4ea6ecc8924388b2abee3",
+      "bytes": 3683
+    },
+    {
+      "path": "crash-control/run.json",
+      "sha256": "d9afb0c521b4ab22fa1af751b477987b170e7871819e7c24a88970c9a2df7795",
+      "bytes": 63693
+    },
+    {
+      "path": "crash-control/results.xml",
+      "sha256": "03ae405ef947c978a28918c52590256081eecfad0dd8e4ca1af00e0c975f6130",
+      "bytes": 433
+    },
+    {
+      "path": "crash-control/runner.log",
+      "sha256": "047feda7103faa940deb866c7076f217cc06cd0189be0f563a0614d420eccd89",
+      "bytes": 52343
+    },
+    {
+      "path": "crash-control/database-bootstrap.json",
+      "sha256": "dfee3e0d4b30acfb4ea7bdbd3bfcb7c5d10772993d7d5ac71b16f4be1d593777",
+      "bytes": 302
+    },
+    {
+      "path": "crash-control/pods/environment.json",
+      "sha256": "342310c54b4a445e57f615d145e98c97c100dd4b4fff3d7337e68c50c3193309",
+      "bytes": 31924
+    },
+    {
+      "path": "crash-control/pods/audit/audit.log",
+      "sha256": "fec188644bdd82780b17d08b380a67e4d870f7180da9377417fb7c7d35c5d3eb",
+      "bytes": 34739
+    },
+    {
+      "path": "crash-control/pods/owner-terminal-watch.jsonl",
+      "sha256": "60c9667e23cbf16b0b0e2c0465516f1674bbac438f7f45e593545496660cb669",
+      "bytes": 826
+    },
+    {
+      "path": "crash-control/pods/owner-terminal-watch.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "crash-control/pods/worker-b.log",
+      "sha256": "7f0fac6dbbc5bd4f7d76bc027cf1f9fbdffa3084e7824507e140b1687907de02",
+      "bytes": 1687
+    },
+    {
+      "path": "crash-control/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "crash-control/pods/http/results/client.json",
+      "sha256": "628b5097eb15f56f7113b8c1d30eee744742e02932ac4e5edee2d2214fcc6a77",
+      "bytes": 724
+    },
+    {
+      "path": "crash-control/pods/http/results/journal.json",
+      "sha256": "90de93c13892154951f5161d7cdbf24c24d96bc97587b4cfab615037ff8cc1d5",
+      "bytes": 99953
+    },
+    {
+      "path": "crash-control/pods/http/results/client.sqlite",
+      "sha256": "1c646541f8277df9ad1497d14850cb5e3b81cb4d189d8321e1e53191d6d2f923",
+      "bytes": 118784
+    },
+    {
+      "path": "crash-control/pods/http/results/traffic.jsonl",
+      "sha256": "1c40a55d1e96c5c0c34a2a9e22da720de21cba69da25be5db1a1ebb919a61550",
+      "bytes": 29795
+    },
+    {
+      "path": "crash-control/pods/http/results/independent-observation.json",
+      "sha256": "5e77515cadf3f69e3ceeb55aa34d9747560aebb7bae7707ff7599d50a39e4ae3",
+      "bytes": 24973
+    },
+    {
+      "path": "crash-control/pods/http/results/reconciliation.json",
+      "sha256": "a6354947643c7966aa6d4447070210446e31036ef779d382cc0a5d8813c61d9b",
+      "bytes": 15796
+    },
+    {
+      "path": "cleanup-verification.json",
+      "sha256": "79278036071e508b0d63615601cc317a3d4dbc1f55d461c59c49b7827193cfe8",
+      "bytes": 1103
+    }
+  ],
+  "qualification_issued": false,
+  "authorizes_execution": false,
+  "service_continuity": "NOT_QUALIFIED",
+  "signed_operational_evidence": false,
+  "limitations": [
+    "Diagnostic metadata only; original unknown cause is not reconstructed from later success",
+    "One new local recovery control, not a statistical absence-of-failure guarantee",
+    "Tests of injected error behavior are not actual operational fault incidents",
+    "Synthetic plan/bootstrap IdP/evidence and local file witness; real local TLS/Kubernetes/SQL only",
+    "Same local arm64 node and one PostgreSQL server with separate databases, not AWS-to-independent-onprem migration",
+    "Final SQL success does not erase first-attempt errors or qualify bounded client continuity",
+    "No supply-chain release, WORM, production identity, load SLO or financial-security certification"
+  ]
+}
