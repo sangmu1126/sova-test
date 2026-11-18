@@ -93,13 +93,18 @@ class BearerAuthenticator:
         if not isinstance(authorization, str) or not authorization.startswith("Bearer "):
             raise Unauthenticated("A bearer token is required")
         token = authorization[len("Bearer "):].strip()
+        if len(token) > 32768:
+            raise Unauthenticated("Token exceeds the accepted size")
         try:
             header_b64, payload_b64, signature_b64 = token.split(".")
             header, claims = json.loads(_b64(header_b64)), json.loads(_b64(payload_b64))
             signature = _b64(signature_b64)
         except (ValueError, UnicodeError):
             raise Unauthenticated("Malformed token") from None
-        if header.get("alg") != "RS256" or not isinstance(header.get("kid"), str):
+        if not isinstance(header, dict) or not isinstance(claims, dict):
+            raise Unauthenticated("Token header and claims must be objects")
+        if (header.get("alg") != "RS256" or not isinstance(header.get("kid"), str)
+                or not 1 <= len(header["kid"]) <= 512 or header.get("crit")):
             raise Unauthenticated("Only RS256 tokens with a key ID are accepted")
         key = self._key(header["kid"])
         if key is None:
@@ -110,15 +115,22 @@ class BearerAuthenticator:
         except InvalidSignature:
             raise Unauthenticated("The token's signature does not verify") from None
         audience = claims.get("aud")
-        audience = [audience] if isinstance(audience, str) else list(audience or ())
+        audience = [audience] if isinstance(audience, str) else audience
+        if (not isinstance(audience, list) or not audience
+                or not all(type(value) is str for value in audience)):
+            raise Unauthenticated("The token names no valid audience")
         if claims.get("iss") != self.issuer or self.audience not in audience:
             raise Unauthenticated("The token was issued by or for someone else")
         now, expires, issued = self.clock(), claims.get("exp"), claims.get("iat")
-        if (type(expires) is not int or type(issued) is not int or expires <= now - SKEW
-                or issued > now + SKEW or claims.get("nbf", issued) > now + SKEW):
+        not_before = claims.get("nbf", issued)
+        if (type(expires) is not int or type(issued) is not int or type(not_before) is not int
+                or expires <= issued or expires <= now - SKEW
+                or issued > now + SKEW or not_before > now + SKEW):
             raise Unauthenticated("The token is outside its lifetime")
         tenant = claims.get(self.tenant_claim)
-        granted = _claim(claims, self.roles_claim) or ()
+        granted = _claim(claims, self.roles_claim)
+        if not isinstance(granted, list) or not all(type(role) is str for role in granted):
+            raise Unauthenticated("The token names no valid role array")
         roles = frozenset(Role(r[len(self.role_prefix):]) for r in granted
                           if isinstance(r, str) and r.startswith(self.role_prefix)
                           and r[len(self.role_prefix):] in {x.value for x in Role})

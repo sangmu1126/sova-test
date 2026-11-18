@@ -57,6 +57,32 @@ def test_known_jwks_key_is_refreshed_and_withdrawal_is_observed():
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize("overrides", [
+    {"aud": 4}, {"aud": {AUDIENCE: True}}, {"aud": [AUDIENCE, {}]},
+    {"nbf": "tomorrow"}, {"nbf": True}, {"realm_access": {"roles": "sova:operator"}},
+    {"realm_access": {"roles": {"sova:operator": True}}},
+])
+def test_malformed_signed_claim_shapes_are_authentication_denials(overrides):
+    issuer = Issuer()
+    auth = BearerAuthenticator(issuer=ISSUER, audience=AUDIENCE, fetch_jwks=issuer.jwks)
+    with pytest.raises(Unauthenticated):
+        auth(issuer.token("tenant-a", "operator", **overrides)["authorization"])
+
+
+@pytest.mark.parametrize("header,claims", [([], {}), ({}, []), (None, {}), ({}, None)])
+def test_non_object_jose_parts_fail_before_key_lookup(header, claims):
+    import json
+    from oidc_fixture import b64
+
+    def key_lookup():
+        raise AssertionError("Malformed input must not contact the IdP")
+
+    token = ".".join((b64(json.dumps(header).encode()), b64(json.dumps(claims).encode()), "AA"))
+    auth = BearerAuthenticator(issuer=ISSUER, audience=AUDIENCE, fetch_jwks=key_lookup)
+    with pytest.raises(Unauthenticated):
+        auth("Bearer " + token)
+
+
 @pytest.mark.parametrize(
     "headers,chunks,status",
     [
