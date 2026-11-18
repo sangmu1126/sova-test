@@ -1,4 +1,4 @@
-"""Run MQ-02 against a new, run-owned PostgreSQL container with verified TLS.
+"""Run MQ-02/MQ-03 against a run-owned PostgreSQL container with verified TLS.
 
 Uses an explicitly selected cached image ID; never pulls, resets the shared
 kind environment, changes kubeconfig, or touches a cloud account. All database
@@ -19,6 +19,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from uuid import uuid4
 
@@ -81,11 +82,54 @@ def docker(*args):
     return subprocess.check_output(["docker", *args], text=True, stderr=subprocess.PIPE).strip()
 
 
+class ClockWatch:
+    """Observe host/DB drift without changing either clock or validity rules."""
+
+    def __init__(self, dsn):
+        self.dsn, self.samples = dsn, []
+        self.done = threading.Event()
+        self.thread = threading.Thread(target=self.watch, daemon=True)
+
+    def sample(self):
+        before = datetime.now(UTC)
+        with psycopg.connect(self.dsn) as conn:
+            database = conn.execute("SELECT clock_timestamp()").fetchone()[0]
+        after = datetime.now(UTC)
+        # A DB timestamp within the real round trip needs no inferred offset.
+        lower_bound = max(0.0, (before - database).total_seconds(), (database - after).total_seconds())
+        self.samples.append({"host_before": before.isoformat(), "database": database.isoformat(),
+                             "host_after": after.isoformat(), "skew_lower_bound_seconds": lower_bound})
+
+    def watch(self):
+        while not self.done.wait(0.5):
+            try:
+                self.sample()
+            except psycopg.Error:
+                self.samples.append({"error": "clock_sample_failed"})
+
+    def start(self):
+        self.sample()
+        if self.samples[-1]["skew_lower_bound_seconds"] > 1:
+            raise RuntimeError("Dedicated DB and host clocks differ by more than one second")
+        self.thread.start()
+
+    def stop(self):
+        self.done.set()
+        if self.thread.is_alive():
+            self.thread.join(timeout=5)
+        self.sample()
+        return {"max_allowed_skew_seconds": 1, "samples": self.samples,
+                "passed": all("error" not in s and s["skew_lower_bound_seconds"] <= 1
+                              for s in self.samples)}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True, help="Full cached sha256 image ID; no tag or automatic pull")
     parser.add_argument("--security-source", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
+    parser.add_argument("--suite", choices=("requests", "service"), default="requests",
+                        help="MQ-02 only, or MQ-03 plus MQ-02 and existing service regression tests")
     args = parser.parse_args()
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", args.image):
         parser.error("An exact cached image ID is required")
@@ -93,16 +137,31 @@ def main():
         parser.error("The pinned security source's src directory is required")
     root = Path(__file__).resolve().parents[1]
     args.artifacts.mkdir(parents=True, mode=0o700, exist_ok=False)
-    run = "mq02-" + uuid4().hex
+    run = ("mq03-" if args.suite == "service" else "mq02-") + uuid4().hex
     container, network = "sova-" + run, "sova-network-" + run
     report = {"run_id": run, "image_id": args.image, "shared_environment_used": False,
-              "qualification_issued": False, "network_created": False, "container_created": False}
+              "qualification_issued": False, "network_created": False, "container_created": False,
+              "suite": args.suite}
     report["source_commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+    report["security_source_commit"] = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=args.security_source, text=True).strip()
+    if report["security_source_commit"] != "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf":
+        parser.error("The security producer differs from the pinned qualification source")
     measured_sources = [*sorted((root / "src/sova/qualification").glob("*.py")),
                         root / "tests/unit/test_request_qualification.py",
                         root / "tests/integration/test_order_http_handoff.py",
                         root / "tests/qualification_orders.py", Path(__file__).resolve(),
                         root / "examples/qualification/orders-http-postgres-v1.json"]
+    tests = ["tests/unit/test_request_qualification.py", "tests/integration/test_order_http_handoff.py"]
+    if args.suite == "service":
+        tests.extend(("tests/integration/test_service_api.py",
+                      "tests/integration/test_service_control_plane.py",
+                      "tests/integration/test_order_service_journey.py",
+                      "tests/integration/test_service_worker.py"))
+        measured_sources.extend([*sorted((root / "src/sova/service").glob("*.py")),
+                                 root / "tests/qualification_service.py",
+                                 *(root / test for test in tests[2:])])
+    report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}
     network_created = container_attempted = False
@@ -175,12 +234,19 @@ def main():
             env.update(PYTHONPATH=str(root / "src") + os.pathsep + str(args.security_source.resolve()),
                        AWS_EC2_METADATA_DISABLED="true", SOVA_TEST_POSTGRES_DSN=dsn,
                        SOVA_TEST_QUALIFICATION_ARTIFACTS=str(args.artifacts.resolve()))
-            code = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
-                                   "tests/unit/test_request_qualification.py",
-                                   "tests/integration/test_order_http_handoff.py",
-                                   "--junitxml=" + str(args.artifacts.resolve() / "results.xml")],
-                                  cwd=root, env=env, check=False).returncode
-            report["pytest_exit_code"] = code
+            clocks = ClockWatch(dsn)
+            try:
+                clocks.start()
+                code = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
+                                       *tests,
+                                       "--junitxml=" + str(args.artifacts.resolve() / "results.xml")],
+                                      cwd=root, env=env, check=False).returncode
+                report["pytest_exit_code"] = code
+            finally:
+                report["clock_checks"] = clocks.stop()
+            if not report["clock_checks"]["passed"]:
+                report["environment_error"] = "host_database_clock_skew_or_sample_failure"
+                code = 1
     except BaseException as error:
         report["failure_type"] = type(error).__name__
         if container_attempted:
