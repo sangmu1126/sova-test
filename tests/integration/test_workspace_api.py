@@ -7,6 +7,7 @@ import pytest
 
 from test_service_api import api as api  # noqa: F401
 from test_service_control_plane import request_of
+from test_service_control_plane import service as service  # noqa: F401
 from sova.adapters.registration import registry_codec as codecs
 
 pytestmark = pytest.mark.postgres
