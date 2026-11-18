@@ -12,7 +12,7 @@ from sova.domain.operations import OperationRequest
 from sova.adapters.postgres_governance import PostgresSecurityHolds
 from sova.domain.contracts import ContractError, ResourceScope
 from sova.security.domain.governance import SecurityHold, StoredHold
-from sova.security.adapters.documents import document_hash
+from sova_security.adapters.documents import document_hash
 from sova.service.recovery_status import read_status
 
 pytestmark = pytest.mark.postgres
