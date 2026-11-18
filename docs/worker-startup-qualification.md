@@ -55,4 +55,4 @@ PYTHONDONTWRITEBYTECODE=1 python -B -m pytest -q -p no:cacheprovider \
 
 ## 범위와 남은 일
 
-기존 [워커 프로세스 시험](migration-worker-qualification.md)의 미검증 목록 중 설정 범위 불일치를 수정한 것이다. 후속 [이미지 소스·실제 CLI 시작 검사](service-image-qualification.md)에서 고정 이미지와 거부 조건을 확인했다. 정상 배포 worker의 catalog·Pod 신원·정지 증명과 AWS→VM 인수는 남아 있다. 이 설정 시험으로 운영 자격·무중단·부하/SLO 또는 금융 보안 인증을 발급하지 않는다.
+기존 [워커 프로세스 시험](migration-worker-qualification.md)의 미검증 목록 중 설정 범위 불일치를 수정한 것이다. 후속 [이미지 소스·실제 CLI 시작 검사](service-image-qualification.md)와 [실제 Pod 복구 시험](worker-pod-qualification.md)에서 고정 이미지, 로컬 정상 CLI·catalog·신원·관측·복구를 확인했다. 실제 HTTP 업무와 AWS→VM 운영 인수는 남아 있다. 이 설정 시험으로 운영 자격·무중단·부하/SLO 또는 금융 보안 인증을 발급하지 않는다.

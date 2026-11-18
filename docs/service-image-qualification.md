@@ -65,7 +65,7 @@ PYTHONPATH=src:tests python tests/qualification_image_cli.py \
 
 - 의존 패키지는 기존 Dockerfile의 범위 지정으로 해결했다. 실제 버전과 로그는 보존했지만 의존성 잠금·재현 가능 빌드·취약점·서명·amd64 시험은 미실시다.
 - 로컬 Docker image ID를 기록했다. 실제 Pod의 `imageID`나 레지스트리 digest와의 대응을 관측한 것은 아니다.
-- 정상 worker Ready, 실제 catalog의 업무 실행, 실제 Pod의 SA/UID/RBAC, 인증된 Pod 부재 확인, lease 만료 후 복구는 남아 있다.
+- 후속 [실제 Pod 시험](worker-pod-qualification.md)에서 로컬 정상 CLI·catalog 실행, 실제 SA/Pod UID·권한 거부·Pod 부재와 복구를 확인했다. 고객 운영 경로와 실제 HTTP 업무의 자격은 남아 있다.
 - AWS→독립 VM, 보호된 네트워크·witness, 지속 운영 SLO·금융 인증은 이 시험으로 PASS 처리하지 않는다.
 
 [공개 증거 요약](evidence/service-image-qualification-20261118.json) · [개발 기록](development/service-image-qualification-2026-11-18.md).

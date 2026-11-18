@@ -1,0 +1,293 @@
+{
+  "kind": "RealWorkerPodIdentityAndRecoveryVerificationSummary",
+  "version": 1,
+  "date_kst": "2026-11-18",
+  "scope": "Actual CLI worker recovery on one run-owned kind cluster; synthetic registrations/IdP and endpoint-only app fixtures",
+  "branch": "feature/migration-request-qualification",
+  "test_source_snapshot": "237eee26cc432b24c53e1acf20990994fe36b642",
+  "worker_image_source_snapshot": "24e17165ac6ef657ba9fa79c4ab8f784e98f20eb",
+  "security_producer": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+  "feature_commits": [
+    "1b4ace57c1e54b6b011afe0826626d536aaf6956",
+    "237eee26cc432b24c53e1acf20990994fe36b642"
+  ],
+  "measured_sources_match_snapshot": true,
+  "measured_source_sha256": {
+    "examples/qualification/orders-http-postgres-v1.json": "44c0632a619a5b42eae89bf2c2360c9478ce054440b9b2bdb22ab510dd5d71a3",
+    "src/sova/qualification/__init__.py": "03e25cb600cd4fa8c72759464fc049cfe3c3da31f89c7f2ea52f5e384155a22b",
+    "src/sova/qualification/__main__.py": "c2f28ef4820e0ebb296ee474c18aeeab717a04c9c877c4ee6413aaa84e330f5c",
+    "src/sova/qualification/http_orders.py": "761538de2c1645d68cde46d558b2a7d9e477bc7f1af928ff8a60d37b2bbbee35",
+    "src/sova/qualification/image.py": "9abc6384c7eb53a18876ff0885d6a7ae2361343f12bfed14de443619c5f1304b",
+    "src/sova/qualification/postgres_orders.py": "b0c602dc4c9db02e0bd18c080026b38e643b4379e27c5bb353ac33aba3406eda",
+    "src/sova/qualification/requests.py": "1f701150aab8564d6c139c5803a35db478932bb6664f160c0d0f115161d1b612",
+    "src/sova/service/__init__.py": "04ad811567cd672308b8a9a50ab12084ec37843db5b8e299a79f2ded97b5f04e",
+    "src/sova/service/api.py": "dee1d3cbe0804162f733620b2c2363b6386be39a03c825b7b02fe7d2a15587b2",
+    "src/sova/service/auth.py": "42ab347486d57eacfd296cf6a8f9863217769b08cb9c51f18c081ae57d855d85",
+    "src/sova/service/catalog.py": "bdc8e6f7da60224b3683993fc5d1e603de537f96e19b58c202bd38075f7f2573",
+    "src/sova/service/composite_execution.py": "c9bc7a9c4c69db084a0d5b72a656267c459d5554370fe808c96a9b15a1473081",
+    "src/sova/service/config.py": "91dd0d4164d7eb59166e201391c361d6dde718ce769815054c70465ab17184f0",
+    "src/sova/service/control_plane.py": "41193d73e49fdd8f48f5406e7e399c6d971ca2d9f7c2d3cba09bedaebd6877b1",
+    "src/sova/service/kafka_execution.py": "025d015a2f5f6dfbe5ba8cada837e00ff300fb9218482f71d2c9f0f53bc821bd",
+    "src/sova/service/main.py": "49db1aeba20c31ccc1c24a1d505f5e576a1aabe50663b3ac28804f7dd33bbe6a",
+    "src/sova/service/mongodb_execution.py": "2872173c94c0e6edfc528bddbd7f5c2981a30a7df75f15fd6d9d80cad8d67bd0",
+    "src/sova/service/mysql_execution.py": "cc83f2435eca020ad9858a8a88dceeea2ec3d1c1b29343875634e42945b92065",
+    "src/sova/service/postgres_execution.py": "7f03a63a8c8dfb876c56cd834f031c5798295f878c875e02660fbc1a2b6cf51f",
+    "src/sova/service/quiescence.py": "cb6abf2b016654f2ba05941b8b745e60d6409d670a29cf3e0a690dc31e518bf1",
+    "src/sova/service/rabbitmq_execution.py": "8934d85b2889e41c84d3208207da8d9947f14acd5a2310b34bc3198632de2f8c",
+    "src/sova/service/redis_execution.py": "6d710dab2d971bbb61ec89b0476183633032fe4ce93370d60b8d4f976e872c27",
+    "src/sova/service/route_stores.py": "9a0990a2399dca4602dfd902cd5d382012df171ac1082c8d4566073de7ab74f3",
+    "src/sova/service/schema.py": "93f56a980cb7042f1d0031deeea5a766872c68274e5eea85f4a375d600b675c4",
+    "src/sova/service/volume_execution.py": "13d6a94fcec041dbadae519ff772d7909cdfea58dde87320e35379b67cfff0ed",
+    "src/sova/service/worker.py": "3a148ff7ec555bcaa64252747403bd547da4dca734471262691ac279bc796555",
+    "tests/contract_world.py": "27badc1d9a7d3e676a3a2c807055088a89d327392df37dd9abafe0e5ab325b44",
+    "tests/control_plane_support.py": "c0b0a83312067d62c4246a801f00b9bd4b9aa9e408c3c76bf96575d3dba8230c",
+    "tests/handoff_drive.py": "736ceb33c16d55e32865b69979c6b84dd8ab222b2a439586b095fe8ec8aa0cdf",
+    "tests/integration/test_order_http_handoff.py": "f91e0a00193b7cc230da4e471eb2eb8350db05ef369719bf571b2f753090ae3a",
+    "tests/integration/test_worker_pod_journey.py": "2c7ae092919eda39bf1d6bc5754cba55d7efd4b35552eaac2d177c9bbef74555",
+    "tests/postgres_business.py": "06f82150025d01115a9bc3dca3ec5cff2149d593f227cc08cd2e611c219fdc86",
+    "tests/postgres_fixtures.py": "dee72e9f8426d632dff738e475bbd7bdd65c32bdb9319bd6135d67b658601774",
+    "tests/qualification_orders.py": "9963519c64a422eb61efabbdfc260f918e6a52f5e6f8972fa9c0ce0db72a18f2",
+    "tests/qualification_pods.py": "8b9185cace01d51520f3c20e08709a605965fd6779f9b723f2c9e5f43f9034b6",
+    "tests/qualification_postgres.py": "94dbb406cc97cb4bf9f453a3eeb572cd9899e4e4895be273bda6f4ab5015aab1",
+    "tests/qualification_service.py": "02cf881a927fbec75133bb23215e248e4efe58d7502a3861cdae157ee95cf41f",
+    "tests/unit/test_request_qualification.py": "bda58a6c8ca221a02a2fbca97ef7c6f4d11962148f0bf46d2b8a5554b50752bb"
+  },
+  "images": {
+    "docker_image_id": "sha256:117a14eadae2cc25b43a434dbf9a06e1497f8e1c96ebc5e9da62a4c0fb7591f6",
+    "observed_pod_image_ids": [
+      "sha256:9532154cc628884b35cc49ed6c8f0c9a6ed89f1eb13ac763644396c247a9cc07"
+    ],
+    "loaded_cri_image_id": "sha256:9532154cc628884b35cc49ed6c8f0c9a6ed89f1eb13ac763644396c247a9cc07",
+    "cri_repo_digests": [],
+    "node_image_id": "sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a",
+    "architecture": "arm64",
+    "registry_used": false,
+    "pod_image_policy": "Never; run-unique local tag; loaded CRI identity and installed files verified"
+  },
+  "environment": {
+    "cluster_uid": "3157d5f8-e721-47f2-8287-7a90e517a9a4",
+    "kubernetes_version": "v1.34.0",
+    "postgres_version": "17.12 (Debian 17.12-1.pgdg13+1)",
+    "node_count": 1,
+    "database_server_count": 1,
+    "shared_cluster_used": false,
+    "cloud_used": false,
+    "verified_database_tls": true,
+    "missing_client_certificate_denied": true,
+    "database_fixture_identity": "one generated TLS client certificate shared by fixture roles; not production workload identity",
+    "business_adapter_credentials": "run-owned server administrator; not customer least-privilege qualification",
+    "witness": "local file through run-owned PV; not WORM",
+    "api": "host TCP fixture API with generated IdP, not deployed enterprise API"
+  },
+  "pod_identities": [
+    {
+      "name": "worker-a",
+      "uid": "045d5de1-24f0-4c94-b1ed-82ff133193bc",
+      "service_account": "worker",
+      "service_account_uid": "38971ba0-af93-4a5d-9469-0181c9c48025",
+      "image_id": "sha256:9532154cc628884b35cc49ed6c8f0c9a6ed89f1eb13ac763644396c247a9cc07",
+      "container_id": "containerd://ee6a4658fea2ad537abac6fd292ae11b955576768598e6a7b9051e4a42153049"
+    },
+    {
+      "name": "worker-b",
+      "uid": "09ee6364-a56e-4890-bc7c-85ca63f82673",
+      "service_account": "worker",
+      "service_account_uid": "38971ba0-af93-4a5d-9469-0181c9c48025",
+      "image_id": "sha256:9532154cc628884b35cc49ed6c8f0c9a6ed89f1eb13ac763644396c247a9cc07",
+      "container_id": "containerd://4612d15f70edcfade7776b29bef874d69d167cfa6124eea0aabf55007f94154b"
+    }
+  ],
+  "installed_pod_source_match": {
+    "status": "MATCH",
+    "packages": {
+      "sova": {
+        "expected_files": 317,
+        "installed_files": 317,
+        "missing": [],
+        "extra": [],
+        "changed": [],
+        "version_matches": true
+      },
+      "sova_security": {
+        "expected_files": 122,
+        "installed_files": 122,
+        "missing": [],
+        "extra": [],
+        "changed": [],
+        "version_matches": true
+      }
+    },
+    "service_entrypoint_matches": true
+  },
+  "expired_lease_live_pod": {
+    "owner_id": "worker-b.09ee6364-a56e-4890-bc7c-85ca63f82673.eb13c1436537",
+    "lease_until": "2026-11-18T14:54:40.853713+00:00",
+    "database_observed_at": "2026-11-18T14:54:43.121581+00:00",
+    "recovery_events": 0,
+    "effect": "in_flight",
+    "authenticated_alive_observations": 3
+  },
+  "authorization": {
+    "actual_worker_secret_get_status": 403,
+    "unauthorized_pod_get_status": 403,
+    "unauthorized_pod_observation": "unknown",
+    "audit_service_account_uid_and_bound_pod_uid_verified": true
+  },
+  "runtime_stop": {
+    "container_id": "4612d15f70edcfade7776b29bef874d69d167cfa6124eea0aabf55007f94154b",
+    "observed_at": "2026-11-18T14:54:46.027465+00:00",
+    "state": "absent from CRI inventory",
+    "force_api_deletion": false
+  },
+  "handoff": {
+    "state": "HANDOFF_COMPLETE",
+    "original_owner": "worker-b.09ee6364-a56e-4890-bc7c-85ca63f82673.eb13c1436537",
+    "recovery_owner": "worker-a.045d5de1-24f0-4c94-b1ed-82ff133193bc.2119a2a24a99",
+    "recovery_at": "2026-11-18T14:54:46.448828+00:00",
+    "route_patch_requests": 1,
+    "pod_absence_audit_observations": 1,
+    "effect_status": "confirmed_applied",
+    "historical_orders_preserved": 50,
+    "target_write_confirmed": true,
+    "client_continuity_qualified": false
+  },
+  "phases": [
+    {
+      "name": "creating owned cluster",
+      "at": "2026-11-18T14:53:19.064758+00:00"
+    },
+    {
+      "name": "loading fixed service image",
+      "at": "2026-11-18T14:53:54.608567+00:00"
+    },
+    {
+      "name": "owned cluster ready",
+      "at": "2026-11-18T14:54:03.560469+00:00"
+    },
+    {
+      "name": "both actual CLI worker Pods ready",
+      "at": "2026-11-18T14:54:28.109329+00:00"
+    },
+    {
+      "name": "owner task paused; Pod is still Running",
+      "at": "2026-11-18T14:54:31.617010+00:00"
+    },
+    {
+      "name": "lease expired but recovery refused for live or unauthorized Pod observation",
+      "at": "2026-11-18T14:54:43.488086+00:00"
+    },
+    {
+      "name": "old Pod gone and runtime container confirmed stopped",
+      "at": "2026-11-18T14:54:46.182652+00:00"
+    },
+    {
+      "name": "actual successor completed handoff without reissuing route mutation",
+      "at": "2026-11-18T14:54:47.500025+00:00"
+    }
+  ],
+  "final_tests": {
+    "run": "run-03",
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "clock_passed": true,
+    "clock_samples": 184,
+    "cluster_removed": true,
+    "container_removed": true,
+    "network_removed": true
+  },
+  "earlier_runs": [
+    {
+      "run": "run-01",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "clock_passed": true,
+      "clock_samples": 78,
+      "cluster_removed": true,
+      "container_removed": true,
+      "network_removed": true
+    },
+    {
+      "run": "run-02",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "clock_passed": true,
+      "clock_samples": 142,
+      "cluster_removed": true,
+      "container_removed": true,
+      "network_removed": true
+    }
+  ],
+  "first_failure": {
+    "run": "run-01",
+    "cause": "Docker rejected node memory update without a simultaneous compatible memory-swap limit",
+    "resolution": "Set both memory and memory-swap to 2048m for the owned node; no shared limits or product checks changed",
+    "before_worker_execution": true
+  },
+  "final_warning": {
+    "count": 1,
+    "kind": "Starlette TestClient deprecation warning from host fixture module import"
+  },
+  "clock_checks": {
+    "passed": true,
+    "samples": 184,
+    "allowed_skew_lower_bound_seconds": 1,
+    "max_observed_skew_lower_bound_seconds": 0.0
+  },
+  "raw_artifacts_sha256": {
+    "run-01/run.json": "f4972ca4d2d7d52ff409587ffb25303ecf0ba068d3fe598df93f2a71dc5d890b",
+    "run-01/results.xml": "26b2b3783d6a64d966758dc63325cafeeb0b1758d3c7ad2719ea346075426649",
+    "run-01/runner.log": "a7a63ee270304d0d16b9b0ae64a646ecd89b69c8db2467d45bb849450956a044",
+    "run-01/pods/environment.json": "654b3e26a055ddff002eac41fc98afcd9d475242e1fb28b3cd5ca0c83720fbc9",
+    "run-01/pods/kind-create.log": "423e17aae6ca2b7db312f14953b45cac59feda6440dc2aecb446d7c9c85285b2",
+    "run-01/pods/pods-final.json": "7a779468a2dde976a9b896541df1e4ef805e813093bd5edb40ef1a6eea588edf",
+    "run-01/pods/events-final.json": "7a779468a2dde976a9b896541df1e4ef805e813093bd5edb40ef1a6eea588edf",
+    "run-01/pods/audit/audit.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run-02/run.json": "f0808eff88fd50c5c04d1a2bb8029ada07909575daf83fc6422c198858630397",
+    "run-02/results.xml": "101e5a48eda80c33747351ede5b23e641bac3cb33a52c7e7e7acccc27b56bdd6",
+    "run-02/runner.log": "501a2ce4a2a75f56ed41aba16fef8943d8637c76b045ee434eb49c3760c254cb",
+    "run-02/pods/environment.json": "4f5bb9207b142fbb98d5a171075b5cbda03dce8a20e9824a6f56c07c515351b2",
+    "run-02/pods/kind-create.log": "1ea7469e9ab71cce47990397b9c7ee5cc8709783bf40d4c03793d0b6bc609f7f",
+    "run-02/pods/pods-final.json": "3d7fdb472d094d18cec678aff8b492453ab0f43b315a08c651af2889ff53aac4",
+    "run-02/pods/events-final.json": "a5f51ed6075236647d888a4c553df9e7d7574c80d3a1c0de69f8ddb998e6d9b2",
+    "run-02/pods/audit/audit.log": "58d4aecc38e6d7875ce041197ed4faaea8760fd298292907559737cb36173672",
+    "run-02/pods/owner-before-pause.log": "d9d6dfcfd1e2290ef7cbb7fe589842fc90342614181af255576260706a5f8947",
+    "run-02/pods/worker-a.log": "20a3f41bf8ea01dfc0a41ace53d2a83ab61ec440e8d4efea979a194d061504b3",
+    "run-03/run.json": "414bc25c0f87485738201f8daf5135c4a47680c37d832892c0db915faa6186a3",
+    "run-03/results.xml": "882978de8c4573a37d600a8a180e3d8f1ac585f425f34915a07f5f7333bb6a9d",
+    "run-03/runner.log": "9094f137b6452a50204e7b09ea82e9f3dcaf05ebee9426ce32ca73eb0b2de8ed",
+    "run-03/pods/environment.json": "360fb639bfb7abf4a7fd511710788091c6349940488f4f375921cfa2c9e078d1",
+    "run-03/pods/kind-create.log": "3efd58bd5e19f7f26f723ecb5aa5db0a304f18e073427d58d35edd91a07ef747",
+    "run-03/pods/pods-final.json": "89b9c861ee5a97e2248e555073d1426b25c38c9722a669d64119f28d6c12afde",
+    "run-03/pods/events-final.json": "1041ed4d9355c194e107847e0e1d89ae53fd72e1e582b38bf0743a8ef2f77bd6",
+    "run-03/pods/audit/audit.log": "3d7c154c1aeed3a65de7cd3f81b1cca92cece4878bbe358b8d7f9d952c8f7a22",
+    "run-03/pods/owner-before-pause.log": "5ac62a826a8786e726f73c6030e3dbb4090f446decc67db655077a3dacecf701",
+    "run-03/pods/worker-a.log": "32b4fb2ff9a7b7ab433e0029fab51b392ec6db7c3f3533d6209b5b465e30e533"
+  },
+  "cleanup": {
+    "cluster_removed": true,
+    "temporary_image_tag_removed": true,
+    "container_removed": true,
+    "network_removed": true,
+    "existing_shared_clusters_unchanged": true
+  },
+  "qualification_issued": false,
+  "authorizes_execution": false,
+  "signed_operational_evidence": false,
+  "not_qualified": [
+    "HTTP business response/continuous client load and real stable ingress",
+    "AWS to independent on-premises migration",
+    "production inventory/qualification/change-feed/SSO",
+    "WORM witness and production credential boundaries",
+    "NetworkPolicy and denied external traffic",
+    "node partition or unknown remote runtime state",
+    "production Deployment/PDB and multi-node HA",
+    "amd64 and registry/signature/vulnerability verification",
+    "availability SLO and enterprise financial-security certification"
+  ]
+}
