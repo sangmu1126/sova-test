@@ -72,7 +72,7 @@ class VolumeWorld:
             "kubernetes-volume-handoff", source=self._side(source, controls),
             target=self._side(target, controls), route=Route(controls, "board", SIDES,
                                                              converge_seconds=60),
-            routes=routes, agent_key=self.KEY, image=PYTHON, run_as=(UID, UID),
+            routes=routes, agent_key=self.KEY, image=PYTHON, run_as=(UID, UID), fs_group=UID,
             storage_class=storage_class(), settle_seconds=90, start_seconds=180,
             agent_transport=self.transport)
 

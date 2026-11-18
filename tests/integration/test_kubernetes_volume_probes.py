@@ -28,7 +28,7 @@ def probes(world):
     return KubernetesVolumeProbes(
         source=world._side("source", controls), target=world._side("target", controls),
         agents=VolumeAgents(label="probetest", key=VolumeWorld.KEY, image=PYTHON,
-                            run_as=(UID, UID)),
+                            run_as=(UID, UID), fs_group=UID),
         write_probe=(8080, "/probe"), databases=("board.db",),
         invariants={"BOARD-01": {"database": "board.db", "files": FILES, "under": "uploads"},
                     "BOARD-02": {"database": "board.db",

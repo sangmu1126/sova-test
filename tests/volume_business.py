@@ -151,7 +151,12 @@ RULES = [
 
 
 def security():
-    return {"runAsNonRoot": True, "runAsUser": UID, "runAsGroup": UID,
+    # fsGroup: a block-backed volume (EBS, PD) starts as a root-owned file
+    # system, which the application, not root, must write (kind's local-path
+    # directories are open to anyone and hid it). The root once ours, later
+    # mounts skip the ownership walk.
+    return {"runAsNonRoot": True, "runAsUser": UID, "runAsGroup": UID, "fsGroup": UID,
+            "fsGroupChangePolicy": "OnRootMismatch",
             "seccompProfile": {"type": "RuntimeDefault"}}
 
 

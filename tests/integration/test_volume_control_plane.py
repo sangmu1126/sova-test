@@ -28,7 +28,8 @@ def board_settings(board, controls, other):
                   converge_seconds=60)
     return {"source": board._side("source", controls), "target": board._side("target", controls),
             "route": route, "routes": ("board_src", "board_tgt"), "agent_key": VolumeWorld.KEY,
-            "agent_image": PYTHON, "run_as": (UID, UID), "storage_class": storage_class(),
+            "agent_image": PYTHON, "run_as": (UID, UID), "fs_group": UID,
+            "storage_class": storage_class(),
             "write_probe": (8080, "/probe"), "databases": ("board.db",),
             "invariants": {"BOARD-01": {"database": "board.db", "under": "uploads",
                                         "files": FILES}},

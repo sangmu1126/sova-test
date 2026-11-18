@@ -32,6 +32,7 @@ def test_the_transport_probe_tells_the_hops(world):
     def probes(kubelet, transport="port-forward"):
         agents = VolumeAgents(label="probe" + adapter.unit[:10], key=world.KEY,
                               image=adapter.agents.image, run_as=adapter.agents.run_as,
+                              fs_group=adapter.agents.fs_group,
                               transport=transport)
         return KubernetesVolumeProbes(source=adapter.sides["source"],
                                       target=adapter.sides["target"], agents=agents,

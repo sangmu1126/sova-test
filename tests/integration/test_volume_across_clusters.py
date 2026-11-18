@@ -84,7 +84,8 @@ def test_files_move_between_two_clusters_through_their_api_servers_only(
     adapter = KubernetesVolumeHandoffAdapter(
         "kubernetes-volume-handoff", source=source, target=target, route=route,
         routes=("board_src", "board_tgt"), agent_key=VolumeWorld.KEY, image=PYTHON,
-        run_as=(UID, UID), storage_class=storage_class(os.environ.get("SOVA_TEST_KUBE_CONTEXT_B")))
+        run_as=(UID, UID), fs_group=UID,
+        storage_class=storage_class(os.environ.get("SOVA_TEST_KUBE_CONTEXT_B")))
     spent = {}
     for action in HANDOFF:
         started = time.monotonic()
@@ -108,13 +109,14 @@ def test_the_probes_measure_across_the_two_clusters(volume_business, second_clus
     adapter = KubernetesVolumeHandoffAdapter(
         "kubernetes-volume-handoff", source=source, target=target, route=Route("board_src"),
         routes=("board_src", "board_tgt"), agent_key=VolumeWorld.KEY, image=PYTHON,
-        run_as=(UID, UID), storage_class=storage_class(os.environ.get("SOVA_TEST_KUBE_CONTEXT_B")))
+        run_as=(UID, UID), fs_group=UID,
+        storage_class=storage_class(os.environ.get("SOVA_TEST_KUBE_CONTEXT_B")))
     for action in HANDOFF[:4]:
         apply(adapter, action)
     probes = KubernetesVolumeProbes(
         source=source, target=target,
         agents=VolumeAgents(label="probecross", key=VolumeWorld.KEY, image=PYTHON,
-                            run_as=(UID, UID)),
+                            run_as=(UID, UID), fs_group=UID),
         write_probe=(8080, "/probe"), databases=("board.db",), settle_seconds=1.0)
     for check in (lambda: probes.write_denied("source"), lambda: probes.write_denied("target"),
                   lambda: probes.content_equal("board.db"),
@@ -144,7 +146,8 @@ def test_copy_throughput_between_two_clusters(volume_business, second_cluster):
     adapter = KubernetesVolumeHandoffAdapter(
         "kubernetes-volume-handoff", source=source, target=target, route=Route("board_src"),
         routes=("board_src", "board_tgt"), agent_key=VolumeWorld.KEY, image=PYTHON,
-        run_as=(UID, UID), storage_class=storage_class(os.environ.get("SOVA_TEST_KUBE_CONTEXT_B")),
+        run_as=(UID, UID), fs_group=UID,
+        storage_class=storage_class(os.environ.get("SOVA_TEST_KUBE_CONTEXT_B")),
         agent_transport=os.environ.get("SOVA_TEST_PERF_TRANSPORT", "proxy"))
     for action in HANDOFF[:3]:
         apply(adapter, action)
