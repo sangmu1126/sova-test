@@ -126,6 +126,19 @@ def refusal_reason(body):
     return reason if type(reason) is str and _REASON.fullmatch(reason) else None
 
 
+class KubernetesTransportFailure(ContractError):
+    """The connection failed before an answer: refused, reset, a TLS handshake
+    or read that timed out, a peer that closed without answering."""
+
+
+# A read (GET) is tried again after a failure of the connection itself, each
+# time with its own deadline: the path to an API server over the internet
+# drops now and then (measured against EKS: a TLS handshake timing out, a
+# connection closed without an answer). A write is never repeated - whether
+# it took effect is unknown, and its caller reads back instead.
+_READ_ATTEMPTS = 3
+
+
 class KubernetesRequestRefused(ContractError):
     def __init__(self, status, reason=None):
         self.status, self.reason = status, reason
@@ -323,6 +336,21 @@ class KubernetesHTTPS:
             or any(c.isspace() or ord(c) < 33 or ord(c) > 126 for c in token)
         ):
             raise ContractError("Invalid credential format")
+        attempts = _READ_ATTEMPTS if method == "GET" else 1
+        for attempt in range(attempts):
+            try:
+                return self._attempt(reg, token, method, path, query, timeout=timeout,
+                                     body=body, content_type=content_type, accept=accept,
+                                     limit=limit, raw=raw, headers=headers)
+            except KubernetesTransportFailure:
+                if attempt + 1 >= attempts:
+                    raise
+                time.sleep(0.5 * (attempt + 1))
+        raise ContractError("Kubernetes request not attempted")  # unreachable
+
+    def _attempt(self, reg, token, method, path, query, *, timeout, body, content_type,
+                 accept, limit, raw, headers):
+        """One exchange with the API server, within ``timeout``."""
         endpoint = urlsplit(reg.endpoint)
         connection = http.client.HTTPSConnection(
             endpoint.hostname,
@@ -358,7 +386,7 @@ class KubernetesHTTPS:
                 return peer
             if failure is not None and deadline - time.monotonic() > 0:
                 raise failure  # every registered address refused
-            raise ContractError("Kubernetes connect deadline exceeded")
+            raise KubernetesTransportFailure("Kubernetes connect deadline exceeded")
 
         connection._create_connection = connect_peer
         try:
@@ -405,7 +433,11 @@ class KubernetesHTTPS:
             return body if raw else decode_api_json(body, limit=limit)
         except ContractError:
             raise
-        except (OSError, http.client.HTTPException, UnicodeError, ValueError) as exc:
+        except ssl.SSLCertVerificationError as exc:  # not the path: the peer itself
+            raise ContractError("Kubernetes secure request failed") from exc
+        except (OSError, http.client.HTTPException) as exc:
+            raise KubernetesTransportFailure("Kubernetes secure request failed") from exc
+        except (UnicodeError, ValueError) as exc:
             raise ContractError("Kubernetes secure request failed") from exc
         finally:
             if timer is not None:
