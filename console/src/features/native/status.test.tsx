@@ -6,7 +6,7 @@ import { nativeStatus, nextSteps } from "./status";
 const now = Date.parse("2026-11-19T10:00:00Z");
 function observation() {
   return {
-    observation_version: "handoff-recovery-status-v1",
+    observation_version: "handoff-recovery-status-v2",
     scope: {
       tenant_id: "tenant-a",
       application_id: "orders",
@@ -22,6 +22,11 @@ function observation() {
     observed_at: "2026-11-19T10:00:00Z",
     expires_at: "2026-11-19T10:00:05Z",
     recovery: {
+      security_holds: {
+        active_count: 0,
+        hold_ids: [] as string[],
+        operation_hold: false,
+      },
       status: "required",
       required: true,
       reason: "EFFECT_RESULT_UNKNOWN",
@@ -33,13 +38,58 @@ function observation() {
           revision: 2,
         },
       ],
-      next_steps: Object.keys(nextSteps),
+      next_steps: Object.keys(nextSteps).filter(
+        (step) => step !== "REVIEW_SECURITY_HOLD",
+      ),
       automatic_replay_allowed: false,
       authorizes_execution: false,
     },
   };
 }
 describe("native recovery observation", () => {
+  it("shows the independent governance hold even with no unsettled effects", () => {
+    const value = observation();
+    value.recovery.pending_effects = [];
+    value.recovery.reason = "SECURITY_HOLD";
+    value.recovery.security_holds = {
+      active_count: 1,
+      hold_ids: ["hold-a"],
+      operation_hold: false,
+    };
+    value.recovery.next_steps = ["REVIEW_SECURITY_HOLD"];
+    const view = renderToStaticMarkup(
+      <NativePlanView data={nativeStatus(value, now)} />,
+    );
+    expect(view).toContain("활성 보안 보류 1개");
+    expect(view).toContain("hold-a");
+    expect(view).toContain("보안 보류의 근거와 해제 조건을 검토");
+    expect(view).not.toContain("이전 실행과 원격 요청이 모두 멈췄는지 확인");
+    Object.assign(value.recovery, {
+      status: "clear",
+      required: false,
+      reason: null,
+      next_steps: [],
+    });
+    expect(() => nativeStatus(value, now)).toThrow();
+  });
+  it("rejects missing, duplicate or miscounted security holds and old v1 data", () => {
+    const old = {
+      ...observation(),
+      observation_version: "handoff-recovery-status-v1",
+    };
+    const missing = observation();
+    Reflect.deleteProperty(missing.recovery, "security_holds");
+    const duplicate = observation();
+    duplicate.recovery.security_holds = {
+      active_count: 2,
+      hold_ids: ["hold-a", "hold-a"],
+      operation_hold: false,
+    };
+    const count = observation();
+    count.recovery.security_holds.active_count = 1;
+    for (const value of [old, missing, duplicate, count])
+      expect(() => nativeStatus(value, now)).toThrow();
+  });
   it("shows the hold separately from the witnessed authority, without action buttons", () => {
     const view = renderToStaticMarkup(
       <NativePlanView data={nativeStatus(observation(), now)} />,

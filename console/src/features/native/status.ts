@@ -1,4 +1,5 @@
 export const nextSteps: Record<string, string> = {
+  REVIEW_SECURITY_HOLD: "보안 보류의 근거와 해제 조건을 검토",
   VERIFY_REMOTE_SETTLEMENT: "이전 실행과 원격 요청이 모두 멈췄는지 확인",
   READBACK_EXISTING_COMMAND: "기존 명령의 실제 결과를 다시 조회",
   REVIEW_RECOVERY_PLAN: "확인한 근거로 복구 계획을 검토",
@@ -33,7 +34,7 @@ const states = [
   "ABORTED",
 ];
 export type NativeStatus = {
-  observation_version: "handoff-recovery-status-v1";
+  observation_version: "handoff-recovery-status-v2";
   scope: {
     tenant_id: string;
     application_id: string;
@@ -52,6 +53,11 @@ export type NativeStatus = {
     status: "required" | "clear" | "unavailable";
     required: boolean | null;
     reason: string | null;
+    security_holds: {
+      active_count: number;
+      hold_ids: string[];
+      operation_hold: boolean;
+    };
     pending_effects: {
       fingerprint: string;
       action: string;
@@ -84,7 +90,7 @@ export function nativeStatus(value: unknown, now = Date.now()): NativeStatus {
   };
   if (
     !object(value) ||
-    value.observation_version !== "handoff-recovery-status-v1" ||
+    value.observation_version !== "handoff-recovery-status-v2" ||
     !object(value.scope) ||
     !object(value.recovery)
   )
@@ -119,6 +125,19 @@ export function nativeStatus(value: unknown, now = Date.now()): NativeStatus {
     !Array.isArray(r.next_steps)
   )
     return fail();
+  const holds = r.security_holds;
+  if (
+    !object(holds) ||
+    !Array.isArray(holds.hold_ids) ||
+    holds.hold_ids.length > 256 ||
+    !holds.hold_ids.every(id) ||
+    new Set(holds.hold_ids).size !== holds.hold_ids.length ||
+    !Number.isSafeInteger(holds.active_count) ||
+    holds.active_count !== holds.hold_ids.length ||
+    typeof holds.operation_hold !== "boolean"
+  )
+    return fail();
+  const securityBlocked = holds.hold_ids.length > 0 || holds.operation_hold;
   if (!(
     (r.status === "clear" && r.required === false && r.reason === null) ||
     (r.status === "required" &&
@@ -131,7 +150,18 @@ export function nativeStatus(value: unknown, now = Date.now()): NativeStatus {
       r.reason === "OBSERVATION_UNAVAILABLE")
   ))
     return fail();
-  const expected = r.required === true ? Object.keys(nextSteps) : [];
+  if (
+    (securityBlocked && r.status === "clear") ||
+    (r.reason === "SECURITY_HOLD" && !securityBlocked)
+  )
+    return fail();
+  const expected = securityBlocked ? ["REVIEW_SECURITY_HOLD"] : [];
+  if (r.required === true && r.reason !== "SECURITY_HOLD")
+    expected.push(
+      "VERIFY_REMOTE_SETTLEMENT",
+      "READBACK_EXISTING_COMMAND",
+      "REVIEW_RECOVERY_PLAN",
+    );
   if (JSON.stringify(r.next_steps) !== JSON.stringify(expected)) return fail();
   const seen = new Set<string>();
   for (const e of r.pending_effects) {

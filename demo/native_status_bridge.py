@@ -15,7 +15,7 @@ from sova.adapters.kubernetes.https import private_text
 from sova.adapters.registration.graph_codec import json_document
 from sova.domain.contracts import ContractError, digest, identifier
 from sova.domain.handoff_authority import HandoffState
-from sova.service.recovery_status import NEXT_STEPS, PENDING, MAX_EFFECTS
+from sova.service.recovery_status import VERSION, PENDING, MAX_EFFECTS, next_steps
 
 
 REASONS = {"EFFECT_RESULT_UNKNOWN", "RECOVERY_PENDING", "OWNER_EXPIRED_UNSETTLED",
@@ -29,7 +29,7 @@ def project_status(value, scope, *, now=None):
     try:
         if value.get("state") is None:
             raise ValueError
-        if value["observation_version"] != "handoff-recovery-status-v1":
+        if value["observation_version"] != VERSION:
             raise ValueError
         actual = value["scope"]
         if any(actual.get(k) != v for k, v in scope.items()):
@@ -50,6 +50,19 @@ def project_status(value, scope, *, now=None):
                 or type(value["activation_possible"]) is not bool):
             raise ValueError
         r = value["recovery"]
+        security = r["security_holds"]
+        ids = security["hold_ids"]
+        if (type(ids) is not list or len(ids) > 256
+                or type(security["active_count"]) is not int
+                or security["active_count"] != len(ids)
+                or type(security["operation_hold"]) is not bool):
+            raise ValueError
+        ids = [identifier(hold_id) for hold_id in ids]
+        if len(set(ids)) != len(ids):
+            raise ValueError
+        security = {"active_count": len(ids), "hold_ids": ids,
+                    "operation_hold": security["operation_hold"]}
+        security_blocked = bool(ids) or security["operation_hold"]
         if r["automatic_replay_allowed"] is not False or r["authorizes_execution"] is not False:
             raise ValueError
         valid = ((r["status"] == "required" and r["required"] is True
@@ -57,7 +70,9 @@ def project_status(value, scope, *, now=None):
                  or (r["status"] == "clear" and r["required"] is False and r["reason"] is None)
                  or (r["status"] == "unavailable" and r["required"] is None
                      and r["reason"] == "OBSERVATION_UNAVAILABLE"))
-        if not valid or r["next_steps"] != (NEXT_STEPS if r["required"] is True else []):
+        if (not valid or (security_blocked and r["status"] == "clear")
+                or (r["reason"] == "SECURITY_HOLD" and not security_blocked)
+                or r["next_steps"] != next_steps(r["reason"], security)):
             raise ValueError
         effects = r["pending_effects"]
         if not isinstance(effects, list) or len(effects) > MAX_EFFECTS:
@@ -84,6 +99,7 @@ def project_status(value, scope, *, now=None):
                 "observed_at": value["observed_at"], "expires_at": value["expires_at"],
                 "recovery": {"status": r["status"], "required": r["required"],
                     "reason": r["reason"], "pending_effects": pending,
+                    "security_holds": security,
                     "next_steps": list(r["next_steps"]),
                     "automatic_replay_allowed": False, "authorizes_execution": False}}
     except (KeyError, TypeError, ValueError, AttributeError) as exc:

@@ -17,11 +17,12 @@ SCOPE = {"tenant_id": "tenant-a", "application_id": "app-a", "unit_digest": "a"*
 
 def observation():
     now = datetime.now(UTC)
-    return {"observation_version": "handoff-recovery-status-v1", "state": "SOURCE_FENCED",
+    return {"observation_version": "handoff-recovery-status-v2", "state": "SOURCE_FENCED",
             "scope": {**SCOPE, "plan_digest": "b"*64, "operation_id": "operation-1"},
             "epoch": 2, "next_operation": 3, "owner_environment": "source", "activation_possible": False,
             "observed_at": now.isoformat(), "expires_at": (now+timedelta(seconds=5)).isoformat(),
             "recovery": {"status": "required", "required": True, "reason": "EFFECT_RESULT_UNKNOWN",
+                "security_holds": {"active_count": 0, "hold_ids": [], "operation_hold": False},
                 "pending_effects": [{"fingerprint": "c"*64, "action": "copy_content", "status": "unknown", "revision": 2}],
                 "next_steps": list(NEXT_STEPS), "automatic_replay_allowed": False, "authorizes_execution": False}}
 
@@ -55,6 +56,32 @@ def test_projection_does_not_forward_extra_secrets_or_command_parameters():
     result = project_status(value, SCOPE)
     assert result["state"] == "SOURCE_FENCED" and result["recovery"]["required"] is True
     assert "DO-NOT-EXPOSE" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda v: v.update(observation_version="handoff-recovery-status-v1"),
+    lambda v: v["recovery"].pop("security_holds"),
+    lambda v: v["recovery"]["security_holds"].update(active_count=True),
+    lambda v: v["recovery"]["security_holds"].update(active_count=1),
+    lambda v: v["recovery"]["security_holds"].update(active_count=2, hold_ids=["hold-a", "hold-a"]),
+    lambda v: v["recovery"]["security_holds"].update(operation_hold="false"),
+])
+def test_governance_snapshot_cannot_be_omitted_or_miscounted(mutation):
+    value = observation()
+    mutation(value)
+    with pytest.raises(ContractError):
+        project_status(value, SCOPE)
+
+
+def test_security_only_hold_uses_security_review_and_cannot_be_reported_clear():
+    value = observation()
+    value["recovery"].update(reason="SECURITY_HOLD", pending_effects=[],
+        security_holds={"active_count": 1, "hold_ids": ["hold-a"], "operation_hold": False},
+        next_steps=["REVIEW_SECURITY_HOLD"])
+    assert project_status(value, SCOPE)["recovery"]["next_steps"] == ["REVIEW_SECURITY_HOLD"]
+    value["recovery"].update(reason=None, status="clear", required=False)
+    with pytest.raises(ContractError):
+        project_status(value, SCOPE)
 
 
 def private(path, text):

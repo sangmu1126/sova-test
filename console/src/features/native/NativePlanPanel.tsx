@@ -31,6 +31,29 @@ export function NativePlanView({ data }: { data: NativeStatus }) {
           결과의 불확실성이 해소되지는 않습니다.
         </p>
       </section>
+      <section className="native-card native-security-holds">
+        <h2>
+          거버넌스 원장의 활성 보안 보류 {recovery.security_holds.active_count}
+          개
+        </h2>
+        {recovery.security_holds.hold_ids.length > 0 && (
+          <ul>
+            {recovery.security_holds.hold_ids.map((id) => (
+              <li key={id}>
+                <code>{id}</code>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p>
+          작업별 보안 보류 플래그:{" "}
+          {recovery.security_holds.operation_hold ? "설정됨" : "설정되지 않음"}
+        </p>
+        <p>
+          보류의 상세 근거와 해제 조건은 기존 보안 검토 절차에서 확인합니다.
+          여기서는 보류를 해제하지 않습니다.
+        </p>
+      </section>
       <div className="native-facts">
         <article className="native-card">
           <small>저장된 권한 상태</small>
