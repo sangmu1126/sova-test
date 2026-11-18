@@ -92,3 +92,7 @@ caffeinate -di python tests/qualification_postgres.py \
 다음에는 target을 먼저 준비하고 연결·쓰기 대기·재시도 정책을 구분해, 오류와 완료 지연을 실제로 줄이는 방법을 검증해야 한다. 그 전에 운영 업무가 허용하는 지연·최종 실패율·부하 범위를 정해야 한다. 이번에 관측한 25% 최초 실패를 지우거나 사후 기준을 완화해 무중단으로 처리하지 않는다.
 
 [공개 증거 요약](evidence/worker-pod-http-qualification-20261119.json) · [개발 기록](development/worker-pod-http-qualification-2026-11-19.md).
+
+## 후속 비교
+
+[목적지 사전 준비와 한도 있는 주문 완료](bounded-order-completion.md)에 후속 구현·측정과 실패 기록을 분리했다. 위 25건 오류·최대 21.537초는 기존 고정 실행의 값이며 후속 결과로 대체하지 않는다. 이 문서의 기존 실행을 재현하려면 증거의 시험 스냅샷 `cb7d92144a1d9a90e7ecfa8454a1a83c0f61c525`와 당시 고정 이미지를 사용해야 한다. 최신 브랜치의 fixture와 이미지로 실행하면 별도 결과다.

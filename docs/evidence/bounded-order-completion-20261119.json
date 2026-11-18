@@ -1,0 +1,957 @@
+{
+  "kind": "PreparedTargetBoundedCompletionComparison",
+  "version": 1,
+  "date_kst": "2026-11-19",
+  "scope": "Actual isolated local arm64 kind/HTTPS/PostgreSQL; three single closed-loop measurements, not production qualification",
+  "test_source_snapshot": "7ce0b4c6578ba1896a42d7d858846dc854503e12",
+  "worker_image_source_snapshot": "3d724ba014156557f3bd9706160f2d7ae510d27c",
+  "worker_image_id": "sha256:b99f136eb590d2df900f3ea2bdddb5df244031315917aed6fbc71907cd331bf7",
+  "security_source_snapshot": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+  "profile": {
+    "path": "examples/qualification/orders-pod-https-comparison-v2.json",
+    "sha256": "3058a04a792ec44bc9e3193d64340d2a75db8fdcdc1137b9b9743022ac65f5d4"
+  },
+  "component_verification": {
+    "tests": 94,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "component_source_and_dependencies": {
+    "source_snapshot": "3d724ba014156557f3bd9706160f2d7ae510d27c",
+    "python": "3.12.16 (main, Oct 26 2026, 13:59:40) [Clang 23.1.3 ]",
+    "architecture": "arm64",
+    "dependencies": {
+      "httpx": "0.28.1",
+      "fastapi": "0.162.0",
+      "pytest": "9.2.0",
+      "cryptography": "50.0.2",
+      "psycopg": "3.3.6"
+    },
+    "source_sha256": {
+      "src/sova/qualification/bounded_orders.py": "3dac6e4ae22f918d8a022e791b0f59d168ec3bb133dc172c9727ae8855e0c456",
+      "src/sova/qualification/http_orders.py": "f471b6c1e6fe33711d96f733fd0aeb79b94ff5d0f249ccd523dc5286a0aae92f",
+      "tests/unit/test_request_qualification.py": "bda58a6c8ca221a02a2fbca97ef7c6f4d11962148f0bf46d2b8a5554b50752bb",
+      "tests/unit/test_bounded_orders.py": "428e9f917812650dbc1134094502f3ca13ab0ee83e5a577eee5ca261419b53de",
+      "tests/unit/test_pod_http_metrics.py": "9ed4a43863c27887b8078bbc557b421532a9c10c6c72efb16f441cd128c8dd9b",
+      "tests/integration/test_bounded_order_http.py": "509a16aa5de0b0b28ee996571a9231ab93394988d80f7bf371df89a89b89519b",
+      "tests/qualification_load_client.py": "9f35d9acb20d251cb33a2a26f88eb4396b121a6fc8bfe1151975c92da6b9efd7",
+      "tests/qualification_orders.py": "9963519c64a422eb61efabbdfc260f918e6a52f5e6f8972fa9c0ce0db72a18f2"
+    },
+    "qualification_issued": false,
+    "authorizes_execution": false
+  },
+  "image_audit": {
+    "architecture": "arm64",
+    "authorizes_execution": false,
+    "deployment_observed": false,
+    "entrypoint": [
+      "sova-service"
+    ],
+    "image_id": "sha256:b99f136eb590d2df900f3ea2bdddb5df244031315917aed6fbc71907cd331bf7",
+    "observed_at": "2026-11-18T16:04:10.562318+00:00",
+    "os": "linux",
+    "packages": {
+      "sova": {
+        "changed": [],
+        "expected_files": 318,
+        "extra": [],
+        "installed_files": 318,
+        "missing": [],
+        "version_matches": true
+      },
+      "sova_security": {
+        "changed": [],
+        "expected_files": 122,
+        "extra": [],
+        "installed_files": 122,
+        "missing": [],
+        "version_matches": true
+      }
+    },
+    "qualification_issued": false,
+    "schema_version": "service-image-source.v1",
+    "security_revision": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+    "service_entrypoint_matches": true,
+    "source_revision": "3d724ba014156557f3bd9706160f2d7ae510d27c",
+    "status": "MATCH",
+    "user": "10001:10001"
+  },
+  "qualification_issued": false,
+  "authorizes_execution": false,
+  "signed_operational_evidence": false,
+  "service_continuity": "NOT_QUALIFIED",
+  "trials": [
+    {
+      "bounded_results_observed": {},
+      "maximum_inline_elapsed_ms_observed": null,
+      "completion_budget_satisfied": null,
+      "client_stop_received": null,
+      "initial_orders_observed": 100,
+      "initial_failures_observed": 37,
+      "phase_counts_observed": {
+        "load": 100
+      },
+      "clock_passed": false,
+      "clock_samples": 329,
+      "clock_sampling_errors": 1,
+      "final_data_reconciliation": "NOT_COMPLETED",
+      "name": "final-cmp-cold",
+      "mode": "cold_deferred",
+      "measurement_status": "ABORTED_AT_CHECK",
+      "junit": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "failure_message": "AssertionError: Internal Server Error",
+      "run_id": "worker-http-8158744943844f068273812b2ab631f7",
+      "cluster_uid": "d28e0335-840d-4f51-ba67-5fc68daaf73e",
+      "resources_removed": true,
+      "control_plane_http_status_counts": {
+        "200": 62,
+        "201": 6,
+        "500": 1
+      },
+      "qualification_issued": false,
+      "authorizes_execution": false
+    },
+    {
+      "name": "final-cmp-prepared",
+      "mode": "prepared_deferred",
+      "measurement_status": "COMPLETED",
+      "junit": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "run_id": "worker-http-d3b3e11e24ff4478868ed257139d3173",
+      "cluster_uid": "50314497-8d1b-4582-a3db-5570dcb00df5",
+      "initial_orders": 100,
+      "initial_failures": 18,
+      "initial_status_counts": {
+        "200": 82,
+        "503": 13,
+        "transport_error": 5
+      },
+      "all_wire_events": 139,
+      "phase_counts": {
+        "load": 100,
+        "recovery": 36,
+        "post_handoff_probe": 3
+      },
+      "bounded_results": {},
+      "completion_budget_satisfied": null,
+      "maximum_inline_elapsed_ms": null,
+      "maximum_load_order_completion_ms": 23067.78151,
+      "post_handoff_target_probes": 3,
+      "reconciliation_counts": {
+        "logical_requests": 103,
+        "submission_attempts": 121,
+        "successful_submission_responses": 103,
+        "http_error_attempts": 13,
+        "transport_error_attempts": 5,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 103,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "data_integrity": "SATISFIED",
+      "tls_controls": {
+        "verified_https": true,
+        "wrong_ca_denied": true,
+        "wrong_hostname_denied": true
+      },
+      "target_prepared": {
+        "pod_uid": "20d44068-a2a2-4205-b18a-8e0f46b0b3be",
+        "health_ready": true,
+        "selected_by_route": false,
+        "business_writes_enabled_early": false,
+        "target_write_denial_sqlstate": "42501",
+        "source_positive_control": true
+      },
+      "pod_identities": [
+        {
+          "name": "worker-a",
+          "uid": "27230228-fcd0-4c5b-890b-b91904a4f029",
+          "service_account": "worker",
+          "service_account_uid": "96b01744-7751-4845-b637-60254646de8f",
+          "image_id": "sha256:12ac03d46f408b5619be9f41a79970e41f8bc570e7643a4d6ff8902fdf4eeb77",
+          "container_id": "containerd://ecb099c07143aeecf7dac6a20f848e4d9b575e99ace0fd4a7221bef2a4b4cbdc"
+        },
+        {
+          "name": "worker-b",
+          "uid": "044a3692-90fa-4e43-b5fa-2e059d959f19",
+          "service_account": "worker",
+          "service_account_uid": "96b01744-7751-4845-b637-60254646de8f",
+          "image_id": "sha256:12ac03d46f408b5619be9f41a79970e41f8bc570e7643a4d6ff8902fdf4eeb77",
+          "container_id": "containerd://3a449bbf074fbaf8d5cb8aa4648c18d8c5a8f68b897ba1e4de3e19a26873ae66"
+        }
+      ],
+      "installed_pod_source_match": {
+        "status": "MATCH",
+        "packages": {
+          "sova": {
+            "expected_files": 318,
+            "installed_files": 318,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          },
+          "sova_security": {
+            "expected_files": 122,
+            "installed_files": 122,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          }
+        },
+        "service_entrypoint_matches": true
+      },
+      "secret_get_status": 403,
+      "unauthorized_pod_get_status": 403,
+      "expired_lease_live_pod": {
+        "owner_id": "worker-b.044a3692-90fa-4e43-b5fa-2e059d959f19.d240a4a1f80a",
+        "lease_until": "2026-11-18T16:10:16.938969+00:00",
+        "database_observed_at": "2026-11-18T16:10:19.083862+00:00",
+        "recovery_events": 0,
+        "effect": "in_flight",
+        "authenticated_alive_observations": 4
+      },
+      "runtime_stop": {
+        "container_id": "3a449bbf074fbaf8d5cb8aa4648c18d8c5a8f68b897ba1e4de3e19a26873ae66",
+        "observed_at": "2026-11-18T16:10:23.328379+00:00",
+        "state": "absent from CRI inventory",
+        "force_api_deletion": false,
+        "terminal_pod_watch": [
+          {
+            "type": "MODIFIED",
+            "uid": "044a3692-90fa-4e43-b5fa-2e059d959f19",
+            "phase": "Failed",
+            "resource_version": "729",
+            "observed_at": "2026-11-18T16:10:22.889791+00:00"
+          },
+          {
+            "type": "MODIFIED",
+            "uid": "044a3692-90fa-4e43-b5fa-2e059d959f19",
+            "phase": "Failed",
+            "resource_version": "731",
+            "observed_at": "2026-11-18T16:10:23.291812+00:00"
+          },
+          {
+            "type": "DELETED",
+            "uid": "044a3692-90fa-4e43-b5fa-2e059d959f19",
+            "phase": "Failed",
+            "resource_version": "732",
+            "observed_at": "2026-11-18T16:10:23.319355+00:00"
+          }
+        ]
+      },
+      "handoff": {
+        "state": "HANDOFF_COMPLETE",
+        "original_owner": "worker-b.044a3692-90fa-4e43-b5fa-2e059d959f19.d240a4a1f80a",
+        "recovery_owner": "worker-a.27230228-fcd0-4c5b-890b-b91904a4f029.150b79181737",
+        "recovery_at": "2026-11-18T16:10:23.856069+00:00",
+        "route_patch_requests": 1,
+        "pod_absence_audit_observations": 1,
+        "stopped_pod_observation_http_statuses": [
+          200,
+          404
+        ],
+        "effect_status": "confirmed_applied",
+        "historical_orders_preserved": 50,
+        "target_write_confirmed": true,
+        "client_continuity_qualified": false
+      },
+      "clock_samples": 274,
+      "resources_removed": true,
+      "qualification_issued": false,
+      "authorizes_execution": false
+    },
+    {
+      "bounded_results_observed": {
+        "CONFIRMED": 97,
+        "EXHAUSTED": 3
+      },
+      "maximum_inline_elapsed_ms_observed": 5128.575,
+      "completion_budget_satisfied": false,
+      "client_stop_received": false,
+      "initial_orders_observed": 100,
+      "initial_failures_observed": 5,
+      "phase_counts_observed": {
+        "load": 100,
+        "inline_retry": 23,
+        "recovery": 5,
+        "post_handoff_probe": 3
+      },
+      "clock_passed": true,
+      "clock_samples": 450,
+      "clock_sampling_errors": 0,
+      "final_data_reconciliation": "NOT_COMPLETED",
+      "name": "final-cmp-bounded",
+      "mode": "prepared_bounded",
+      "measurement_status": "ABORTED_AT_CHECK",
+      "junit": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "failure_message": "AssertionError: Timed out: handoff completion by actual successor",
+      "run_id": "worker-http-1f560d87b94a462892cf24198b6f96dc",
+      "cluster_uid": "216ca334-e988-4534-8909-b7a21c56a0a8",
+      "resources_removed": true,
+      "control_plane_http_status_counts": {
+        "200": 144,
+        "201": 6
+      },
+      "qualification_issued": false,
+      "authorizes_execution": false
+    }
+  ],
+  "prior_trials": [
+    {
+      "name": "cold-deferred",
+      "reason": "Preliminary older candidate image; not final comparison",
+      "source_commit": "402b520ddecbcb96b892e0eeb47bf8966719a9ac",
+      "pytest_exit_code": 0,
+      "resources_removed": true,
+      "junit": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "prepared-deferred",
+      "reason": "Failed: test incorrectly required 404 instead of allowing independently observed terminal Pod",
+      "source_commit": "402b520ddecbcb96b892e0eeb47bf8966719a9ac",
+      "pytest_exit_code": 1,
+      "resources_removed": true,
+      "junit": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "final-cold",
+      "reason": "Failed: unsupported kubectl watch flag; no terminal watch evidence",
+      "source_commit": "9a7335343377b9017cd17f3b3faae75515a3c5d1",
+      "pytest_exit_code": 1,
+      "resources_removed": true,
+      "junit": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "verified-cold",
+      "reason": "Earlier successful run with different harness; not final comparison",
+      "source_commit": "2b6e72135764dcbcb8ce3b9c28798585e2eba974",
+      "pytest_exit_code": 0,
+      "resources_removed": true,
+      "junit": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "verified-prepared",
+      "reason": "Failed: route effect became unknown; root cause unestablished; no operational qualification",
+      "source_commit": "2b6e72135764dcbcb8ce3b9c28798585e2eba974",
+      "pytest_exit_code": 1,
+      "resources_removed": true,
+      "junit": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "accepted-cold",
+      "reason": "Failed: fixed load finished before handoff; no remaining request to satisfy target-response wait",
+      "source_commit": "565a386f0cf02312811dc5aa8a48cb0413383a4c",
+      "pytest_exit_code": 1,
+      "resources_removed": true,
+      "junit": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "measured-cold",
+      "reason": "Earlier candidate successful; before refusal-body correction",
+      "source_commit": "8bb70ff285bd05aa7acc22bed5415a000b73b61c",
+      "pytest_exit_code": 0,
+      "resources_removed": true,
+      "junit": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "measured-prepared",
+      "reason": "Failed: control-plane authority/witness mismatch refusal; root cause unestablished; not bypassed",
+      "source_commit": "8bb70ff285bd05aa7acc22bed5415a000b73b61c",
+      "pytest_exit_code": 1,
+      "resources_removed": true,
+      "junit": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      }
+    }
+  ],
+  "raw_artifacts": [
+    {
+      "path": "final-cmp-cold/run.json",
+      "sha256": "9e0fd705d050da4c1c49bd64f322d91ce4736d046c9794861ff9bddd25151097",
+      "bytes": 82108
+    },
+    {
+      "path": "final-cmp-cold/results.xml",
+      "sha256": "7157af56474e43c649643f8e623600e292ddb96636564c08fe6384eff5d0ce28",
+      "bytes": 2568
+    },
+    {
+      "path": "final-cmp-cold/runner.log",
+      "sha256": "089d800b303481f6d51ab37417c712ba1d1e43f2a23023380a693e2c86fbfb42",
+      "bytes": 70273
+    },
+    {
+      "path": "final-cmp-cold/pods/environment.json",
+      "sha256": "138ddd5215b7156c907fba08d83dcdf215fcdbdf138bb9a010bd19ab4114807f",
+      "bytes": 24045
+    },
+    {
+      "path": "final-cmp-cold/pods/audit/audit.log",
+      "sha256": "bf729fb3a356d39417daa872448da2ec0cab8678ab41a1791ea52a213d9e8994",
+      "bytes": 37280
+    },
+    {
+      "path": "final-cmp-cold/pods/owner-terminal-watch.jsonl",
+      "sha256": "2f1af2a01114f6476215a295e6e50c8a0689526b08d528623341bfb736cad891",
+      "bytes": 826
+    },
+    {
+      "path": "final-cmp-cold/pods/owner-terminal-watch.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "final-cmp-cold/pods/worker-a.log",
+      "sha256": "7302daefef75ba468a36f88facfa4238fe7dc6e5360d25f461eb715c008ebcf6",
+      "bytes": 2109
+    },
+    {
+      "path": "final-cmp-cold/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "final-cmp-cold/pods/http/results/traffic.jsonl",
+      "sha256": "460e60567c851cb63958b46a18a4f87505410eb4793e7632eb2960fce9df5d7e",
+      "bytes": 22304
+    },
+    {
+      "path": "final-cmp-cold/pods/http/results/client.sqlite",
+      "sha256": "759c67da190a8108524eac5aa45ff3702f23f0b63543a8211fd19cd3316e3a2a",
+      "bytes": 90112
+    },
+    {
+      "path": "final-cmp-prepared/run.json",
+      "sha256": "291df668d25f39b7791d333471a1f4f0ce038099e1066356b2694d99cbea669a",
+      "bytes": 69295
+    },
+    {
+      "path": "final-cmp-prepared/results.xml",
+      "sha256": "216a76e8cb35334aabd645d44349b99c426a32b81563c479d7052e522d36efb9",
+      "bytes": 433
+    },
+    {
+      "path": "final-cmp-prepared/runner.log",
+      "sha256": "7849cd12121d68913aaffc01cc9920d43e547b66bcff07c07c546cb570620460",
+      "bytes": 57643
+    },
+    {
+      "path": "final-cmp-prepared/pods/environment.json",
+      "sha256": "9bc339e94d6680deb8aa89a25c0b2efe21229e65bae188b861e0c7c44f06fcfa",
+      "bytes": 29807
+    },
+    {
+      "path": "final-cmp-prepared/pods/audit/audit.log",
+      "sha256": "398a803bbc6adc78540915bd9611d8ff19cd0233da66233e3c32ca8087f99852",
+      "bytes": 39884
+    },
+    {
+      "path": "final-cmp-prepared/pods/owner-terminal-watch.jsonl",
+      "sha256": "7a36f68cee392165f9102b08c5d04a8bef05f3f2b2a09b7277789e7ecdd77ade",
+      "bytes": 826
+    },
+    {
+      "path": "final-cmp-prepared/pods/owner-terminal-watch.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "final-cmp-prepared/pods/worker-a.log",
+      "sha256": "3181e6a860e739cf6430248a9b8167b0ba642785df9469f7fc4278cbff116e2b",
+      "bytes": 2327
+    },
+    {
+      "path": "final-cmp-prepared/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "final-cmp-prepared/pods/http/results/traffic.jsonl",
+      "sha256": "d65e327418398ce654c1562a35b23c487236144e3ec586bb29e4ef362319c328",
+      "bytes": 31168
+    },
+    {
+      "path": "final-cmp-prepared/pods/http/results/client.sqlite",
+      "sha256": "fb1b46973a3d88389e2f882e0440bd4fcc21fca34896044709400ea446305135",
+      "bytes": 118784
+    },
+    {
+      "path": "final-cmp-prepared/pods/http/results/client.json",
+      "sha256": "151098adaa484ca86f0f00c96e2e07c32e31f34209dc5dc48ae5e16376d9b7c6",
+      "bytes": 722
+    },
+    {
+      "path": "final-cmp-prepared/pods/http/results/journal.json",
+      "sha256": "39e1a07270df8b3940fcacaf93c8ccb6635cb52115afa588ef382b17645e2999",
+      "bytes": 102281
+    },
+    {
+      "path": "final-cmp-prepared/pods/http/results/independent-observation.json",
+      "sha256": "b1a75323df7e9d38b1f8d4f4c249fd0449178ee9638b09cbc40478d9abfc676e",
+      "bytes": 24973
+    },
+    {
+      "path": "final-cmp-prepared/pods/http/results/reconciliation.json",
+      "sha256": "5c4c10ca7ee9ef5b5842f0e6550cdb8620a8939db81db34118388a4628350ef2",
+      "bytes": 15798
+    },
+    {
+      "path": "final-cmp-bounded/run.json",
+      "sha256": "44d73548e808d6a73b7612f422436814c5da93fe14c43bec925775d660a51786",
+      "bytes": 109862
+    },
+    {
+      "path": "final-cmp-bounded/results.xml",
+      "sha256": "6007803edb03ab8923f4eed4c71599234f113fe66f323d7b790b41e9bac626ac",
+      "bytes": 2416
+    },
+    {
+      "path": "final-cmp-bounded/runner.log",
+      "sha256": "22bbb25a1ccedb323ebabb193a01691bad2b0c9ee0e0b016bd75ae3c532230a0",
+      "bytes": 92250
+    },
+    {
+      "path": "final-cmp-bounded/pods/environment.json",
+      "sha256": "49a9ce9d1f504649896b50ccaee04f26f87864b05d219b5492094a0798da3d91",
+      "bytes": 47033
+    },
+    {
+      "path": "final-cmp-bounded/pods/audit/audit.log",
+      "sha256": "a384f1ea781a1bc24c69b6874d889f947fd9308cfa2bc76c2b62a02fa9b829e4",
+      "bytes": 47147
+    },
+    {
+      "path": "final-cmp-bounded/pods/owner-terminal-watch.jsonl",
+      "sha256": "e33219b266c9f66dc5752e88bfa997833e81fca635aa1aa0535a1b37ebabb224",
+      "bytes": 826
+    },
+    {
+      "path": "final-cmp-bounded/pods/owner-terminal-watch.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "final-cmp-bounded/pods/worker-b.log",
+      "sha256": "65c6fa6c6b94ca97965de9afed9a6d48e15b3eef856d11fc054188cfee1acc17",
+      "bytes": 4461
+    },
+    {
+      "path": "final-cmp-bounded/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "final-cmp-bounded/pods/http/results/traffic.jsonl",
+      "sha256": "3125dd31db832059ce2d8a617b07b0109a331beae965933cf4cc899245f61d1e",
+      "bytes": 36610
+    },
+    {
+      "path": "final-cmp-bounded/pods/http/results/client.sqlite",
+      "sha256": "0f713079b2f507aec991acb328dfa7ac19cd0b181adaab5d516f512d845be516",
+      "bytes": 118784
+    },
+    {
+      "path": "final-cmp-bounded/pods/http/results/client.json",
+      "sha256": "9703daf27b614a0cee8f20576cdcc41b21a6ab550f06469512a45b8d8231b7d8",
+      "bytes": 27389
+    },
+    {
+      "path": "final-cmp-bounded/pods/http/results/journal.json",
+      "sha256": "d065009608766e76685438c1345eb0bfe9f1763beb0c3e965fcdafef540f20cf",
+      "bytes": 99247
+    },
+    {
+      "path": "cold-deferred/run.json",
+      "sha256": "713b2bf902dabb2fb6b0e2cfa0e39405aa86848e6e866664645f51799f23dec2",
+      "bytes": 47166
+    },
+    {
+      "path": "cold-deferred/results.xml",
+      "sha256": "2c4781260d019e85635d33e78100a5b57d903fd61cc18602beef3c505b2736bf",
+      "bytes": 431
+    },
+    {
+      "path": "cold-deferred/pods/environment.json",
+      "sha256": "376a2c3314e142c7cde321cadb8253de84f760583eb49026a1a922034731166f",
+      "bytes": 24219
+    },
+    {
+      "path": "prepared-deferred/run.json",
+      "sha256": "aaeb0e56fe478145220091e980f53977a1f1516b1984926fa56d423d1696ddc2",
+      "bytes": 43684
+    },
+    {
+      "path": "prepared-deferred/results.xml",
+      "sha256": "d1795bf05dc789c84b6f49c000fa419e8829061d62a00f54673838ffd1d7e143",
+      "bytes": 14774
+    },
+    {
+      "path": "prepared-deferred/pods/environment.json",
+      "sha256": "736482a90a5992dc93f1a7d4fb860fc8f032eddfd33b9ac81e53d358e14c3928",
+      "bytes": 4881
+    },
+    {
+      "path": "final-cold/run.json",
+      "sha256": "af79e32dafe9bfbbf81e03ff721c968033377f9feda190c6ab19260b1b60d827",
+      "bytes": 42326
+    },
+    {
+      "path": "final-cold/results.xml",
+      "sha256": "e2fb27e4e3a3dfa71b2b1ee2845e25a7629a9030517b07f8dfd332967600cfbc",
+      "bytes": 16495
+    },
+    {
+      "path": "final-cold/pods/environment.json",
+      "sha256": "10f66804a071cb483c5e2e47c6d56bfca4826d45e3c89c770c369b7f62c67bd7",
+      "bytes": 4641
+    },
+    {
+      "path": "verified-cold/run.json",
+      "sha256": "98dd1bb436cb1aaf16137993444090996dd0e4856b3c960bd0c1fb1258ad6820",
+      "bytes": 53376
+    },
+    {
+      "path": "verified-cold/results.xml",
+      "sha256": "e8c81c7beec2dd277f2c6077e1ecdb170d2fe96bc51961328aab450994659ba8",
+      "bytes": 433
+    },
+    {
+      "path": "verified-cold/pods/environment.json",
+      "sha256": "abb40ec54bbc13340384128c546caab948dd8f57d71b4193cf4eed30d0710145",
+      "bytes": 25030
+    },
+    {
+      "path": "verified-prepared/run.json",
+      "sha256": "a0a86a567d913f7234721b0af2d41e1c985652ddd918f8d278a13394821bfe03",
+      "bytes": 54520
+    },
+    {
+      "path": "verified-prepared/results.xml",
+      "sha256": "9537dddd1d86a8317613c65031608e157df4e1a96864266d022a5a8762d287aa",
+      "bytes": 9992
+    },
+    {
+      "path": "verified-prepared/pods/environment.json",
+      "sha256": "02facc24b79f0948a1df020a5eb8a3fbcec8f502aecf833de8f7eb6b93f97825",
+      "bytes": 3938
+    },
+    {
+      "path": "accepted-cold/run.json",
+      "sha256": "1a6d62482c1e21a541f99d6a8e3587919c62dc0fa044de7af9c37b794b10795a",
+      "bytes": 61186
+    },
+    {
+      "path": "accepted-cold/results.xml",
+      "sha256": "0800267cdf12db8e8dd6a9fe02ffbe1ff6ed732d63413d6a99703382a8ec45fa",
+      "bytes": 2645
+    },
+    {
+      "path": "accepted-cold/pods/environment.json",
+      "sha256": "854f3421212b93091b6d6ccf30f59fbeff9825ffde6e5cf9086a41b1898c11bc",
+      "bytes": 5441
+    },
+    {
+      "path": "measured-cold/run.json",
+      "sha256": "68e8525b2e5129ac78aa7a8d66bb8ec52a1374f4debffae743d61749a1088aed",
+      "bytes": 55311
+    },
+    {
+      "path": "measured-cold/results.xml",
+      "sha256": "4cb439ec3244d591c8e312e0df6f7bd6027065b4a2b0627f9512ae9bdc67a3ce",
+      "bytes": 433
+    },
+    {
+      "path": "measured-cold/pods/environment.json",
+      "sha256": "b79ebff2063da6f4d724b6488542f80b783c0f2b0baf24d74622a04f9d2ff94e",
+      "bytes": 25733
+    },
+    {
+      "path": "measured-prepared/run.json",
+      "sha256": "c32f7f021d38a59a7fab0e57fa6631c0653b7b3b8a92dd019e9c1a58984f6d22",
+      "bytes": 51066
+    },
+    {
+      "path": "measured-prepared/results.xml",
+      "sha256": "29d5c85bc0df345ba373087026ab9d6241c9e6c3781635980ccd80fae8075c37",
+      "bytes": 2684
+    },
+    {
+      "path": "measured-prepared/pods/environment.json",
+      "sha256": "b4e64b3ee45c382e24e8b45be7f21dd3e067b3a7f987d5c9a84ba651265038b2",
+      "bytes": 5711
+    },
+    {
+      "path": "component-final-refusal-input.json",
+      "sha256": "9848bc80560231368bf0ff871eb4703405f0caef43bbe00a6c909ef37f393da8",
+      "bytes": 1305
+    },
+    {
+      "path": "component-final-refusal.xml",
+      "sha256": "e7ac023f8dafa1145f9fda30db96efd3ab82252ebe1fe7738d7098d30e044d87",
+      "bytes": 13239
+    },
+    {
+      "path": "component-final-refusal.log",
+      "sha256": "b63870deaac109946d8b2803e37552f90866ef1c7385ffb372f23b55f20e9c4a",
+      "bytes": 179
+    },
+    {
+      "path": "refusal-safe-image-audit.json",
+      "sha256": "50e10c2ccfbde93da84e5170ee27892adfb47ec04d6311663e937183b3c73035",
+      "bytes": 99023
+    },
+    {
+      "path": "build-04/input.json",
+      "sha256": "cbfe5c68ee752d0e68ee736cf285e565d3d3063a8a94f3ae033a454e9b9821ee",
+      "bytes": 298
+    },
+    {
+      "path": "build-04/build.log",
+      "sha256": "5f292593e68e94f9240aeb75f4ec045507d31fb46821898877500231119237ab",
+      "bytes": 20281
+    },
+    {
+      "path": "build-04/image-id",
+      "sha256": "27526e58278f2d828fa72179d9072d13d6829daf4174312261d7661908dd1283",
+      "bytes": 71
+    },
+    {
+      "path": "build-01/input.json",
+      "sha256": "f24839f2e0693dc1d0084f7508fd51d1fcd293732effe50aea913016b6fc2b9b",
+      "bytes": 302
+    },
+    {
+      "path": "build-01/image-id",
+      "sha256": "4068d8304413ad0ccf8ba4f007dc4fcfca0d6e2426e2f3b7d8d03961f199be57",
+      "bytes": 71
+    },
+    {
+      "path": "build-01/build.log",
+      "sha256": "965236382b51ff20f5486e61e5652a0db1a67934e70fc0157249c545bb7ae3a7",
+      "bytes": 20321
+    },
+    {
+      "path": "build-02/input.json",
+      "sha256": "e49f56738eb903ccb156ad84d30b8b053913f7fabaed6feacd4996083acb731b",
+      "bytes": 203
+    },
+    {
+      "path": "build-02/image-id",
+      "sha256": "44fb3bebc1df473d661f80423da213b4616a2a7fe1e9b51623b280ef549dffa0",
+      "bytes": 71
+    },
+    {
+      "path": "build-02/build.log",
+      "sha256": "90e5d5ca0fc27d9e866e10fdb0407f27c026c0a3852369956fe4d373901ac0bd",
+      "bytes": 20126
+    },
+    {
+      "path": "build-03/input.json",
+      "sha256": "e89a9f532c04d18720c7a26bf31623b84f723af956919e602a80420fada0b63f",
+      "bytes": 203
+    },
+    {
+      "path": "build-03/image-id",
+      "sha256": "aaf2904a8c59526ea521f2f89d604d4c21443ac28e91874ea93732416dd67f3a",
+      "bytes": 71
+    },
+    {
+      "path": "build-03/build.log",
+      "sha256": "ec4ebd2e35a0bfc30e49366a4c935c48811146231aef57b017e5d04be6a10025",
+      "bytes": 19753
+    },
+    {
+      "path": "component-postguard.xml",
+      "sha256": "3a6244d440c7c05e8b023d1f5d5da268af7690346e969035a6584a7f9400a74f",
+      "bytes": 13239
+    },
+    {
+      "path": "component-postguard.log",
+      "sha256": "900ac9721095a3c2e6eeb3e5277120deea0207fd11706fc605f2306f98a7ff97",
+      "bytes": 179
+    }
+  ],
+  "limitations": [
+    "One realization per case; inline retry changes the offered arrival timing; not a statistical causal improvement estimate",
+    "Every failed HTTP attempt remains recorded, even after a successful lookup/recovery",
+    "Post-handoff probes are separate from 100 initial load requests; final SQL reconciliation covers 103 requests",
+    "Earlier effect-unknown failure root cause remains unestablished; later passing runs do not resolve it",
+    "Bounded network deadline does not guarantee real-time local disk or scheduler latency",
+    "Synthetic plan/IdP/file witness, shared fixture client certificate, single DB server/node; no cloud, persistent sessions, operational load/SLO, WORM or release supply-chain qualification",
+    "Failed bounded trial reached the load timeout without parent stop; its recovery/probe phase names are not proof of completed handoff. Only client-local outcomes are available; independent final SQL reconciliation did not run."
+  ],
+  "measured_source_sha256": {
+    "examples/qualification/orders-http-postgres-v1.json": "44c0632a619a5b42eae89bf2c2360c9478ce054440b9b2bdb22ab510dd5d71a3",
+    "examples/qualification/orders-pod-https-comparison-v2.json": "3058a04a792ec44bc9e3193d64340d2a75db8fdcdc1137b9b9743022ac65f5d4",
+    "examples/qualification/orders-pod-https-postgres-v1.json": "50b7d0c3b9bae8cda79a1add2e09f4030552723ac3fe926288485ba289e4e4cb",
+    "src/sova/qualification/__init__.py": "03e25cb600cd4fa8c72759464fc049cfe3c3da31f89c7f2ea52f5e384155a22b",
+    "src/sova/qualification/__main__.py": "c2f28ef4820e0ebb296ee474c18aeeab717a04c9c877c4ee6413aaa84e330f5c",
+    "src/sova/qualification/bounded_orders.py": "3dac6e4ae22f918d8a022e791b0f59d168ec3bb133dc172c9727ae8855e0c456",
+    "src/sova/qualification/http_orders.py": "f471b6c1e6fe33711d96f733fd0aeb79b94ff5d0f249ccd523dc5286a0aae92f",
+    "src/sova/qualification/image.py": "9abc6384c7eb53a18876ff0885d6a7ae2361343f12bfed14de443619c5f1304b",
+    "src/sova/qualification/postgres_orders.py": "b0c602dc4c9db02e0bd18c080026b38e643b4379e27c5bb353ac33aba3406eda",
+    "src/sova/qualification/requests.py": "1f701150aab8564d6c139c5803a35db478932bb6664f160c0d0f115161d1b612",
+    "src/sova/service/__init__.py": "04ad811567cd672308b8a9a50ab12084ec37843db5b8e299a79f2ded97b5f04e",
+    "src/sova/service/api.py": "dee1d3cbe0804162f733620b2c2363b6386be39a03c825b7b02fe7d2a15587b2",
+    "src/sova/service/auth.py": "42ab347486d57eacfd296cf6a8f9863217769b08cb9c51f18c081ae57d855d85",
+    "src/sova/service/catalog.py": "bdc8e6f7da60224b3683993fc5d1e603de537f96e19b58c202bd38075f7f2573",
+    "src/sova/service/composite_execution.py": "c9bc7a9c4c69db084a0d5b72a656267c459d5554370fe808c96a9b15a1473081",
+    "src/sova/service/config.py": "91dd0d4164d7eb59166e201391c361d6dde718ce769815054c70465ab17184f0",
+    "src/sova/service/control_plane.py": "41193d73e49fdd8f48f5406e7e399c6d971ca2d9f7c2d3cba09bedaebd6877b1",
+    "src/sova/service/kafka_execution.py": "025d015a2f5f6dfbe5ba8cada837e00ff300fb9218482f71d2c9f0f53bc821bd",
+    "src/sova/service/main.py": "49db1aeba20c31ccc1c24a1d505f5e576a1aabe50663b3ac28804f7dd33bbe6a",
+    "src/sova/service/mongodb_execution.py": "2872173c94c0e6edfc528bddbd7f5c2981a30a7df75f15fd6d9d80cad8d67bd0",
+    "src/sova/service/mysql_execution.py": "cc83f2435eca020ad9858a8a88dceeea2ec3d1c1b29343875634e42945b92065",
+    "src/sova/service/postgres_execution.py": "7f03a63a8c8dfb876c56cd834f031c5798295f878c875e02660fbc1a2b6cf51f",
+    "src/sova/service/quiescence.py": "cb6abf2b016654f2ba05941b8b745e60d6409d670a29cf3e0a690dc31e518bf1",
+    "src/sova/service/rabbitmq_execution.py": "8934d85b2889e41c84d3208207da8d9947f14acd5a2310b34bc3198632de2f8c",
+    "src/sova/service/redis_execution.py": "6d710dab2d971bbb61ec89b0476183633032fe4ce93370d60b8d4f976e872c27",
+    "src/sova/service/route_stores.py": "9a0990a2399dca4602dfd902cd5d382012df171ac1082c8d4566073de7ab74f3",
+    "src/sova/service/schema.py": "93f56a980cb7042f1d0031deeea5a766872c68274e5eea85f4a375d600b675c4",
+    "src/sova/service/volume_execution.py": "13d6a94fcec041dbadae519ff772d7909cdfea58dde87320e35379b67cfff0ed",
+    "src/sova/service/worker.py": "3a148ff7ec555bcaa64252747403bd547da4dca734471262691ac279bc796555",
+    "tests/contract_world.py": "27badc1d9a7d3e676a3a2c807055088a89d327392df37dd9abafe0e5ab325b44",
+    "tests/control_plane_support.py": "c0b0a83312067d62c4246a801f00b9bd4b9aa9e408c3c76bf96575d3dba8230c",
+    "tests/handoff_drive.py": "736ceb33c16d55e32865b69979c6b84dd8ab222b2a439586b095fe8ec8aa0cdf",
+    "tests/integration/test_order_http_handoff.py": "f91e0a00193b7cc230da4e471eb2eb8350db05ef369719bf571b2f753090ae3a",
+    "tests/integration/test_worker_pod_http_journey.py": "3629f80240834b2232fe29a4170a680eac9f64c4a5319f2695fa261700d25b16",
+    "tests/integration/test_worker_pod_journey.py": "e1be4238c069d9a3be81359e56d433a117358d725aabb465eb8a7c36630654a8",
+    "tests/postgres_business.py": "06f82150025d01115a9bc3dca3ec5cff2149d593f227cc08cd2e611c219fdc86",
+    "tests/postgres_fixtures.py": "dee72e9f8426d632dff738e475bbd7bdd65c32bdb9319bd6135d67b658601774",
+    "tests/qualification_load_client.py": "9f35d9acb20d251cb33a2a26f88eb4396b121a6fc8bfe1151975c92da6b9efd7",
+    "tests/qualification_order_pod.py": "68a59ed2b3654f3f5c1ca8d24a913ba26e1883a474ce10369192c75775a7dbff",
+    "tests/qualification_orders.py": "9963519c64a422eb61efabbdfc260f918e6a52f5e6f8972fa9c0ce0db72a18f2",
+    "tests/qualification_pod_http.py": "8289373d04a77ff445c00f77b0a4f5a3bac3b183369ae370d905478a76a97b23",
+    "tests/qualification_pods.py": "84019694cdef33520457d7c67fbdb4e4d276b2cb15dd6804c4d214bc6527e1c2",
+    "tests/qualification_postgres.py": "9bc8d9e844a683e2d741bab507d7e8e6c957a7cac2c54af487d4d99d07163714",
+    "tests/qualification_service.py": "02cf881a927fbec75133bb23215e248e4efe58d7502a3861cdae157ee95cf41f",
+    "tests/unit/test_request_qualification.py": "bda58a6c8ca221a02a2fbca97ef7c6f4d11962148f0bf46d2b8a5554b50752bb"
+  },
+  "candidate_builds": [
+    {
+      "name": "build-01",
+      "input": {
+        "source_revision": "72c7061c5fc5ef25bd603d2836e60d276c7d6ce4",
+        "security_producer": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+        "security_wheel_sha256": "a40e4925e4f70f0c62daf7149e87eb0b8e01ca50386c741caddc8c5fc610e8ce",
+        "original_production_dockerfile": true,
+        "release_qualified": false
+      },
+      "image_id": "sha256:bb2306225e9b8cebaa364d65f004e490d4fe6214d873dbe001c52cc2e905f3af",
+      "used_as_final_image": false
+    },
+    {
+      "name": "build-02",
+      "input": {
+        "source_revision": "18a0b7d8b70fdc5327bf178ddccbbe31202c46db",
+        "security_producer": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+        "production_dockerfile_used": true,
+        "release_qualified": false
+      },
+      "image_id": "sha256:97cd599e6a87c312fa422e55508fcd052c0f8302d0a455113f776a378b18f5a7",
+      "used_as_final_image": false
+    },
+    {
+      "name": "build-03",
+      "input": {
+        "source_revision": "c222fde4212c85d4fbb68717d2375ae349a83d80",
+        "security_producer": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+        "production_dockerfile_used": true,
+        "release_qualified": false
+      },
+      "image_id": "sha256:09630fd2d03b4221e346cbd63515f2f7d2b5499bf441b7765d7615e1e0dfa4d8",
+      "used_as_final_image": false
+    }
+  ],
+  "feature_commits": [
+    "72c7061c5fc5ef25bd603d2836e60d276c7d6ce4",
+    "18a0b7d8b70fdc5327bf178ddccbbe31202c46db",
+    "402b520ddecbcb96b892e0eeb47bf8966719a9ac",
+    "c222fde4212c85d4fbb68717d2375ae349a83d80",
+    "9a7335343377b9017cd17f3b3faae75515a3c5d1",
+    "2b6e72135764dcbcb8ce3b9c28798585e2eba974",
+    "565a386f0cf02312811dc5aa8a48cb0413383a4c",
+    "8bb70ff285bd05aa7acc22bed5415a000b73b61c",
+    "3d724ba014156557f3bd9706160f2d7ae510d27c",
+    "7ce0b4c6578ba1896a42d7d858846dc854503e12"
+  ],
+  "raw_evidence_root": "/Users/Sooming_/dev/softbank_2026/local-dev-records/bounded-order-completion-20261119",
+  "cleanup_verification": {
+    "path": "cleanup-verification.json",
+    "sha256": "dd98b9bec97ff0710e3123eb462c03e7604e41d0e8026b02dd326d32e88ea0d2",
+    "checks": 44,
+    "all_run_owned_containers_and_networks_absent": true,
+    "cached_images_intentionally_retained": true
+  },
+  "measured_sources_match_recorded_snapshot": true,
+  "post_measurement_harness_fix": {
+    "commit": "a0d087bf5e6e912900f8b2137ed62e31063bc10b",
+    "path": "tests/qualification_load_client.py",
+    "reason": "A load-timeout exit without verified parent stop must not initiate recovery or label target probes as post-handoff",
+    "three_case_cluster_comparison_rerun": false,
+    "qualification_issued": false,
+    "component_regression": {
+      "tests": 94,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    },
+    "component_regression_overlaps_primary": true,
+    "verification_limit": "Existing component/TCP regressions and static review; not a timeout-branch cluster run or rerun of the three-case comparison"
+  }
+}
