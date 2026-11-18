@@ -1,0 +1,236 @@
+{
+  "schema_version": 1,
+  "source_commit": "836f1caf7a1eaea9fb428bb6a9230cd9fc12c318",
+  "scope": "Local native workspace with real Keycloak PKCE, TCP API, PostgreSQL and HTTP canary. Inventory, trust bootstrap, feed and file route are fixtures.",
+  "operational_qualification": false,
+  "aws_vm_migration": false,
+  "fixture_inventory_and_trust": true,
+  "test_count": 3,
+  "source_hashes_verified": 328,
+  "raw_sha256": {
+    "run.json": "1b5ed489de0c854e2e8c71bc58c5160da4c01b3e7b659489105bf38b6d86aef5",
+    "results.xml": "b2c843872a17ae30b5b46a64277794d0968aa841088f07b267d44ef14424d5db",
+    "workspace-user-journey-complete.json": "ad8338b2b384e7c3e3a3744bb2d35e875e55ebae373623e9adf6f29cdf0bb881",
+    "workspace-user-journey-unknown.json": "690444ad1fb2f8379d096e9f6fd92e388b9bdb2959c1438fcdde12215c18be42",
+    "workspace-user-journey-failback.json": "d80eb515a6f541c5b3623ccfd72efeba743f3934232df61ea1ce3245a741b9d0"
+  },
+  "cases": {
+    "complete": {
+      "browser": {
+        "executed": true,
+        "driver": "1.56.1",
+        "browser": "156.0.8078.4",
+        "pkce_logins": 2,
+        "token_exchanges": 2,
+        "page_errors": 0,
+        "mobile_overflow": false,
+        "self_approval_status": 403,
+        "token_injection": false,
+        "persistent_tokens": false,
+        "forward_plan_id": "handoff-5c8e718bb107a9d6527ffbe4",
+        "plan_id": "handoff-5c8e718bb107a9d6527ffbe4",
+        "unit_digest": "8a9b8912e9d01d9ffc41600eae47c21f105d145e77a9805184c2120434f4f4f9",
+        "independent_subjects": true
+      },
+      "counts": {
+        "logical_requests": 3,
+        "submission_attempts": 4,
+        "successful_submission_responses": 3,
+        "http_error_attempts": 1,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 3,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "data_integrity": "SATISFIED",
+      "service_continuity": "NOT_QUALIFIED",
+      "worker_cleanup": {
+        "owner": "mq-worker-1e3e8e3174284b7e90706eda1ab75168",
+        "exit_code": 0,
+        "intentional_sigkill": false,
+        "loop_stopped_recorded": true,
+        "process_wait_completed": true
+      },
+      "api_exits": [
+        {
+          "exit_code": -15,
+          "application_shutdown_complete": true,
+          "server_process_finished": true,
+          "forced_kill": false
+        }
+      ],
+      "idp": {
+        "image_id": "sha256:923a431c08971d49727a857e64870d8d63b5bf294a730e5dde729b5138c26c9e",
+        "architecture": "arm64",
+        "version": "26.8.2",
+        "transport": "loopback HTTP; local test only",
+        "operational_idp_qualified": false,
+        "direct_password_grant_for_spa": false,
+        "pkce_method": "S256",
+        "container_removed": true,
+        "network_removed": true
+      },
+      "screenshot_sha256": "0cfa4ccdd878bf98c885bf113e6c800624d92d5b5fdd18c0b1c6c1922edfb367"
+    },
+    "unknown": {
+      "browser": {
+        "executed": true,
+        "driver": "1.56.1",
+        "browser": "156.0.8078.4",
+        "pkce_logins": 2,
+        "token_exchanges": 2,
+        "page_errors": 0,
+        "mobile_overflow": false,
+        "self_approval_status": 403,
+        "token_injection": false,
+        "persistent_tokens": false,
+        "forward_plan_id": "handoff-6528b4f53b1452dcb850dbb9",
+        "plan_id": "handoff-6528b4f53b1452dcb850dbb9",
+        "unit_digest": "c1309c1054f551ebdd80e7d2dd1a800fab7c714e6b6bdd883f6eef1b0d9789f0",
+        "independent_subjects": true
+      },
+      "counts": {
+        "logical_requests": 2,
+        "submission_attempts": 3,
+        "successful_submission_responses": 1,
+        "http_error_attempts": 2,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 1,
+        "unresolved_commits": 0,
+        "not_committed_requests": 1
+      },
+      "data_integrity": "SATISFIED",
+      "service_continuity": "NOT_QUALIFIED",
+      "worker_cleanup": {
+        "owner": "mq-worker-5f8ce4e2be864199b95f6151ba04394a",
+        "exit_code": -9,
+        "intentional_sigkill": true,
+        "loop_stopped_recorded": false,
+        "process_wait_completed": true
+      },
+      "api_exits": [
+        {
+          "exit_code": -15,
+          "application_shutdown_complete": true,
+          "server_process_finished": true,
+          "forced_kill": false
+        }
+      ],
+      "idp": {
+        "image_id": "sha256:923a431c08971d49727a857e64870d8d63b5bf294a730e5dde729b5138c26c9e",
+        "architecture": "arm64",
+        "version": "26.8.2",
+        "transport": "loopback HTTP; local test only",
+        "operational_idp_qualified": false,
+        "direct_password_grant_for_spa": false,
+        "pkce_method": "S256",
+        "container_removed": true,
+        "network_removed": true
+      },
+      "screenshot_sha256": "82c37163b7d77084da810b140f8bd7928025f418e17c959e861da362136a4fbe"
+    },
+    "failback": {
+      "browser": {
+        "executed": true,
+        "driver": "1.56.1",
+        "browser": "156.0.8078.4",
+        "pkce_logins": 2,
+        "token_exchanges": 2,
+        "page_errors": 0,
+        "mobile_overflow": false,
+        "self_approval_status": 403,
+        "token_injection": false,
+        "persistent_tokens": false,
+        "forward_plan_id": "handoff-8ff6b73cf0bc82e8074135e4",
+        "plan_id": "handoff-bb9382f825ffb9d7a8077689",
+        "unit_digest": "c3854b57167cda547e370efc96ebcc8b2ba70d175d3f37cbc8add23f17e53e61",
+        "independent_subjects": true
+      },
+      "counts": {
+        "logical_requests": 4,
+        "submission_attempts": 5,
+        "successful_submission_responses": 4,
+        "http_error_attempts": 1,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 4,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "data_integrity": "SATISFIED",
+      "service_continuity": "NOT_QUALIFIED",
+      "worker_cleanup": {
+        "owner": "mq-worker-10cca49a1bf24da2bc57474d77d0d147",
+        "exit_code": 0,
+        "intentional_sigkill": false,
+        "loop_stopped_recorded": true,
+        "process_wait_completed": true
+      },
+      "api_exits": [
+        {
+          "exit_code": -15,
+          "application_shutdown_complete": true,
+          "server_process_finished": true,
+          "forced_kill": false
+        }
+      ],
+      "idp": {
+        "image_id": "sha256:923a431c08971d49727a857e64870d8d63b5bf294a730e5dde729b5138c26c9e",
+        "architecture": "arm64",
+        "version": "26.8.2",
+        "transport": "loopback HTTP; local test only",
+        "operational_idp_qualified": false,
+        "direct_password_grant_for_spa": false,
+        "pkce_method": "S256",
+        "container_removed": true,
+        "network_removed": true
+      },
+      "screenshot_sha256": "0ddc5f58241793258cfe5b1a21ac0e7997dda7f22b5866b6d041280d7bbd7f2a"
+    }
+  },
+  "service_regressions": {
+    "tests": 104,
+    "source_commit": "836f1caf7a1eaea9fb428bb6a9230cd9fc12c318",
+    "source_hashes_verified": 45,
+    "clock_passed": true,
+    "container_removed": true,
+    "network_removed": true,
+    "raw_report_sha256": "c9d52a4990d2b4bf253a85af7e9fe69a9db6901e98cc74541cc87acf233f80e0"
+  },
+  "local_boundaries": {
+    "passed": 69,
+    "skipped_live_cases": 18
+  },
+  "console_tests": 53,
+  "previous_trials": [
+    {
+      "run": "01",
+      "result": "FAIL",
+      "reason": "Docker Desktop internal bridge did not publish the IdP loopback port; isolated bridge corrected."
+    },
+    {
+      "run": "02",
+      "result": "FAIL",
+      "reason": "Registration select accessible name did not match its intended label; explicit aria-label added."
+    },
+    {
+      "run": "03",
+      "result": "PASS",
+      "tests": 1
+    },
+    {
+      "run": "04",
+      "result": "PASS",
+      "tests": 2
+    },
+    {
+      "run": "05",
+      "result": "FAIL",
+      "tests": 3,
+      "passed_cases": 2,
+      "reason": "Normal path: PostgreSQL session probe ConnectionTimeout followed by LeaseLost; root cause unconfirmed. Failure artifacts retained; no retry/deadline relaxation."
+    }
+  ]
+}
