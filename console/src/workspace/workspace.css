@@ -1,0 +1,131 @@
+.workspace-product main {
+  display: grid;
+  gap: 22px;
+}
+.workspace-product input,
+.workspace-product select,
+.workspace-product textarea {
+  display: block;
+  width: 100%;
+  border: 1px solid #d9e2f2;
+  border-radius: 9px;
+  padding: 11px 12px;
+  margin: 8px 0 17px;
+  background: white;
+  color: #253d62;
+  font: inherit;
+}
+.workspace-product textarea,
+.workspace-product pre,
+.workspace-product code {
+  font-family: monospace;
+  overflow-wrap: anywhere;
+}
+.workspace-product textarea {
+  font-size: 12px;
+  resize: vertical;
+}
+.workspace-product pre {
+  max-height: 600px;
+  overflow: auto;
+  white-space: pre-wrap;
+  line-height: 1.7;
+  font-size: 12px;
+}
+.workspace-product label {
+  color: #536b90;
+  font-size: 13px;
+}
+.workspace-selection,
+.workspace-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+.workspace-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+}
+.workspace-binding {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 12px;
+  font-size: 13px;
+  margin: 20px 0;
+}
+.workspace-binding dt {
+  color: #7386a1;
+}
+.workspace-binding dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.workspace-message {
+  padding: 16px 22px;
+  border: 1px solid #d7e3fe;
+  border-radius: 12px;
+  background: #eff4ff;
+  color: #4d6d9e;
+  overflow-wrap: anywhere;
+}
+.workspace-message.error {
+  background: #fff4ef;
+  border-color: #eac8b5;
+  color: #934d2a;
+}
+.workspace-steps {
+  display: grid;
+  gap: 10px;
+  padding-left: 22px;
+}
+.workspace-steps li {
+  padding: 7px;
+  color: #385580;
+}
+.workspace-steps span {
+  display: block;
+  margin-top: 5px;
+  color: #7b8da7;
+  font-size: 12px;
+}
+.workspace-identity {
+  max-width: 420px;
+  overflow-wrap: anywhere;
+  color: #71839e;
+  font-size: 11px;
+}
+.workspace-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+.workspace-muted {
+  color: #7185a4;
+  font-size: 12px;
+}
+.workspace-product .native-card > button {
+  margin: 10px 0 20px;
+}
+@media (max-width: 1100px) {
+  .workspace-selection,
+  .workspace-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .workspace-two {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 640px) {
+  .workspace-selection,
+  .workspace-form {
+    grid-template-columns: 1fr;
+  }
+  .workspace-binding {
+    grid-template-columns: 1fr;
+  }
+  .workspace-identity {
+    max-width: 170px;
+    font-size: 9px;
+  }
+}
