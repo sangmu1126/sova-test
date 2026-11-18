@@ -37,6 +37,17 @@ def _config(context):
     return os.environ.get("SOVA_TEST_KUBECONFIG")
 
 
+def storage_class(context=None):
+    """The class a test's volumes come from: kind's ``standard``, or the cloud
+    run's own class on its managed clusters (every disk it makes carries the
+    run, so ``cloud-env.sh down`` finds what a deleted cluster leaves)."""
+    context = context or os.environ.get("SOVA_TEST_KUBE_CONTEXT") or ""
+    run = os.environ.get("SOVA_TEST_KUBE_MANAGED_RUN")
+    if run and context in (f"sova-test-k8s-{run}-eks", f"sova-test-k8s-{run}-gke"):
+        return os.environ.get("SOVA_TEST_KUBE_MANAGED_STORAGE_CLASS") or f"sova-test-{run}"
+    return "standard"
+
+
 def kubectl(context, *args, stdin=None):
     """kubectl against ``context``; ``SOVA_TEST_KUBECONFIG`` names a kubeconfig
     file of its own (the test environment never edits ~/.kube/config)."""

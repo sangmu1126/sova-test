@@ -8,6 +8,7 @@ coordinator. The application is the SQLite-and-uploads board of
 import json
 import threading
 
+from kind_support import storage_class
 from control_plane_support import board_contract, prepared, signed_results, worker_for
 import pytest
 from volume_business import PYTHON, UID
@@ -27,7 +28,7 @@ def board_settings(board, controls, other):
                   converge_seconds=60)
     return {"source": board._side("source", controls), "target": board._side("target", controls),
             "route": route, "routes": ("board_src", "board_tgt"), "agent_key": VolumeWorld.KEY,
-            "agent_image": PYTHON, "run_as": (UID, UID), "storage_class": "standard",
+            "agent_image": PYTHON, "run_as": (UID, UID), "storage_class": storage_class(),
             "write_probe": (8080, "/probe"), "databases": ("board.db",),
             "invariants": {"BOARD-01": {"database": "board.db", "under": "uploads",
                                         "files": FILES}},

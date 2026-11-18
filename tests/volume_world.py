@@ -13,6 +13,7 @@ import json
 import secrets
 import time
 
+from kind_support import storage_class
 from volume_business import PYTHON, SIDES, UID, bare_pod
 
 from sova.adapters.kubernetes.handoff_controls import KubernetesServiceRoute
@@ -72,7 +73,7 @@ class VolumeWorld:
             target=self._side(target, controls), route=Route(controls, "board", SIDES,
                                                              converge_seconds=60),
             routes=routes, agent_key=self.KEY, image=PYTHON, run_as=(UID, UID),
-            storage_class="standard", settle_seconds=90, start_seconds=180,
+            storage_class=storage_class(), settle_seconds=90, start_seconds=180,
             agent_transport=self.transport)
 
     def adapter(self):

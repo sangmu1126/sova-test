@@ -167,6 +167,24 @@ def http_json(method, url, token, project, body=None):
 # ---------------------------------------------------------------- AWS
 
 
+def storage_class_name(run):
+    return f"sova-test-{run}"
+
+
+def apply_storage_class(run_fn, kubeconfig, context, run, provisioner, parameters):
+    """The run's own StorageClass in a managed cluster: every volume a test makes
+    through it carries the run's tag or label, so ``down`` finds the disks a
+    deleted cluster would otherwise leave behind."""
+    document = {"apiVersion": "storage.k8s.io/v1", "kind": "StorageClass",
+                "metadata": {"name": storage_class_name(run), "labels": {"sova-test": run}},
+                "provisioner": provisioner, "parameters": parameters,
+                "reclaimPolicy": "Delete", "volumeBindingMode": "WaitForFirstConsumer",
+                "allowVolumeExpansion": False}
+    run_fn(["kubectl", "--kubeconfig", str(kubeconfig), "--context", context, "apply", "-f",
+            "-"], input=json.dumps(document))
+    return storage_class_name(run)
+
+
 class Aws:
     name = "aws"
 
@@ -335,7 +353,7 @@ class Aws:
         node_role = self._service_role(
             f"sova-test-eks-node-{run}", "ec2.amazonaws.com",
             ["AmazonEKSWorkerNodePolicy", "AmazonEC2ContainerRegistryReadOnly",
-             "AmazonEKS_CNI_Policy"], run)
+             "AmazonEKS_CNI_Policy", "service-role/AmazonEBSCSIDriverPolicy"], run)
         vpc = self.cli("ec2", "describe-vpcs", "--filters",
                        "Name=isDefault,Values=true")["Vpcs"][0]["VpcId"]
         subnets = sorted(s["SubnetId"] for s in self.cli("ec2", "describe-subnets", "--filters",
@@ -384,7 +402,20 @@ class Aws:
         self.run(["aws", "eks", "update-kubeconfig", "--name", name, "--kubeconfig",
                   str(kubeconfig), "--alias", context, "--profile", self.profile,
                   "--region", self.region])
-        state = {"cluster": name, "nodegroup": group, "context": context}
+        # Volumes: the EBS CSI driver (credentials from the node role) and the
+        # run's class - gp3, encrypted, each volume tagged with the run.
+        addon = "aws-ebs-csi-driver"
+        if self.cli("eks", "describe-addon", "--cluster-name", name, "--addon-name", addon,
+                     check=False) is None:
+            self.cli("eks", "create-addon", "--cluster-name", name, "--addon-name", addon,
+                     "--tags", json.dumps(tags))
+        self.run(["aws", "eks", "wait", "addon-active", "--cluster-name", name,
+                  "--addon-name", addon, "--profile", self.profile, "--region", self.region])
+        state = {"cluster": name, "nodegroup": group, "context": context,
+                 "storage_class": apply_storage_class(
+                     self.run, kubeconfig, context, run, "ebs.csi.aws.com",
+                     {"type": "gp3", "encrypted": "true",
+                      "tagSpecification_1": f"sova-test={run}"})}
         state["backstop"] = self._eks_backstop(run, state, parse(lease["expires_at"]))
         return state
 
@@ -404,7 +435,17 @@ class Aws:
                 log(f"aws role deleted: {role}")
         self.cli("iam", "delete-role-policy", "--role-name", f"sova-test-expiry-{run}",
                  "--policy-name", "delete-eks", check=False)
-        return [(k, i) for k, i in self.inventory(run) if k in ("eks-cluster", "eks-nodegroup")]
+        self._sweep_volumes(self.inventory(run), log)
+        return [(k, i) for k, i in self.inventory(run)
+                if k in ("eks-cluster", "eks-nodegroup", "ebs-volume")]
+
+    def _sweep_volumes(self, found, log):
+        """The run's EBS volumes, once no node holds them (a volume still attached
+        is left for the next ``down``)."""
+        for kind, volume in found:
+            if kind == "ebs-volume":
+                if self.cli("ec2", "delete-volume", "--volume-id", volume, check=False) is not None:
+                    log(f"aws ebs volume deleted: {volume}")
 
     def _sweep_clusters(self, kinds, log):
         groups = [g.split("/", 1) for g in kinds.get("eks-nodegroup", [])]
@@ -520,6 +561,10 @@ class Aws:
                         "nodegroups", []):
                     found.append(("eks-nodegroup", f"{cluster}/{group}"))
                 found.append(("eks-cluster", cluster))
+        for volume in self.cli("ec2", "describe-volumes", "--filters",
+                               f"Name=tag:sova-test,Values={run}").get("Volumes", []):
+            if {"Key": "sova-test", "Value": run} in volume.get("Tags", []):
+                found.append(("ebs-volume", volume["VolumeId"]))
         for balancer in self.cli("elbv2", "describe-load-balancers").get("LoadBalancers", []):
             if scoped(balancer["LoadBalancerName"], run):
                 found.append(("load-balancer", balancer["LoadBalancerArn"]))
@@ -541,6 +586,7 @@ class Aws:
             self.cli("scheduler", "delete-schedule", "--name", name, check=False)
             log(f"aws schedule deleted: {name}")
         self._sweep_clusters(kinds, log)
+        self._sweep_volumes(found, log)
         balancers = kinds.get("load-balancer", [])
         for balancer in balancers:
             self.cli("elbv2", "delete-load-balancer", "--load-balancer-arn", balancer, check=False)
@@ -792,7 +838,10 @@ class Gcp:
                   context], check=False)
         self.run(["kubectl", "--kubeconfig", str(kubeconfig), "config", "rename-context",
                   generated, context])
-        state = {"cluster": name, "location": self.region, "context": context}
+        state = {"cluster": name, "location": self.region, "context": context,
+                 "storage_class": apply_storage_class(
+                     self.run, kubeconfig, context, run, "pd.csi.storage.gke.io",
+                     {"type": "pd-balanced", "labels": f"sova-test={run}"})}
         state["backstop"] = self._gke_backstop(run, state, parse(lease["expires_at"]))
         return state
 
@@ -811,7 +860,18 @@ class Gcp:
         self.g("projects", "remove-iam-policy-binding", self.project,
                f"--member=serviceAccount:{email}", "--role=roles/container.clusterAdmin", "--all",
                check=False)
-        return [(k, i) for k, i in self.inventory(run) if k == "gke-cluster"]
+        self._sweep_disks(self.inventory(run), log)
+        return [(k, i) for k, i in self.inventory(run) if k in ("gke-cluster", "disk")]
+
+    def _sweep_disks(self, found, log):
+        """The run's persistent disks, once no node holds them (one still in use
+        is left for the next ``down``)."""
+        for kind, ident in found:
+            if kind == "disk":
+                name, zone = ident.split("@", 1)
+                if self.g("compute", "disks", "delete", name, f"--zone={zone}",
+                          check=False) is not None:
+                    log(f"gcp disk deleted: {name}")
 
     def _gke_backstop(self, run, state, expires, *, update=False):
         """A Cloud Scheduler job that deletes the cluster 45 minutes after the lease.
@@ -880,6 +940,11 @@ class Gcp:
                     if scoped(item["name"], run):
                         zone = _tail(item.get("region") or "")
                         found.append((kind, f"{item['name']}@{zone}" if zone else item["name"]))
+            # Disks a cluster's volumes left: named by the driver, found by the run's label.
+            for item in self.g("compute", "disks", "list",
+                               f"--filter=labels.sova-test={run}") or []:
+                if (item.get("labels") or {}).get("sova-test") == run:
+                    found.append(("disk", f"{item['name']}@{_tail(item.get('zone') or '')}"))
         if "container.googleapis.com" in apis:
             for item in self.g("container", "clusters", "list") or []:
                 if scoped(item["name"], run):
@@ -937,6 +1002,7 @@ class Gcp:
             name, location = cluster.split("@", 1)
             self.g("container", "clusters", "delete", name, "--location", location, check=False)
             log(f"gcp gke cluster deleted: {name}")
+        self._sweep_disks(found, log)
         for kind, command, scope in (("forwarding-rule", "forwarding-rules", "--global"),
                                      ("http-proxy", "target-http-proxies", None),
                                      ("url-map", "url-maps", None),
@@ -1251,6 +1317,7 @@ def render_env(lease, paths, config):
         export("SOVA_TEST_KUBE_MANAGED_KUBECONFIG", paths.kubeconfig)
         for key, context in contexts.items():
             export(f"SOVA_TEST_KUBE_{key.upper()}_CONTEXT", context)
+        export("SOVA_TEST_KUBE_MANAGED_STORAGE_CLASS", storage_class_name(run))
     return "\n".join(out)
 
 

@@ -183,10 +183,12 @@ def writer(name, app, side, *, replicas, role):
 
 
 def objects():
+    from kind_support import storage_class
+
     return [
         {"apiVersion": "v1", "kind": "PersistentVolumeClaim",
          "metadata": {"name": "board-data-source"},
-         "spec": {"accessModes": ["ReadWriteOnce"], "storageClassName": "standard",
+         "spec": {"accessModes": ["ReadWriteOnce"], "storageClassName": storage_class(),
                   "resources": {"requests": {"storage": "1Gi"}}}},
         writer("board-source", "board", "source", replicas=1, role="app"),
         writer("board-worker-source", "board-worker", "source", replicas=1, role="worker"),
@@ -244,12 +246,12 @@ def volume_business():
 @pytest.fixture
 def other_tenant():
     """Another tenant's namespace with a bound claim, read with its own token."""
-    from kind_support import delete_namespace, kind_namespace, kubectl
+    from kind_support import delete_namespace, kind_namespace, kubectl, storage_class
 
     from sova.adapters.kubernetes.volume_controls import KubernetesVolumeControls
 
     claim = {"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "records"},
-             "spec": {"accessModes": ["ReadWriteOnce"], "storageClassName": "standard",
+             "spec": {"accessModes": ["ReadWriteOnce"], "storageClassName": storage_class(),
                       "resources": {"requests": {"storage": "1Gi"}}}}
     holder = bare_pod("holder", "records", ["python3", "-c", "import time; time.sleep(86400)"],
                       read_only=True)

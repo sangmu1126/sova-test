@@ -11,6 +11,7 @@ import os
 import time
 
 from adapter_conformance import apply, command
+from kind_support import storage_class
 import pytest
 from volume_business import PYTHON, RULES, UID, writer
 from volume_world import VolumeWorld
@@ -83,7 +84,7 @@ def test_files_move_between_two_clusters_through_their_api_servers_only(
     adapter = KubernetesVolumeHandoffAdapter(
         "kubernetes-volume-handoff", source=source, target=target, route=route,
         routes=("board_src", "board_tgt"), agent_key=VolumeWorld.KEY, image=PYTHON,
-        run_as=(UID, UID), storage_class="standard")
+        run_as=(UID, UID), storage_class=storage_class(os.environ.get("SOVA_TEST_KUBE_CONTEXT_B")))
     spent = {}
     for action in HANDOFF:
         started = time.monotonic()
@@ -107,7 +108,7 @@ def test_the_probes_measure_across_the_two_clusters(volume_business, second_clus
     adapter = KubernetesVolumeHandoffAdapter(
         "kubernetes-volume-handoff", source=source, target=target, route=Route("board_src"),
         routes=("board_src", "board_tgt"), agent_key=VolumeWorld.KEY, image=PYTHON,
-        run_as=(UID, UID), storage_class="standard")
+        run_as=(UID, UID), storage_class=storage_class(os.environ.get("SOVA_TEST_KUBE_CONTEXT_B")))
     for action in HANDOFF[:4]:
         apply(adapter, action)
     probes = KubernetesVolumeProbes(
@@ -143,7 +144,7 @@ def test_copy_throughput_between_two_clusters(volume_business, second_cluster):
     adapter = KubernetesVolumeHandoffAdapter(
         "kubernetes-volume-handoff", source=source, target=target, route=Route("board_src"),
         routes=("board_src", "board_tgt"), agent_key=VolumeWorld.KEY, image=PYTHON,
-        run_as=(UID, UID), storage_class="standard",
+        run_as=(UID, UID), storage_class=storage_class(os.environ.get("SOVA_TEST_KUBE_CONTEXT_B")),
         agent_transport=os.environ.get("SOVA_TEST_PERF_TRANSPORT", "proxy"))
     for action in HANDOFF[:3]:
         apply(adapter, action)

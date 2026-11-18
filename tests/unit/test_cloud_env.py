@@ -350,6 +350,7 @@ def test_the_printed_environment_names_the_managed_clusters_without_credentials(
     assert f"SOVA_TEST_KUBE_EKS_CONTEXT=sova-test-k8s-{RUN}-eks" in text
     assert f"SOVA_TEST_KUBE_GKE_CONTEXT=sova-test-k8s-{RUN}-gke" in text
     assert f"SOVA_TEST_KUBE_MANAGED_KUBECONFIG={paths.kubeconfig}" in text
+    assert f"SOVA_TEST_KUBE_MANAGED_STORAGE_CLASS=sova-test-{RUN}" in text
 
 
 def test_load_balancer_pieces_of_this_run_are_swept_in_dependency_order():
@@ -371,3 +372,49 @@ def test_load_balancer_pieces_of_this_run_are_swept_in_dependency_order():
     neg = next(c for c in calls if c[2] == "network-endpoint-groups" and c[3] == "delete")
     assert "--region=asia-northeast3" in neg
     assert not any("prod-https" in " ".join(c) for c in calls if "delete" in c)
+
+
+def test_volumes_a_cluster_left_are_found_by_the_runs_tag_and_deleted():
+    run, calls = _runner([
+        (["aws", "ec2", "describe-volumes"], {"Volumes": [
+            {"VolumeId": "vol-ours", "Tags": [{"Key": "sova-test", "Value": RUN}]},
+            {"VolumeId": "vol-other", "Tags": [{"Key": "sova-test", "Value": "111111"}]},
+            {"VolumeId": "vol-untagged", "Tags": []}]}),
+    ])
+    aws = cloud_env.Aws({"profile": "p", "region": "r"}, run=run)
+    assert ("ebs-volume", "vol-ours") in aws.inventory(RUN)
+    aws.sweep(RUN, lambda line: None)
+    deleted = [c[4] for c in calls if c[1:3] == ["ec2", "delete-volume"]]
+    assert deleted == ["vol-ours"]
+
+
+def test_disks_a_gke_cluster_left_are_found_by_the_runs_label_and_deleted():
+    run, calls = _runner([
+        (["gcloud", "services", "list"], [{"config": {"name": "compute.googleapis.com"}}]),
+        (["gcloud", "compute", "disks", "list"], [
+            {"name": "pvc-1", "zone": "https://x/zones/r-a", "labels": {"sova-test": RUN}},
+            {"name": "pvc-2", "zone": "https://x/zones/r-b", "labels": {"sova-test": "111111"}},
+            {"name": "boot", "zone": "https://x/zones/r-a"}]),
+    ])
+    gcp = cloud_env.Gcp({"project": "q", "region": "r"}, run=run,
+                        http=lambda *a, **k: pytest.fail("no REST call expected"))
+    assert ("disk", "pvc-1@r-a") in gcp.inventory(RUN)
+    gcp.sweep(RUN, lambda line: None)
+    deleted = [c[4:6] for c in calls if c[1:4] == ["compute", "disks", "delete"]]
+    assert deleted == [["pvc-1", "--zone=r-a"]]
+
+
+def test_a_managed_clusters_storage_class_carries_the_run():
+    applied = []
+
+    def run(args, *, input=None, check=True, timeout=None):
+        applied.append((args, json.loads(input)))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    name = cloud_env.apply_storage_class(run, "/k", "ctx", RUN, "ebs.csi.aws.com",
+                                         {"tagSpecification_1": f"sova-test={RUN}"})
+    args, document = applied[0]
+    assert name == f"sova-test-{RUN}" and document["metadata"]["name"] == name
+    assert args[:5] == ["kubectl", "--kubeconfig", "/k", "--context", "ctx"]
+    assert document["reclaimPolicy"] == "Delete"
+    assert document["parameters"]["tagSpecification_1"] == f"sova-test={RUN}"
