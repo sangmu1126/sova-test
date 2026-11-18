@@ -1,0 +1,120 @@
+"""Bounded, closed-loop HTTPS fixture load with no hidden retries or failures.
+
+One durable intent and attempt before each transmission. Failed initial orders
+are looked up/retried with the same key only after the parent ends the load.
+Every HTTP attempt remains in SQLite and the fsynced JSONL trace.
+"""
+
+from collections import Counter
+from datetime import UTC, datetime
+import json
+import math
+import os
+from pathlib import Path
+import ssl
+import socket
+import time
+
+import httpx
+
+from sova.qualification.http_orders import OrderHttpClient
+from sova.qualification.requests import OrderIntent, RequestJournal
+
+
+def metrics(events):
+    if not events:
+        raise ValueError("A nonempty traffic trace is required")
+    durations = sorted(e["elapsed_ms"] for e in events)
+    if any(type(x) not in (int, float) or not math.isfinite(x) or x < 0 for x in durations):
+        raise ValueError("Finite nonnegative request durations required")
+    counts = Counter(str(e["status"]) if e["status"] is not None else "transport_error" for e in events)
+    initial = [e for e in events if e["phase"] == "load"]
+    return {"attempts": len(events), "status_counts": dict(sorted(counts.items())),
+            "initial_attempts": len(initial),
+            "initial_failures": sum(e["status"] != 200 for e in initial),
+            "recovery_attempts": len(events) - len(initial),
+            "elapsed_ms": {"p50": durations[math.ceil(len(durations) * .5) - 1],
+                           "p95": durations[math.ceil(len(durations) * .95) - 1], "max": durations[-1]},
+            "load_model": "single closed-loop client; 0.2s think time; fresh connection per attempt",
+            "service_continuity": "NOT_QUALIFIED", "qualification_issued": False}
+
+
+def main():
+    config_dir, result_dir = Path("/config"), Path("/results")
+    config = json.loads((config_dir / "client.json").read_text())
+    journal = RequestJournal.create(result_dir / "client.sqlite", run_id=config["run_id"],
+                                    tenant_id=config["tenant_id"], profile_digest=config["profile_digest"])
+    transport = httpx.Client(verify=ssl.create_default_context(cafile=str(config_dir / "ca.pem")),
+        timeout=1.0, trust_env=False, follow_redirects=False, limits=httpx.Limits(max_keepalive_connections=0))
+    client = OrderHttpClient(config["origin"], bearer_token=(config_dir / "token").read_text().strip(),
+                             journal=journal, client=transport)
+    events, pending = [], []
+    side = None
+    def response_seen(response):
+        nonlocal side
+        side = response.headers.get("x-qualification-side")
+    transport.event_hooks["response"] = [response_seen]
+
+    def attempt(intent, kind, phase):
+        nonlocal side
+        side = None
+        at, start = datetime.now(UTC), time.monotonic()
+        status = client.submit(intent) if kind == "submit" else client.lookup(intent)
+        event = {"request_id": intent.request_id, "kind": kind, "phase": phase,
+                 "started_at": at.isoformat(), "finished_at": datetime.now(UTC).isoformat(),
+                 "elapsed_ms": round((time.monotonic() - start) * 1000, 3), "status": status, "side": side}
+        with (result_dir / "traffic.jsonl").open("a") as stream:
+            stream.write(json.dumps(event) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        events.append(event)
+        return status
+
+    stop_received = False
+    try:
+        tls = {"verified_https": False, "wrong_ca_denied": False, "wrong_hostname_denied": False}
+        for name, context, hostname in (
+                ("verified_https", ssl.create_default_context(cafile=str(config_dir / "ca.pem")), "orders.fixture"),
+                ("wrong_ca_denied", ssl.create_default_context(), "orders.fixture"),
+                ("wrong_hostname_denied", ssl.create_default_context(cafile=str(config_dir / "ca.pem")), "wrong.fixture")):
+            try:
+                with socket.create_connection(("orders.fixture", 30443), timeout=2) as sock:
+                    with context.wrap_socket(sock, server_hostname=hostname):
+                        if name != "verified_https":
+                            raise RuntimeError("Invalid server identity was accepted")
+                        tls[name] = True
+            except ssl.SSLCertVerificationError:
+                if name == "verified_https":
+                    raise
+                tls[name] = True
+        end, number = time.monotonic() + 120, 0
+        while time.monotonic() < end:
+            if (result_dir / "stop").exists():
+                stop_received = True
+                break
+            intent = OrderIntent(f"request-{number:05d}", "load-" + config["run_id"], f"key-{number:05d}", "12.34")
+            status = attempt(intent, "submit", "load")
+            if status != 200:
+                pending.append(intent)
+            number += 1
+            time.sleep(.2)
+        # No transparent retry in the first-attempt trace. Recovery is explicit
+        # and uses this same process/clock and unchanged business keys.
+        for intent in pending:
+            if attempt(intent, "lookup", "recovery") == 404:
+                attempt(intent, "submit", "recovery")
+        snapshot = journal.snapshot()
+        (result_dir / "journal.json").write_text(json.dumps(snapshot, indent=2) + "\n")
+        report = {"stop_received": stop_received, "tls": tls, **metrics(events)}
+        (result_dir / "client.json").write_text(json.dumps(report, indent=2) + "\n")
+    finally:
+        transport.close()
+        journal.close()
+        # Generated business identifiers only, inside the parent's private run
+        # directory. Permit the host observer to reopen a container-owned file.
+        (result_dir / "client.sqlite").chmod(0o666)
+    return 0 if stop_received else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
