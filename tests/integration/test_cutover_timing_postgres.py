@@ -1,6 +1,7 @@
 """Read-only timing metadata from an actual admitted HTTP/SQL handoff."""
 
 from copy import deepcopy
+from datetime import timedelta
 import json
 
 import pytest
@@ -9,7 +10,10 @@ from qualification_timing import ACTIONS, read_ledger
 from test_order_http_handoff import http_business as http_business  # noqa: F401
 
 from sova.adapters.postgres_evidence_observations import PostgresEvidenceObservations
-from sova.domain.contracts import ContractError
+from sova.adapters.postgres_plans import PostgresLifecycleRepository
+from sova.adapters.postgres_signed_evidence import PostgresSignedEvidence
+from sova.domain.contracts import ContractError, ResourceScope
+from sova.domain.evidence import EvidenceRecord, VerificationResult
 
 pytestmark = [pytest.mark.postgres, pytest.mark.postgres_tls]
 
@@ -22,6 +26,17 @@ def test_real_timing_is_plan_bound_and_does_not_export_unreferenced_observation_
         assert h.status(admission['unit_digest'])['state'] == 'HANDOFF_COMPLETE'
         PostgresEvidenceObservations(h.connect, tenant_id=h.tenant).record(
             h.app, 'unreferenced', {'probe': 'restore_drill', 'private_value': 'must-not-leave-the-database'})
+        # Direct fixture insertion, not an accepted producer/API path: same
+        # revisions and obligation, but another unit's scope must stay out.
+        plan = PostgresLifecycleRepository(h.connect, tenant_id=h.tenant).get_plan(h.app, admission['plan_id'])
+        o = next(o for o in plan.obligations if o.obligation_id == 'residency.audit')
+        foreign = PostgresEvidenceObservations(h.connect, tenant_id=h.tenant).record(
+            h.app, o.obligation_id, {'probe': 'zone', 'private_value': 'another-unit-private-value'})
+        at = h.clock() - timedelta(milliseconds=1)
+        record = EvidenceRecord('timing-foreign-scope', o.obligation_id,
+            ResourceScope(h.tenant, h.app, o.scope.environment_id, 'another-unit'), plan.revisions,
+            h.settings.evidence_verifier, at, at+timedelta(minutes=1), VerificationResult.PASS, 'observation', foreign)
+        PostgresSignedEvidence(h.connect, tenant_id=h.tenant).save_envelope(h.signer.sign(record, issued_at=at))
         before = h.status(admission['unit_digest'])
         ledger = read_ledger(h.connect, h.tenant, h.app, admission)
         assert h.status(admission['unit_digest']) == before
@@ -35,6 +50,7 @@ def test_real_timing_is_plan_bound_and_does_not_export_unreferenced_observation_
         assert len(zone) == 3 and len({x['artifact_digest'] for x in zone}) == 1
         assert ledger['scope']['operation_id'] == admission['operation_id']
         assert 'must-not-leave-the-database' not in json.dumps(ledger) and 'unreferenced' not in json.dumps(ledger)
+        assert foreign not in json.dumps(ledger) and 'another-unit-private-value' not in json.dumps(ledger)
         assert all(set(e) == {'action', 'fingerprint', 'revision', 'status', 'at'} for e in ledger['effects'])
         assert not ledger['qualification_issued'] and not ledger['signature_authenticated_by_this_export']
 

@@ -45,7 +45,7 @@ def read_ledger(connect, tenant, app, admission):
     repo = PostgresLifecycleRepository(readonly, tenant_id=tenant)
     with repo.transaction() as conn:
         row = conn.execute(
-            "SELECT a.plan_digest,a.compiled_digest,a.state,p.document->'revisions' "
+            "SELECT a.plan_digest,a.compiled_digest,a.state,p.document->'revisions',p.document->'obligations' "
             "FROM sova_control.handoff_authority a JOIN sova_control.operations o "
             "ON (a.tenant_id,a.application_id,a.plan_digest)=(o.tenant_id,o.application_id,o.plan_digest) "
             "JOIN sova_control.plans p ON (p.tenant_id,p.application_id,p.plan_id,p.digest)="
@@ -54,7 +54,7 @@ def read_ledger(connect, tenant, app, admission):
             "AND o.operation_id=%s AND o.plan_id=%s", (tenant, app, unit, operation, plan_id)).fetchall()
         if len(row) != 1:
             raise ContractError('Timing admission scope mismatch')
-        plan, compiled, state, revisions = row[0]
+        plan, compiled, state, revisions, obligations = row[0]
         canonical = conn.execute(
             'SELECT canonical FROM sova_control.compiled_plans WHERE tenant_id=%s AND application_id=%s AND compiled_digest=%s',
             (tenant, app, compiled)).fetchone()
@@ -66,6 +66,9 @@ def read_ledger(connect, tenant, app, admission):
             raise ContractError('Unsupported timing plan or scope')
         step_ids = {o['operation_id']: o['kind'] for o in doc['operations']}
         due = {o['id']: step_ids[o['required_at']] for o in doc['obligations']}
+        scopes = {o['id']: o['scope'] for o in obligations if o['id'] in due}
+        if set(scopes) != set(due):
+            raise ContractError('Timing obligation scope mismatch')
         events = conn.execute(
             "SELECT e.command_document->>'action',e.fingerprint,e.command_document->>'plan_digest',"
             "v.revision,v.status,v.recorded_at FROM sova_control.effects e "
@@ -83,7 +86,9 @@ def read_ledger(connect, tenant, app, admission):
             "JOIN sova_control.evidence_observations o ON (s.tenant_id,s.application_id)=(o.tenant_id,o.application_id) "
             "AND s.document #>> '{evidence,artifact_digest}'=o.artifact_digest "
             "WHERE s.tenant_id=%s AND s.application_id=%s AND s.document #> '{evidence,revisions}'=%s "
-            'ORDER BY s.stored_at LIMIT 257', (tenant, app, Jsonb(revisions))).fetchall()
+            "AND s.document #> '{evidence,scope}'=(%s::jsonb -> (s.document #>> '{evidence,obligation_id}')) "
+            'AND s.stored_at >= %s ORDER BY s.stored_at LIMIT 257',
+            (tenant, app, Jsonb(revisions), Jsonb(scopes), authority[0][-1] if authority else None)).fetchall()
         if any(len(x) > LIMIT for x in (events, authority, receipts)):
             raise ContractError('Timing observation exceeds bounded export')
         if any(action not in ACTIONS or bound != plan for action, _, bound, *_ in events):
