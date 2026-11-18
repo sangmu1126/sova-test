@@ -62,6 +62,8 @@ def test_fixed_worker_image_reconciles_only_after_lease_expiry_and_real_pod_stop
                 env.kube("-n", NAMESPACE, "wait", "--for=condition=Ready", "pod/" + name, "--timeout=90s")
             env.phase("both actual CLI worker Pods ready")
             pods = {name: env.object("pod", name) for name in ("worker-a", "worker-b")}
+            service_accounts = {name: env.object("serviceaccount", name)["metadata"]["uid"]
+                                for name in ("worker", "denied")}
             identities = []
             cri = env.report["loaded_cri_image"]
             image_digests = set(re.findall(r"sha256:[0-9a-f]{64}", json.dumps(cri)))
@@ -70,6 +72,7 @@ def test_fixed_worker_image_reconciles_only_after_lease_expiry_and_real_pod_stop
                 assert re.findall(r"sha256:[0-9a-f]{64}", status["imageID"])[-1] in image_digests
                 identities.append({"name": name, "uid": pod["metadata"]["uid"],
                                    "service_account": pod["spec"]["serviceAccountName"],
+                                   "service_account_uid": service_accounts["worker"],
                                    "image_id": status["imageID"], "container_id": status["containerID"]})
             # Read installed bytes from a real Pod, not from its image label.
             root = Path(__file__).resolve().parents[2]
@@ -86,6 +89,14 @@ def test_fixed_worker_image_reconciles_only_after_lease_expiry_and_real_pod_stop
             env.report["secret_read_allowed"] = env.kube("auth", "can-i", "get", "secrets", "-n", NAMESPACE,
                 "--as", f"system:serviceaccount:{NAMESPACE}:worker", check=False).strip()
             assert env.report["secret_read_allowed"] == "no"
+            secret_probe = ("import json,ssl; from pathlib import Path; import httpx; "
+                "p=Path('/var/run/secrets/kubernetes.io/serviceaccount'); "
+                f"r=httpx.get('https://kubernetes.default.svc/api/v1/namespaces/{NAMESPACE}/secrets/worker-config', "
+                "headers={'Authorization':'Bearer '+(p/'token').read_text().strip()}, "
+                "verify=ssl.create_default_context(cafile=str(p/'ca.crt')),timeout=5); "
+                "print(json.dumps({'status':r.status_code}))")
+            assert json.loads(env.exec("worker-b", secret_probe)) == {"status": 403}
+            env.report["actual_worker_secret_read_status"] = 403
 
             def route_started():
                 route = env.object("service", "orders")["spec"]["selector"]
@@ -122,6 +133,9 @@ def test_fixed_worker_image_reconciles_only_after_lease_expiry_and_real_pod_stop
                             and e.get("responseStatus", {}).get("code") == 200
                             and datetime.fromisoformat(e["requestReceivedTimestamp"].replace("Z", "+00:00")) >= paused_at]
             assert alive_checks, "No authenticated live-Pod observation after lease expiry"
+            assert all(e["user"]["uid"] == service_accounts["worker"]
+                       and e["user"]["extra"]["authentication.kubernetes.io/pod-uid"]
+                           == [pods[successor]["metadata"]["uid"]] for e in alive_checks)
             env.report["expired_lease_live_pod"] = {"owner_id": owner, "lease_until": row[1].isoformat(),
                 "database_observed_at": row[2].isoformat(), "recovery_events": 0,
                 "effect": "in_flight", "authenticated_alive_observations": len(alive_checks)}
@@ -132,6 +146,13 @@ def test_fixed_worker_image_reconciles_only_after_lease_expiry_and_real_pod_stop
                         f"print(json.dumps({{'state':in_cluster_pod_state({NAMESPACE!r})({lost!r},{uid!r})}}))")
             denied = json.loads(env.exec("orders-source", observer))
             assert denied == {"state": None}
+            denied_events = [e for e in env.audit_events() if e.get("stage") == "ResponseComplete"
+                             and e.get("responseStatus", {}).get("code") == 403
+                             and e.get("objectRef", {}).get("resource") == "pods"
+                             and e.get("objectRef", {}).get("name") == lost
+                             and e.get("user", {}).get("uid") == service_accounts["denied"]]
+            assert denied_events, "Unknown observation was not tied to an actual RBAC 403"
+            env.report["unauthorized_pod_observation_status"] = 403
             env.report["unauthorized_pod_observation"] = "unknown"
 
             env.phase("lease expired but recovery refused for live or unauthorized Pod observation")
@@ -149,6 +170,7 @@ def test_fixed_worker_image_reconciles_only_after_lease_expiry_and_real_pod_stop
                                       == "HANDOFF_COMPLETE" else None), 90, "handoff completion by actual successor")
             row, recovered, effects = sql_state(h)
             assert len(recovered) == 1 and recovered[0][0].startswith(successor + ".")
+            assert recovered[0][0].split(".")[1] == pods[successor]["metadata"]["uid"]
             assert effects == [("confirmed_applied",)]
             assert status["history"][-1]["actor"].startswith(successor + ".")
             assert recovered[0][1] >= expired_observed_at
@@ -158,9 +180,14 @@ def test_fixed_worker_image_reconciles_only_after_lease_expiry_and_real_pod_stop
                        and e.get("verb") == "patch" and e.get("objectRef", {}).get("resource") == "services"
                        and e["objectRef"].get("name") == "orders" and e.get("responseStatus", {}).get("code") == 200]
             assert len(patches) == 1, len(patches)
+            assert patches[0]["user"]["uid"] == service_accounts["worker"]
+            assert patches[0]["user"]["extra"]["authentication.kubernetes.io/pod-uid"] == [uid]
             gone = [e for e in env.audit_events() if e.get("stage") == "ResponseComplete" and e.get("verb") == "get"
                     and e.get("objectRef", {}).get("name") == lost and e.get("responseStatus", {}).get("code") == 404]
             assert gone, "No authenticated Pod absence observation"
+            assert all(e["user"]["uid"] == service_accounts["worker"]
+                       and e["user"]["extra"]["authentication.kubernetes.io/pod-uid"]
+                           == [pods[successor]["metadata"]["uid"]] for e in gone)
             with h.business["connect_as"](h.business["names"]["tgt"], h.business["app"]) as conn:
                 assert conn.execute("SELECT count(*) FROM orders").fetchone()[0] == 50
                 conn.execute("INSERT INTO orders VALUES (9001,'pod-after','pod-after',1)")

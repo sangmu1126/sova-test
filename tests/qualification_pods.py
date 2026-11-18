@@ -120,7 +120,7 @@ def owned_cluster(directory):
     policy.write_text(json.dumps({"apiVersion": "audit.k8s.io/v1", "kind": "Policy", "rules": [
         {"level": "Metadata", "users": [f"system:serviceaccount:{NAMESPACE}:worker",
                                           f"system:serviceaccount:{NAMESPACE}:denied"],
-         "verbs": ["get", "patch"], "resources": [{"group": "", "resources": ["pods", "services"]}]},
+         "verbs": ["get", "patch"], "resources": [{"group": "", "resources": ["pods", "services", "secrets"]}]},
         {"level": "None"}]}))
     patch = """kind: ClusterConfiguration
 apiServer:
