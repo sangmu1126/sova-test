@@ -151,12 +151,17 @@ def run_worker(env=os.environ, *, health_port=8081, poll_seconds=5.0):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
     from sova.adapters.ed25519_evidence import Ed25519EvidenceSigner
+    from sova.domain.contracts import ContractError
     from sova.service.catalog import catalog_from
     from sova.service.config import ServiceConfig, WorkerConfig
     from sova.service.quiescence import KubernetesWorkerQuiescence, in_cluster_pod_state
     from sova.service.worker import HandoffWorker
 
+    if type(health_port) is not int or not 1 <= health_port <= 65535:
+        raise ContractError("Worker health_port must be an integer in 1..65535")
     config, worker_config = ServiceConfig.from_env(env), WorkerConfig.from_env(env)
+    if type(poll_seconds) not in (int, float) or not 0 < poll_seconds < worker_config.stall_seconds:
+        raise ContractError("Worker poll_seconds must be positive and below the stall timeout")
     catalog, close = catalog_from(worker_config.execution)
     signer = Ed25519EvidenceSigner(
         Ed25519PrivateKey.from_private_bytes(worker_config.evidence_key),

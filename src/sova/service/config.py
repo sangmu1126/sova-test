@@ -15,7 +15,7 @@ file (a mounted Kubernetes Secret) that holds a DSN, a key or credentials.
     SOVA_EVIDENCE_KEY_FILE         the worker's Ed25519 evidence key (hex, 32 bytes)
     SOVA_EVIDENCE_KEY_ID           its key ID in the verifier registry
     SOVA_EXECUTION_FILE            the worker's adapter catalog (``catalog.py``)
-    SOVA_LEASE_SECONDS             execution lease length (default 120)
+    SOVA_LEASE_SECONDS             execution lease, 10..300 seconds (default 120)
     SOVA_WORKER_STALL_SECONDS      no progress this long fails liveness (default 600)
     POD_NAME, POD_UID, POD_NAMESPACE  from the downward API (worker owner identity)
 
@@ -49,6 +49,14 @@ def _required(name, env=os.environ):
     if not value:
         raise ContractError(f"{name} is required")
     return value
+
+
+def _seconds(name, default, env):
+    value = env.get(name, str(default))
+    if (type(value) is not str or not 1 <= len(value) <= 10
+            or not value.isascii() or not value.isdecimal()):
+        raise ContractError(f"{name} must be unsigned decimal seconds")
+    return int(value)
 
 
 @dataclass(frozen=True)
@@ -143,10 +151,19 @@ class WorkerConfig:
         key = bytes.fromhex(_secret("SOVA_EVIDENCE_KEY_FILE", env))
         if len(key) != 32:
             raise ContractError("The evidence key is 32 bytes of hex")
-        lease = int(env.get("SOVA_LEASE_SECONDS", "120"))
-        if not 10 <= lease <= 900:
-            raise ContractError("SOVA_LEASE_SECONDS out of bounds")
-        stall = int(env.get("SOVA_WORKER_STALL_SECONDS", "600"))
+        lease = _seconds("SOVA_LEASE_SECONDS", 120, env)
+        # The control ledger is PostgreSQL even when the business adapter is
+        # another engine. Reuse its actual bound instead of duplicating an
+        # upper limit which could let an unexecutable worker start.
+        from sova.adapters.postgres_execution import PostgresExecutionOwnership
+
+        try:
+            PostgresExecutionOwnership.duration(lease)
+        except ContractError:
+            raise ContractError("SOVA_LEASE_SECONDS is outside execution ledger bounds") from None
+        if lease < 10:
+            raise ContractError("SOVA_LEASE_SECONDS must be at least 10 seconds")
+        stall = _seconds("SOVA_WORKER_STALL_SECONDS", 600, env)
         if not lease < stall <= 86400:
             raise ContractError("SOVA_WORKER_STALL_SECONDS must exceed the lease")
         return cls(tenants, key, _required("SOVA_EVIDENCE_KEY_ID", env),
