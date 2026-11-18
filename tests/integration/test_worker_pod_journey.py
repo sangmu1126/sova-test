@@ -141,17 +141,23 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
                 env.apply(app_pod(env, "orders-target", "target"))
             env.kube("-n", NAMESPACE, "wait", "--for=condition=Ready", "pod/orders-target", "--timeout=60s")
             wait_for(lambda: sql_state(h)[0][1] < sql_state(h)[0][2], 20, "real database lease expiry")
-            time.sleep(2)  # several real successor polling intervals
             row, recovered, effects = sql_state(h)
             assert row[0] == owner and row[1] < row[2]
             expired_observed_at = row[2]
             assert recovered == [] and effects == [("in_flight",)]
             assert env.object("pod", lost)["status"]["phase"] == "Running"
-            alive_checks = [e for e in env.audit_events() if e.get("stage") == "ResponseComplete"
-                            and e.get("verb") == "get" and e.get("objectRef", {}).get("name") == lost
-                            and e.get("responseStatus", {}).get("code") == 200
-                            and datetime.fromisoformat(e["requestReceivedTimestamp"].replace("Z", "+00:00")) >= paused_at]
-            assert alive_checks, "No authenticated live-Pod observation after lease expiry"
+            def observed_alive():
+                return [e for e in env.audit_events() if e.get("stage") == "ResponseComplete"
+                        and e.get("verb") == "get" and e.get("objectRef", {}).get("name") == lost
+                        and e.get("responseStatus", {}).get("code") == 200
+                        and datetime.fromisoformat(e["requestReceivedTimestamp"].replace("Z", "+00:00")) >= paused_at]
+            # Audit visibility and a successor's real HTTPS query can lag its
+            # polling interval. Wait for evidence, not an arbitrary sleep.
+            alive_checks = wait_for(observed_alive, 15, "authenticated live-Pod observation after lease expiry")
+            row, recovered, effects = sql_state(h)
+            assert row[0] == owner and row[1] < row[2]
+            assert recovered == [] and effects == [("in_flight",)]
+            assert env.object("pod", lost)["status"]["phase"] == "Running"
             assert all(e["user"]["uid"] == service_accounts["worker"]
                        and e["user"]["extra"]["authentication.kubernetes.io/pod-uid"]
                            == [pods[successor]["metadata"]["uid"]] for e in alive_checks)
