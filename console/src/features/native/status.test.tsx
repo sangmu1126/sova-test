@@ -47,6 +47,22 @@ function observation() {
   };
 }
 describe("native recovery observation", () => {
+  it("does not turn an unavailable operation hold into false", () => {
+    const value = observation();
+    Object.assign(value.recovery, {
+      status: "unavailable",
+      required: null,
+      reason: "OBSERVATION_UNAVAILABLE",
+      pending_effects: [],
+      next_steps: [],
+    });
+    Object.assign(value.recovery.security_holds, { operation_hold: null });
+    const view = renderToStaticMarkup(
+      <NativePlanView data={nativeStatus(value, now)} />,
+    );
+    expect(view).toContain("미확인");
+    expect(view).not.toContain("설정되지 않음");
+  });
   it("shows the independent governance hold even with no unsettled effects", () => {
     const value = observation();
     value.recovery.pending_effects = [];

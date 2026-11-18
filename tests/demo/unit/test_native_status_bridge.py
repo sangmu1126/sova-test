@@ -65,6 +65,7 @@ def test_projection_does_not_forward_extra_secrets_or_command_parameters():
     lambda v: v["recovery"]["security_holds"].update(active_count=1),
     lambda v: v["recovery"]["security_holds"].update(active_count=2, hold_ids=["hold-a", "hold-a"]),
     lambda v: v["recovery"]["security_holds"].update(operation_hold="false"),
+    lambda v: v["recovery"]["security_holds"].update(operation_hold=None),
 ])
 def test_governance_snapshot_cannot_be_omitted_or_miscounted(mutation):
     value = observation()
@@ -82,6 +83,15 @@ def test_security_only_hold_uses_security_review_and_cannot_be_reported_clear():
     value["recovery"].update(reason=None, status="clear", required=False)
     with pytest.raises(ContractError):
         project_status(value, SCOPE)
+
+
+def test_unavailable_operation_hold_remains_unknown():
+    value = observation()
+    value["scope"]["operation_id"] = None
+    value["recovery"].update(status="unavailable", required=None, reason="OBSERVATION_UNAVAILABLE",
+        pending_effects=[], next_steps=[])
+    value["recovery"]["security_holds"]["operation_hold"] = None
+    assert project_status(value, SCOPE)["recovery"]["security_holds"]["operation_hold"] is None
 
 
 def private(path, text):
