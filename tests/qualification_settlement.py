@@ -16,6 +16,11 @@ from sova.domain.execution import QuiescenceProof, pending_digest
 
 def remote_sessions(h, owner):
     with psycopg.connect(h.business['dsn']) as conn:
+        visible = conn.execute("SELECT current_setting('cluster_name'),current_database(),"
+            "rolsuper OR pg_has_role(current_user,'pg_read_all_stats','USAGE') "
+            "FROM pg_roles WHERE rolname=current_user").fetchone()
+        if visible != ('sova-persistence-test','sova_test',True):
+            raise ContractError('Native observer lacks isolated DB identity or full session visibility')
         return [{'pid': r[0], 'state': r[1], 'wait_event': r[2]} for r in conn.execute(
             'SELECT pid,state,wait_event FROM pg_stat_activity WHERE application_name=%s '
             'AND datname=ANY(%s) ORDER BY pid', (owner, list(h.business['names'].values())))]
@@ -27,7 +32,7 @@ class NativeSettlement:
         self.issued, self.observations = {}, []
 
     def prove(self, lifecycle, tenant, app, operation, pending):
-        if (tenant, app) != (self.h.tenant, self.h.app):
+        if (tenant, app) != (self.h.tenant, self.h.app) or not pending:
             return None
         with lifecycle.transaction() as conn:
             row = conn.execute('SELECT owner_id,epoch,valid_until,clock_timestamp() FROM sova_control.app_execution '
@@ -36,7 +41,7 @@ class NativeSettlement:
             return None
         try:
             sessions = remote_sessions(self.h, self.lost.owner)
-        except psycopg.Error:
+        except (psycopg.Error, ContractError):
             self.observations.append({'remote_state': 'unknown'})
             return None
         observation = {'owner': self.lost.owner, 'process_exit': self.lost.process.poll(),

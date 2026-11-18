@@ -5,9 +5,11 @@ No Kubernetes identity is fabricated. NativeSettlement is a test proof producer.
 
 from dataclasses import replace
 import time
+from types import SimpleNamespace
 
 import psycopg
 from psycopg import sql
+from psycopg.conninfo import make_conninfo
 import pytest
 
 from qualification_pool_relay import Relay
@@ -19,6 +21,7 @@ from test_order_http_handoff import http_business as http_business  # noqa: F401
 from test_worker_process_journey import execution, orders
 
 from sova.domain.contracts import ContractError
+from sova.adapters.postgres_plans import PostgresLifecycleRepository
 from sova.ports.execution import RecoveryRequired
 from sova.qualification.requests import OrderIntent, reconcile
 from sova.service.worker import Execution
@@ -136,6 +139,16 @@ def test_real_effect_is_not_replayed_and_recovery_requires_remote_settlement(
                     observations['fenced_backend_pids'] = [pid for pid,_ in killed]
                 assert relay.stopped.is_set() and not any(t.is_alive() for t in relay.threads)
                 assert not remote_sessions(h,old.owner)
+                # An unprivileged stats observer must not mistake hidden
+                # sessions for proof of absence, even after actual settlement.
+                limited_h = SimpleNamespace(tenant=h.tenant, app=h.app, clock=h.clock,
+                    business={**h.business, 'dsn':make_conninfo(h.business['dsn'],user=postgres_database[1])})
+                limited = NativeSettlement(limited_h,old,relay)
+                lifecycle = PostgresLifecycleRepository(h.connect,tenant_id=h.tenant)
+                assert limited.prove(lifecycle,h.tenant,h.app,admission['operation_id'],
+                                     (copy[0]['digest'],)) is None
+                assert not limited.issued and limited.observations==[{'remote_state':'unknown'}]
+                observations['unprivileged_observer'] = limited.observations
                 if mode=='committed':
                     result = successor.drive(h.tenant,h.app,unit)
                     assert result.state.value=='HANDOFF_COMPLETE'
@@ -183,3 +196,7 @@ def test_real_effect_is_not_replayed_and_recovery_requires_remote_settlement(
                     if old.process.poll() is None:
                         old.kill_owned_process()
                     old.stop()
+                h.record('effect-settlement-progress-'+mode, observations=observations,
+                    settlement_observations=settlement.observations if settlement else [],
+                    successor_calls=calls, old_trace=old.events() if old else [],
+                    progress_only=True, verification_completed=False)
