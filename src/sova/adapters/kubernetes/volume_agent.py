@@ -23,8 +23,11 @@ What it guarantees, whoever calls it:
 The manifest lists every entry under a claim's root: ``[path, kind, mode, uid,
 gid, size, digest]`` with kind ``d`` (directory), ``f`` (file, digest = SHA-256
 of the content) or ``l`` (symbolic link, digest = its target), in path order.
-Anything else (a socket, a FIFO, a device) or anything unreadable is listed as
-unsupported; the adapter then refuses to call the copy done.
+``links`` lists the hard links inside the tree: each group of paths that name
+one file, sorted, the groups sorted (a git object store, a pnpm store, a
+Maildir delivery hold such). Anything else (a socket, a FIFO, a device, a hard
+link to a symbolic link) or anything unreadable is listed as unsupported; the
+adapter then refuses to call the copy done.
 """
 
 import hashlib
@@ -96,7 +99,7 @@ def entry_digest(fd):
 
 
 def manifest(claim):
-    entries, unsupported = [], []
+    entries, unsupported, inodes = [], [], {}
 
     def walk(fd, prefix):
         with os.scandir(fd) as found:
@@ -132,8 +135,12 @@ def manifest(claim):
                     entries.append([path, "f", mode, *owner, info.st_size, entry_digest(child)])
                 finally:
                     os.close(child)
+                if info.st_nlink > 1:
+                    inodes.setdefault(("f", info.st_dev, info.st_ino), []).append(path)
             elif stat.S_ISLNK(info.st_mode):
                 entries.append([path, "l", 0, *owner, 0, os.readlink(name, dir_fd=fd)])
+                if info.st_nlink > 1:
+                    inodes.setdefault(("l", info.st_dev, info.st_ino), []).append(path)
             else:
                 unsupported.append([path, "special_file"])
 
@@ -142,7 +149,18 @@ def manifest(claim):
         walk(root, "")
     finally:
         os.close(root)
+    # A file with links outside the tree (another volume's directory on a shared
+    # host disk) has no group here: what is outside is not the volume's.
+    links = []
+    for (kind, _, _), paths in inodes.items():
+        if len(paths) < 2:
+            continue
+        if kind == "l":
+            unsupported += [[p, "hard_linked_symlink"] for p in paths]
+        else:
+            links.append(sorted(paths))
     return {"claim": claim, "entries": entries, "unsupported": unsupported,
+            "links": sorted(links),
             "files": sum(1 for e in entries if e[1] == "f"),
             "bytes": sum(e[5] for e in entries if e[1] == "f")}
 
@@ -289,6 +307,43 @@ def symlink(claim, path, target):
         _sync_dir(fd)
     finally:
         os.close(fd)
+
+
+def link(claim, existing, path):
+    """Make ``path`` name the file ``existing`` names (one file, two names),
+    replacing what ``path`` held. The link is made under a temporary name and
+    renamed over ``path``, so ``path`` always names a whole file."""
+    source_fd, source_name = parent(claim, existing)
+    try:
+        fd, name = parent(claim, path)
+        try:
+            try:
+                info = os.stat(source_name, dir_fd=source_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                raise Refused(409, "link_source_missing") from None
+            if not stat.S_ISREG(info.st_mode):
+                raise Refused(409, "not_a_file")
+            try:
+                held = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            except FileNotFoundError:
+                held = None
+            if held is not None and (held.st_dev, held.st_ino) == (info.st_dev, info.st_ino):
+                return  # already that file
+            temporary = ".sova-link-" + hashlib.sha256(path.encode()).hexdigest()[:24]
+            try:
+                os.unlink(temporary, dir_fd=fd)  # left by an earlier attempt
+            except FileNotFoundError:
+                pass
+            os.link(source_name, temporary, src_dir_fd=source_fd, dst_dir_fd=fd,
+                    follow_symlinks=False)
+            if held is not None and stat.S_ISDIR(held.st_mode):
+                _remove(fd, name)
+            os.rename(temporary, name, src_dir_fd=fd, dst_dir_fd=fd)
+            _sync_dir(fd)
+        finally:
+            os.close(fd)
+    finally:
+        os.close(source_fd)
 
 
 def remove(claim, path):
@@ -492,6 +547,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 mkdir(claim, _text(query, "path"), _int(query, "mode", 0, 0o7777))
             elif method == "POST" and url.path == "/symlink":
                 symlink(claim, _text(query, "path"), _text(query, "target"))
+            elif method == "POST" and url.path == "/link":
+                link(claim, _text(query, "existing"), _text(query, "path"))
             elif method == "POST" and url.path == "/remove":
                 remove(claim, _text(query, "path"))
             elif method == "POST" and url.path == "/chmod":

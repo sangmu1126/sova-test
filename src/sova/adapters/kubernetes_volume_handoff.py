@@ -25,11 +25,14 @@ it, and every postcondition about writing is a statement about Pods:
   through the API server's Pod proxy, so a copy between two clusters needs
   nothing but the two registered API servers. The copy is a difference: only
   entries whose content, kind or mode differ are written, extra ones removed.
+  Hard links inside a claim are kept: a group of paths naming one file is
+  written once and linked, and a link the source does not have is broken.
   A file reaches its final name only after its content was checked against
   the source's SHA-256; if the source changes during the final copy, the fence
   did not hold and the copy fails.
 * Content is compared as a manifest of every entry (path, kind, mode, owner,
-  size, SHA-256 or link target). Equal manifests are byte-identical trees.
+  size, SHA-256 or link target) and of the hard links between them. Equal
+  manifests are byte-identical trees with the same files shared.
   Ownership is not changed by the agent (it never runs as root): it writes as
   the registered user and group, the application's own, and a source whose
   files belong to someone else reads back as different, not as copied.
@@ -64,6 +67,7 @@ from sova.adapters.kubernetes.volume_agents import (
     VolumeAgents,
     differences,
     manifest_digest,
+    same_tree,
     sync_trees,
 )
 from sova.adapters.kubernetes.volume_controls import (
@@ -257,18 +261,21 @@ class KubernetesVolumeHandoffAdapter:
             claims, equal = [], True
             for claim in range(len(self.sides["source"].claims)):
                 want, have = source.manifest(claim), target.manifest(claim)
-                same = want["entries"] == have["entries"] and not want["unsupported"]
+                same = same_tree(want, have) and not want["unsupported"]
                 equal = equal and same
                 claims.append({
                     "source_claim": self.sides["source"].claims[claim],
                     "target_claim": self.sides["target"].claims[claim],
-                    "source": {"manifest": manifest_digest(want["entries"]),
-                               "files": want["files"], "bytes": want["bytes"]},
-                    "target": {"manifest": manifest_digest(have["entries"]),
-                               "files": have["files"], "bytes": have["bytes"]},
+                    "source": {"manifest": manifest_digest(want["entries"], want["links"]),
+                               "files": want["files"], "bytes": want["bytes"],
+                               "link_groups": len(want["links"])},
+                    "target": {"manifest": manifest_digest(have["entries"], have["links"]),
+                               "files": have["files"], "bytes": have["bytes"],
+                               "link_groups": len(have["links"])},
                     "unsupported": want["unsupported"][:20],
-                    "differences": [] if same else differences(want["entries"],
-                                                                have["entries"])})
+                    "differences": [] if same else differences(
+                        want["entries"], have["entries"], source_links=want["links"],
+                        target_links=have["links"])})
         return equal, {"claims": claims, "agent_sha256": AGENT_DIGEST}
 
     # -- actions ---------------------------------------------------------------
@@ -348,7 +355,7 @@ class KubernetesVolumeHandoffAdapter:
             while report["changed_later"] and report["passes"] < self.sync_passes:
                 again = self._sync(source, target, live=True)  # only what changed
                 report = {**{k: report[k] + again[k] for k in ("copied_files", "copied_bytes",
-                                                              "removed")},
+                                                              "removed", "linked")},
                           "changed_later": again["changed_later"],
                           "passes": report["passes"] + 1}
         stamp = json.dumps({"from": [self.sides["source"].namespace,

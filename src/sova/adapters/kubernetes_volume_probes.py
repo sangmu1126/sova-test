@@ -35,7 +35,12 @@ Each probe returns ``(passed, observation)``.
 import time
 
 from sova.adapters.kubernetes.https import KubernetesRequestRefused
-from sova.adapters.kubernetes.volume_agents import manifest_digest, sync_trees
+from sova.adapters.kubernetes.volume_agents import (
+    manifest_digest,
+    same_tree,
+    subtree_links,
+    sync_trees,
+)
 from sova.adapters.kubernetes.volume_controls import alive, matches, mounts, ready
 from sova.domain.contracts import ContractError
 
@@ -110,8 +115,8 @@ class KubernetesVolumeProbes:
         return outcomes, registered
 
     def _manifests(self, agent, side):
-        return [manifest_digest(agent.manifest(i)["entries"])
-                for i in range(len(self.sides[side].claims))]
+        return [manifest_digest(m["entries"], m["links"]) for m in
+                (agent.manifest(i) for i in range(len(self.sides[side].claims)))]
 
     # -- write paths -------------------------------------------------------------
     def write_denied(self, side):
@@ -175,12 +180,15 @@ class KubernetesVolumeProbes:
                 same, detail = self._database_equal(source, target, claim, path)
                 return same, {"probe": "content_equal", "set": name, "method": "sqlite_logical",
                               **detail}
-            want = self._subtree(source.manifest(claim)["entries"], path)
-            have = self._subtree(target.manifest(claim)["entries"], path)
-        same = bool(want) and want == have
+            a, b = source.manifest(claim), target.manifest(claim)
+        want, have = self._subtree(a["entries"], path), self._subtree(b["entries"], path)
+        want_links, have_links = subtree_links(a["links"], path), subtree_links(b["links"], path)
+        same = bool(want) and want == have and want_links == have_links
         return same, {"probe": "content_equal", "set": name, "method": "manifest",
-                      "source": {"entries": len(want), "manifest": manifest_digest(want)},
-                      "target": {"entries": len(have), "manifest": manifest_digest(have)}}
+                      "source": {"entries": len(want), "link_groups": len(want_links),
+                                 "manifest": manifest_digest(want, want_links)},
+                      "target": {"entries": len(have), "link_groups": len(have_links),
+                                 "manifest": manifest_digest(have, have_links)}}
 
     def invariant(self, invariant_id):
         spec = self.invariants.get(invariant_id)
@@ -277,10 +285,12 @@ class KubernetesVolumeProbes:
                 report = sync_trees(target, copy, len(t.claims), live=False)
                 equal, sets = True, []
                 for i in range(len(t.claims)):
-                    want, have = target.manifest(i)["entries"], copy.manifest(i)["entries"]
-                    equal = equal and want == have
-                    sets.append({"claim": t.claims[i], "manifest": manifest_digest(want),
-                                 "restored": manifest_digest(have)})
+                    want, have = target.manifest(i), copy.manifest(i)
+                    equal = equal and same_tree(want, have)
+                    sets.append({"claim": t.claims[i],
+                                 "manifest": manifest_digest(want["entries"], want["links"]),
+                                 "restored": manifest_digest(have["entries"], have["links"]),
+                                 "link_groups": len(want["links"])})
                 databases = {}
                 for database in self.databases:  # what SQLite reads, on both
                     claim, path = self._locate(database)

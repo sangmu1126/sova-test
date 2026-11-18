@@ -97,6 +97,10 @@ class Agent:
         self._call("POST", "/symlink", {"claim": str(claim), "path": path, "target": target},
                    body=b"")
 
+    def link(self, claim, existing, path):
+        self._call("POST", "/link", {"claim": str(claim), "existing": existing, "path": path},
+                   body=b"")
+
     def remove(self, claim, path):
         self._call("POST", "/remove", {"claim": str(claim), "path": path}, body=b"",
                    timeout=600)
@@ -261,20 +265,55 @@ def _running(pod):
         (c.get("state") or {}).get("running") for c in status.get("containerStatuses") or ())
 
 
-def differences(source, target, limit=20):
-    """Where two manifests differ: the first differing entries, in path order."""
+def differences(source, target, limit=20, *, source_links=(), target_links=()):
+    """Where two manifests differ: the first differing entries, in path order,
+    then the first paths whose hard links differ (the other paths naming the
+    same file, on each side)."""
     want, have = {e[0]: e for e in source}, {e[0]: e for e in target}
     out = []
     for path in sorted(set(want) | set(have)):
         if want.get(path) != have.get(path):
             out.append({"path": path, "source": want.get(path), "target": have.get(path)})
             if len(out) >= limit:
+                return out
+    linked = link_groups(source_links), link_groups(target_links)
+    for path in sorted(set(linked[0]) | set(linked[1])):
+        mine, theirs = linked[0].get(path, (path,)), linked[1].get(path, (path,))
+        if mine != theirs:
+            out.append({"path": path, "source_links": list(mine), "target_links": list(theirs)})
+            if len(out) >= limit:
                 break
     return out
 
 
-def manifest_digest(entries):
-    return hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
+def link_groups(links):
+    """Each linked path -> the sorted paths naming its file."""
+    return {path: tuple(group) for group in links for path in group}
+
+
+def subtree_links(links, path):
+    """The hard links of a manifest seen from the subtree at ``path``: each group's
+    paths inside it, where any is (a file inside linked to one outside keeps a
+    group of one, so the link to the outside still shows)."""
+    out = []
+    for group in links:
+        inside = [p for p in group if p == path or p.startswith(path + "/")]
+        if inside:
+            out.append(inside)
+    return out
+
+
+def manifest_digest(entries, links=()):
+    """A tree's digest: its entries, and its hard links where it has any (a tree
+    without links digests as before links were listed)."""
+    body = [entries, list(links)] if links else entries
+    return hashlib.sha256(json.dumps(body, separators=(",", ":")).encode()).hexdigest()
+
+
+def same_tree(want, have):
+    """Whether two manifests describe the same tree: every entry and every link."""
+    return want["entries"] == have["entries"] and \
+        want.get("links", []) == have.get("links", [])
 
 
 class _Changed(Exception):
@@ -345,10 +384,16 @@ def sync_trees(source, target, claims, *, chunk=4 << 20, live=False, streams=4):
     (``streams`` chunks in flight) and checked, modes are set. ``live``: the
     source still serves, so a file that changes during its copy is left for the
     final copy instead of failing.
+
+    Hard links are kept: of each group of paths naming one source file, the
+    first carries the content and the others are linked to it on the target. A
+    target file that shares its file with a path outside its source group is
+    written anew, so a link the source does not have is broken.
     """
     if type(streams) is not int or not 1 <= streams <= 16:
         raise ContractError("Between 1 and 16 copy streams")
-    report = {"copied_files": 0, "copied_bytes": 0, "removed": 0, "changed_later": 0}
+    report = {"copied_files": 0, "copied_bytes": 0, "removed": 0, "linked": 0,
+              "changed_later": 0}
     for claim in range(claims):
         want = source.manifest(claim)
         if want["unsupported"]:
@@ -372,22 +417,43 @@ def sync_trees(source, target, claims, *, chunk=4 << 20, live=False, streams=4):
                 gone.append(path)
         present = {p: e for p, e in present.items()
                    if p not in gone and not any(p.startswith(g + "/") for g in gone)}
-        to_copy = []
+        groups = link_groups(want.get("links", ()))
+        shared = {p: {q for q in g if q in present}
+                  for p, g in link_groups(have.get("links", ())).items() if p in present}
+        to_copy, to_link = [], []
         for path in sorted(wanted):
             entry, current = wanted[path], present.get(path)
+            group = groups.get(path, (path,))
             if entry[1] == "d":
                 if current is None:
                     target.mkdir(claim, path, 0o700)
             elif entry[1] == "l":
                 if current is None or current[6] != entry[6]:
                     target.symlink(claim, path, entry[6])
-            elif current is not None and current[5:] == entry[5:]:
+            elif path != group[0]:  # named by the group's first path's file
+                to_link.append((group[0], path))
+            elif current is not None and current[5:] == entry[5:] and \
+                    shared.get(path, {path}) <= set(group):
                 if current[2] != entry[2]:
                     target.chmod(claim, path, entry[2])
             else:
                 to_copy.append(entry)
         copied, later = _copy_files(source, target, claim, to_copy, chunk=chunk, live=live,
                                     streams=streams)
+        rewritten, held_back = {e[0] for e in copied}, set(later)
+        for first, path in to_link:
+            if first in held_back:
+                continue  # its file is left for the final copy, and so is this name
+            if path in shared and first in shared[path] and first not in rewritten:
+                continue  # already names that file
+            try:
+                target.link(claim, first, path)
+            except KubernetesRequestRefused as refused:
+                if refused.status != 409 or not live:
+                    raise
+                later.append(path)
+                continue
+            report["linked"] += 1
         report["copied_files"] += len(copied)
         report["copied_bytes"] += sum(e[5] for e in copied)
         report["changed_later"] += len(later)
