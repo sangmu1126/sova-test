@@ -56,8 +56,13 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
             env.apply(traffic.pod("orders-source", "source") if traffic else app_pod(env, "orders-source", "source"))
             env.kube("-n", NAMESPACE, "wait", "--for=condition=Ready", "pod/orders-source", "--timeout=60s")
             compiled = h.register_forward()
-            admitted = h.approve_and_admit(compiled, "pod-worker-approval")
-            (env.witness / (h.tenant + ".log")).chmod(0o666)  # synthetic local witness only
+            h.approve(compiled, "pod-worker-approval")
+            # Finish identity/authorization observations before admitting work.
+            # Precreate the synthetic file so an already running worker never
+            # races the host's first append and permission adjustment.
+            witness_path = env.witness / (h.tenant + ".log")
+            witness_path.touch()
+            witness_path.chmod(0o666)
             if traffic:
                 traffic.start()
                 env.phase("continuous HTTPS orders started at fixed Service origin")
@@ -101,6 +106,8 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
                 "print(json.dumps({'status':r.status_code}))")
             assert json.loads(env.exec("worker-b", secret_probe)) == {"status": 403}
             env.report["actual_worker_secret_read_status"] = 403
+            admitted = h.admit("pod-worker-approval")
+            env.phase("work admitted after identity and authorization observations")
 
             def route_started():
                 route = env.object("service", "orders")["spec"]["selector"]
@@ -114,12 +121,12 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
             assert re.fullmatch(r"[0-9a-f]{12}", instance)
             successor = "worker-b" if lost == "worker-a" else "worker-a"
             container = pods[lost]["status"]["containerStatuses"][0]["containerID"].split("://")[1]
-            (env.directory / "owner-before-pause.log").write_text(env.kube("-n", NAMESPACE, "logs", lost))
 
             # A runtime pause freezes the keeper too, but leaves a real Running
             # Pod. It is not proof of death and must not permit recovery.
             command(["docker", "exec", env.node, "ctr", "--namespace", "k8s.io", "tasks", "pause", container])
             paused_at = datetime.now(UTC)
+            (env.directory / "owner-before-pause.log").write_text(env.kube("-n", NAMESPACE, "logs", lost))
             env.phase("owner task paused; Pod is still Running")
             # The target endpoint must be ready before recovery's readback;
             # the old owner remains frozen and cannot finish its own step.
