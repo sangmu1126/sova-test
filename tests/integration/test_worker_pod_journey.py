@@ -19,6 +19,7 @@ from qualification_pods import (NAMESPACE, SERVICE_SOURCE, app_pod, command, own
                                 prepare_workload, wait_for, worker_pod)
 from qualification_service import observe_database_versions, service_journey
 from qualification_diagnostics import capture_state
+from qualification_timing import capture_timing
 from test_order_http_handoff import http_business as http_business  # noqa: F401
 
 from sova.adapters.file_authority_witness import FileAuthorityWitness
@@ -87,6 +88,8 @@ def complete_ready_handoff(h, env, traffic, admitted, pods, service_accounts):
         "historical_orders_preserved": 50, "target_write_confirmed": True,
         "target_load_successes": len(target_load), "late_target_activation_calls": traffic.activation_calls,
         "client_continuity_qualified": False}
+    capture_timing(h, env, admitted, traffic)
+    assert env.report['cutover_timing']['complete'], 'Plan-bound timing observations are incomplete'
     env.phase("normal ready-target handoff completed by actual workers without injected owner loss")
 
 
@@ -170,6 +173,8 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
                 traffic.start()
                 env.phase("continuous HTTPS orders started at fixed Service origin")
             admitted = h.admit("pod-worker-approval")
+            if traffic and traffic.ready_before_switch:
+                resources.callback(capture_timing, h, env, admitted, traffic)
             env.report["owner_fault_injected"] = not (traffic and traffic.ready_before_switch)
             env.phase("work admitted after identity and authorization observations")
             if traffic and traffic.ready_before_switch:
