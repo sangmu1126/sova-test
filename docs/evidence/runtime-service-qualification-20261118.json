@@ -1,0 +1,271 @@
+{
+  "kind": "LocalRuntimeApiVerificationSummary",
+  "version": 1,
+  "date_kst": "2026-11-18",
+  "scope": "MQ-03 CLI API process, HTTPS JWKS and restart persistence; not deployed worker or cloud migration qualification",
+  "branch": "feature/migration-request-qualification",
+  "source": {
+    "working_tree_base_when_tested": "5276245b218ec446464126564f82ed0a03292595",
+    "committed_snapshot_with_identical_measured_sources": "081cda527642b20cce90ea56850f3b2edc03dd0f",
+    "feature_commits": [
+      "d881059c121b030af219296452e13a2d8e3c6569",
+      "081cda527642b20cce90ea56850f3b2edc03dd0f"
+    ],
+    "security_producer": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+    "reused_upstream_test_fix": "b24cd7cbabe537dfaa88509ff1bdcb79055adbbf",
+    "local_cherry_pick": "5276245",
+    "all_measured_source_hashes_match_committed_snapshot": true,
+    "measured_source_sha256": {
+      "examples/qualification/orders-http-postgres-v1.json": "44c0632a619a5b42eae89bf2c2360c9478ce054440b9b2bdb22ab510dd5d71a3",
+      "src/sova/qualification/__init__.py": "03e25cb600cd4fa8c72759464fc049cfe3c3da31f89c7f2ea52f5e384155a22b",
+      "src/sova/qualification/__main__.py": "c2f28ef4820e0ebb296ee474c18aeeab717a04c9c877c4ee6413aaa84e330f5c",
+      "src/sova/qualification/http_orders.py": "761538de2c1645d68cde46d558b2a7d9e477bc7f1af928ff8a60d37b2bbbee35",
+      "src/sova/qualification/postgres_orders.py": "b0c602dc4c9db02e0bd18c080026b38e643b4379e27c5bb353ac33aba3406eda",
+      "src/sova/qualification/requests.py": "1f701150aab8564d6c139c5803a35db478932bb6664f160c0d0f115161d1b612",
+      "src/sova/service/__init__.py": "04ad811567cd672308b8a9a50ab12084ec37843db5b8e299a79f2ded97b5f04e",
+      "src/sova/service/api.py": "dee1d3cbe0804162f733620b2c2363b6386be39a03c825b7b02fe7d2a15587b2",
+      "src/sova/service/auth.py": "42ab347486d57eacfd296cf6a8f9863217769b08cb9c51f18c081ae57d855d85",
+      "src/sova/service/catalog.py": "bdc8e6f7da60224b3683993fc5d1e603de537f96e19b58c202bd38075f7f2573",
+      "src/sova/service/composite_execution.py": "c9bc7a9c4c69db084a0d5b72a656267c459d5554370fe808c96a9b15a1473081",
+      "src/sova/service/config.py": "fad4366e781a9fe83540825cd0b5570d5b0858562bf44e531999b986bf53bdaf",
+      "src/sova/service/control_plane.py": "41193d73e49fdd8f48f5406e7e399c6d971ca2d9f7c2d3cba09bedaebd6877b1",
+      "src/sova/service/kafka_execution.py": "025d015a2f5f6dfbe5ba8cada837e00ff300fb9218482f71d2c9f0f53bc821bd",
+      "src/sova/service/main.py": "6872820457a5e713fb4b42ac1a59a9d2a6aa10edeee6ed5a6797ff13a9770f3c",
+      "src/sova/service/mongodb_execution.py": "2872173c94c0e6edfc528bddbd7f5c2981a30a7df75f15fd6d9d80cad8d67bd0",
+      "src/sova/service/mysql_execution.py": "cc83f2435eca020ad9858a8a88dceeea2ec3d1c1b29343875634e42945b92065",
+      "src/sova/service/postgres_execution.py": "7f03a63a8c8dfb876c56cd834f031c5798295f878c875e02660fbc1a2b6cf51f",
+      "src/sova/service/quiescence.py": "cb6abf2b016654f2ba05941b8b745e60d6409d670a29cf3e0a690dc31e518bf1",
+      "src/sova/service/rabbitmq_execution.py": "8934d85b2889e41c84d3208207da8d9947f14acd5a2310b34bc3198632de2f8c",
+      "src/sova/service/redis_execution.py": "6d710dab2d971bbb61ec89b0476183633032fe4ce93370d60b8d4f976e872c27",
+      "src/sova/service/route_stores.py": "9a0990a2399dca4602dfd902cd5d382012df171ac1082c8d4566073de7ab74f3",
+      "src/sova/service/schema.py": "93f56a980cb7042f1d0031deeea5a766872c68274e5eea85f4a375d600b675c4",
+      "src/sova/service/volume_execution.py": "13d6a94fcec041dbadae519ff772d7909cdfea58dde87320e35379b67cfff0ed",
+      "src/sova/service/worker.py": "3a148ff7ec555bcaa64252747403bd547da4dca734471262691ac279bc796555",
+      "tests/contract_world.py": "27badc1d9a7d3e676a3a2c807055088a89d327392df37dd9abafe0e5ab325b44",
+      "tests/control_plane_support.py": "c0b0a83312067d62c4246a801f00b9bd4b9aa9e408c3c76bf96575d3dba8230c",
+      "tests/integration/test_order_http_handoff.py": "f91e0a00193b7cc230da4e471eb2eb8350db05ef369719bf571b2f753090ae3a",
+      "tests/integration/test_order_service_journey.py": "ea2b6169c5e9080f1a34270c9b46394e1cd098cd1056b34a28bc157ec5597284",
+      "tests/integration/test_service_api.py": "2b6b1068e0e95f4b49a7f8a99b11829cd9246e161a9c8d5383264bcf069f5f2d",
+      "tests/integration/test_service_control_plane.py": "6543ae024334d8ea7bdc7e82c279395974bd71cfffe2be2f7b4e2d2c7949d44b",
+      "tests/integration/test_service_runtime_journey.py": "44d830f388666e004ac582af3ec09c90bcee363bef9c5d47afbcd28e0989978a",
+      "tests/integration/test_service_worker.py": "decd6173b03c4ca1558305c1dec3d83e4c6537e7c37abd3f21951ed518b65752",
+      "tests/qualification_orders.py": "9963519c64a422eb61efabbdfc260f918e6a52f5e6f8972fa9c0ce0db72a18f2",
+      "tests/qualification_postgres.py": "3aa7b8699c1fb115985381d2aad16baaaf66699a7179da463dfb89e339400a97",
+      "tests/qualification_runtime.py": "37219730a4fd738526451928a527d2a02001f133c251a52a1d54e102e6dbe007",
+      "tests/qualification_service.py": "02cf881a927fbec75133bb23215e248e4efe58d7502a3861cdae157ee95cf41f",
+      "tests/unit/test_request_qualification.py": "bda58a6c8ca221a02a2fbca97ef7c6f4d11962148f0bf46d2b8a5554b50752bb"
+    }
+  },
+  "tests": {
+    "tests": 81,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "request_journal_unit": 56,
+    "mq02_http_integration": 3,
+    "existing_service_api_and_control_plane": 9,
+    "service_journey": 4,
+    "existing_worker": 6,
+    "new_runtime_api_integration": 3
+  },
+  "environment": {
+    "image_id": "sha256:0d938e975177bef9f1f61f3f9dbcf2e0aa0a139568f66d3415ed8892eb97f6ac",
+    "postgres_version": "17.12 (Debian 17.12-1.pgdg13+1)",
+    "architecture": "arm64",
+    "topology": "one run-owned PostgreSQL server, multiple logical databases",
+    "api": "actual python -m sova.service.main serve-api --host 127.0.0.1 subprocesses; loopback HTTP",
+    "jwks": "run-owned certificate-verified HTTPS server with generated fixture RSA keys",
+    "real_enterprise_idp": false,
+    "database_tls": "verify-full and run-owned shared fixture client certificate",
+    "actual_profile_engine_versions_bound": true,
+    "registry_and_qualifications_otherwise_synthetic": true,
+    "worker": "existing HandoffWorker.drive in pytest, not deployed daemon",
+    "route": "fixture in-memory Route",
+    "witness": "shared local file, not independent WORM",
+    "shared_environment_used": false,
+    "real_cloud_used": false,
+    "owned_container_removed": true,
+    "owned_network_removed": true,
+    "private_api_log_files": 7
+  },
+  "clock_checks": {
+    "passed": true,
+    "samples": 211,
+    "max_allowed_skew_seconds": 1,
+    "max_observed_skew_lower_bound_seconds": 0.0,
+    "clock_or_product_validity_rules_changed": false
+  },
+  "cases": {
+    "service-handoff-and-failback": {
+      "api_starts": 3,
+      "api_exits": [
+        {
+          "application_shutdown_complete": true,
+          "exit_code": -15,
+          "forced_kill": false,
+          "server_process_finished": true
+        },
+        {
+          "application_shutdown_complete": true,
+          "exit_code": -15,
+          "forced_kill": false,
+          "server_process_finished": true
+        },
+        {
+          "application_shutdown_complete": true,
+          "exit_code": -15,
+          "forced_kill": false,
+          "server_process_finished": true
+        }
+      ],
+      "all_api_processes_stopped": true,
+      "jwks_https_gets": 3,
+      "database_profile_versions": {
+        "aws-source": "17.12",
+        "onprem-target": "17.12"
+      },
+      "control_plane_http_status_counts": {
+        "200": 35,
+        "201": 11,
+        "409": 1,
+        "404": 1,
+        "422": 1
+      },
+      "counts": {
+        "confirmed_requests": 4,
+        "http_error_attempts": 1,
+        "logical_requests": 4,
+        "not_committed_requests": 0,
+        "submission_attempts": 5,
+        "successful_submission_responses": 4,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "unresolved_commits": 0
+      },
+      "data_integrity": "SATISFIED",
+      "service_continuity": "NOT_QUALIFIED",
+      "request_resolutions": [
+        "CONFIRMED",
+        "CONFIRMED",
+        "CONFIRMED",
+        "CONFIRMED"
+      ],
+      "forward_stopped_state": "ROUTE_CONFIRMED",
+      "return_open_epoch": 3,
+      "returned_state": "HANDOFF_COMPLETE",
+      "returned_epoch": 4,
+      "restarted_after_each_approval_before_admission": true,
+      "worker_deployed": false
+    },
+    "untrusted-jwks-ca": {
+      "api_starts": 2,
+      "api_exits": [
+        {
+          "application_shutdown_complete": true,
+          "exit_code": -15,
+          "forced_kill": false,
+          "server_process_finished": true
+        },
+        {
+          "application_shutdown_complete": true,
+          "exit_code": -15,
+          "forced_kill": false,
+          "server_process_finished": true
+        }
+      ],
+      "all_api_processes_stopped": true,
+      "jwks_https_gets": 1,
+      "database_profile_versions": {
+        "aws-source": "17.12",
+        "onprem-target": "17.12"
+      },
+      "control_plane_http_status_counts": {
+        "503": 1,
+        "404": 1
+      },
+      "denied_status": 503,
+      "authenticated_after_fix_status": 404
+    },
+    "untrusted-database-ca": {
+      "api_starts": 2,
+      "api_exits": [
+        {
+          "application_shutdown_complete": true,
+          "exit_code": -15,
+          "forced_kill": false,
+          "server_process_finished": true
+        },
+        {
+          "application_shutdown_complete": true,
+          "exit_code": -15,
+          "forced_kill": false,
+          "server_process_finished": true
+        }
+      ],
+      "all_api_processes_stopped": true,
+      "jwks_https_gets": 0,
+      "database_profile_versions": {
+        "aws-source": "17.12",
+        "onprem-target": "17.12"
+      },
+      "control_plane_http_status_counts": {},
+      "readiness_before": 503,
+      "readiness_after": 200
+    }
+  },
+  "previous_unsuccessful_run": {
+    "run": "run-01",
+    "tests": 81,
+    "failures": 11,
+    "errors": 0,
+    "clock_checks_passed": true,
+    "max_clock_skew_lower_bound_seconds": 0.016774,
+    "causes": [
+      "Existing 5ms test watermark assumption failed with about 17ms host/DB skew; reused upstream 1-second fixture fix.",
+      "Runtime test incorrectly required exit 0; actual CLI drained requests and then re-raised SIGTERM. Test now requires signal/exit status plus shutdown log markers and no SIGKILL."
+    ],
+    "owned_resources_removed": true,
+    "run_sha256": "eb50a872d3de1669956c3853c6342dc11a67f06b9c3cffc33b64ab1266f05fd5",
+    "junit_sha256": "6a730ee54416cfd44fda33d94c8fe7536137900e544dc770f43fbfd0fe7e5a47"
+  },
+  "raw_artifacts_sha256": {
+    "commit-response-lost.json": "acf265879a8d2c2bb2a85bf243e24704afb1d5a869ae2f4e24d029d3bda7a968",
+    "failback-authorization-denials.json": "135b05da724942145ad50e5e4ce9cd84de4151b691208f33128325fc4d5edc70",
+    "fractional-cent-corruption.json": "8d816a4f6d51c05c7dee3eb6dd5cfdc16ea7c51577df0a1d75377e66014fc265",
+    "handoff-and-retry.json": "efb042fc973fa0ed8c34e594c6a0ed1de03b8792387bf0f75fa392b7bd7d2eda",
+    "lookup-and-idempotent-retry.json": "613fc921f2032179f7b26a9bfbd13cde3fe3dfc99817625c7abb66761b738932",
+    "missing-committed-order.json": "98e1815eeb7539a72bdd4cbfec5a2aa746f7b9e0c8ed88acc6584b6ccbdf2d43",
+    "results.xml": "a4bb1c4ab6c12679aa3a3f9f6f1f848555f623a28dbff554841df368dc7685d3",
+    "run.json": "640d7bf932d7209fbf264ee9323427d6331ae14f510ff4f281cb6652975a1edf",
+    "runtime-cleanup-service-handoff-and-failback.json": "02ac15d7a966963186d6d60310e33310f55870a66f4cbd30c74df3e58393f96f",
+    "runtime-cleanup-untrusted-database-ca.json": "5259ef2496976ff4983c6ceb1ce008638f7b42e3d3b5093591666dd5b17c9c98",
+    "runtime-cleanup-untrusted-jwks-ca.json": "ebfe1867fd340ff82bc40cf16347a78878e6e8e70d3b43b5bee11300fc12338c",
+    "runtime-service-handoff-and-failback-api-1.log": "8308385ee9586e11bf6e9080eb7628d152fc1de45e65163720ae2bed294b935d",
+    "runtime-service-handoff-and-failback-api-2.log": "cd8577694617de464d2db2a2ae5606f6d8d61fd64c6364893b85a33f0deddcfe",
+    "runtime-service-handoff-and-failback-api-3.log": "03cf180740f097aa6e4f598cc9b3a1e70733f08dcb72d209443a6bdaf06a0f13",
+    "runtime-service-handoff-and-failback.json": "de41f301905ef0688acf43cd10b0198a695e0c3fc0d8b80ff41351a361024d2f",
+    "runtime-untrusted-database-ca-api-1.log": "0fddfc71822151cca773399c37e182f66b5b13fc2d27c4a68593f28ca00c080a",
+    "runtime-untrusted-database-ca-api-2.log": "fcf164ced1d5646b8cf10cd7241e4582781b44cd84253ccd4ece2ade54183683",
+    "runtime-untrusted-database-ca.json": "eb3fc5230037ff4f372f851eb7e27de2909d0defa9b31818b8b67bf52c9aa55e",
+    "runtime-untrusted-jwks-ca-api-1.log": "70ae1bf25b6323d427e795310e30403a71f9c91ef60968f63ec62d0acb989c25",
+    "runtime-untrusted-jwks-ca-api-2.log": "497acc2697464f571d2888d7921a57982e1a06873f2daf838bd7701b6538a0e6",
+    "runtime-untrusted-jwks-ca.json": "39de75012f2c5006343d3cce3c808ee64feccaf4377cd411dc777c9ec8dfc838",
+    "service-handoff-and-failback.json": "dcd29dfeb0778f86cff7ed2a804bef370affd5a725adcb00cb8dfb32e3b83000",
+    "stale-return-input-denied.json": "42a97ebf3dd1c82d5248d3a94d5b05e7dc08852ec03e2a71125892b56f58b096",
+    "terminal-handoff-remains-terminal.json": "a26245a7e084f2cb27ec5b72cf1cc9ff569cc6b0e7bc89fa8f914a4ca53a4849",
+    "unauthorized-no-order.json": "5f77570d68db67c55e14abb41737f4f2dee7c9b0e4b38ea2451a3a40c55c86d1"
+  },
+  "qualification_issued": false,
+  "authorizes_execution": false,
+  "signed_operational_evidence": false,
+  "not_qualified": [
+    "deployed worker or Kubernetes rollout",
+    "AWS to independent Linux VM",
+    "enterprise login/MFA and key revocation",
+    "HTTPS at the API ingress",
+    "actual inventory, release image and qualified adapter manifest",
+    "real Edge and production network policy",
+    "independent witness and audit retention",
+    "load or continuity SLO"
+  ]
+}

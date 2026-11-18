@@ -2,6 +2,8 @@
 
 2026-11-18 · 개인 `feature/migration-request-qualification` 브랜치. MQ-03의 구성 요소 연결이며, 배포된 운영 경로 전체의 인수 완료는 아니다.
 
+이 문서의 78개 실행은 `13f7324` 기준 기록이다. 후속 [서비스 CLI·HTTPS JWKS·재시작 검증](migration-runtime-qualification.md)은 별도 실행·소스 지문으로 관리한다.
+
 ## 연결한 범위
 
 [MQ-02](migration-http-qualification.md)의 HTTP 주문·독립 요청 원장을 기존 서비스 API와 `HandoffWorker`에 연결한다. 새 복제 엔진이나 승인 체계를 만들지 않는다. 계획 컴파일러, 원장, 실행 소유권, 증거 검증기, PostgreSQL 어댑터와 독립 probe를 재사용한다.
