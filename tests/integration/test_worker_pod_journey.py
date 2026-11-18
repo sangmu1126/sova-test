@@ -6,6 +6,7 @@ network/WORM-store qualification is claimed.
 """
 
 from dataclasses import replace
+from contextlib import ExitStack
 from datetime import UTC, datetime
 import json
 import os
@@ -38,12 +39,11 @@ def sql_state(h):
     return row, recovery, effects
 
 
-def test_fixed_worker_image_reconciles_only_after_lease_expiry_and_real_pod_stop(
-        postgres_database, http_business, tmp_path):
+def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_factory=None):
     if not os.environ.get("SOVA_TEST_QUALIFICATION_RUN"):
         pytest.skip("Requires the dedicated --suite pods runner")
     artifacts = Path(os.environ["SOVA_TEST_QUALIFICATION_ARTIFACTS"])
-    with owned_cluster(artifacts / "pods") as env:
+    with owned_cluster(artifacts / "pods") as env, ExitStack() as resources:
         with service_journey(postgres_database, http_business, env.witness) as h:
             # Both actual CLI workers and the host API use this fixture witness.
             h.settings = replace(h.settings, witness_for=lambda tenant: FileAuthorityWitness(
@@ -52,11 +52,15 @@ def test_fixed_worker_image_reconciles_only_after_lease_expiry_and_real_pod_stop
             wait_for(lambda: env.kube("-n", NAMESPACE, "get", "configmap", "kube-root-ca.crt",
                                       "--ignore-not-found", "-o", "json"), 30, "namespace CA")
             sides = prepare_workload(env, h, *postgres_database)
-            env.apply(app_pod(env, "orders-source", "source"))
+            traffic = resources.enter_context(traffic_factory(env, h)) if traffic_factory else None
+            env.apply(traffic.pod("orders-source", "source") if traffic else app_pod(env, "orders-source", "source"))
             env.kube("-n", NAMESPACE, "wait", "--for=condition=Ready", "pod/orders-source", "--timeout=60s")
             compiled = h.register_forward()
             admitted = h.approve_and_admit(compiled, "pod-worker-approval")
             (env.witness / (h.tenant + ".log")).chmod(0o666)  # synthetic local witness only
+            if traffic:
+                traffic.start()
+                env.phase("continuous HTTPS orders started at fixed Service origin")
             env.apply(worker_pod(env, "worker-a"), worker_pod(env, "worker-b"))
             for name in ("worker-a", "worker-b"):
                 env.kube("-n", NAMESPACE, "wait", "--for=condition=Ready", "pod/" + name, "--timeout=90s")
@@ -119,7 +123,7 @@ def test_fixed_worker_image_reconciles_only_after_lease_expiry_and_real_pod_stop
             env.phase("owner task paused; Pod is still Running")
             # The target endpoint must be ready before recovery's readback;
             # the old owner remains frozen and cannot finish its own step.
-            env.apply(app_pod(env, "orders-target", "target"))
+            env.apply(traffic.pod("orders-target", "target") if traffic else app_pod(env, "orders-target", "target"))
             env.kube("-n", NAMESPACE, "wait", "--for=condition=Ready", "pod/orders-target", "--timeout=60s")
             wait_for(lambda: sql_state(h)[0][1] < sql_state(h)[0][2], 20, "real database lease expiry")
             time.sleep(2)  # several real successor polling intervals
@@ -144,7 +148,7 @@ def test_fixed_worker_image_reconciles_only_after_lease_expiry_and_real_pod_stop
             # never a fabricated False/dead-Pod observation.
             observer = ("import json; from sova.service.quiescence import in_cluster_pod_state; "
                         f"print(json.dumps({{'state':in_cluster_pod_state({NAMESPACE!r})({lost!r},{uid!r})}}))")
-            denied = json.loads(env.exec("orders-source", observer))
+            denied = json.loads(env.exec(traffic.observer_pod if traffic else "orders-source", observer))
             assert denied == {"state": None}
             denied_events = [e for e in env.audit_events() if e.get("stage") == "ResponseComplete"
                              and e.get("responseStatus", {}).get("code") == 403
@@ -188,12 +192,23 @@ def test_fixed_worker_image_reconciles_only_after_lease_expiry_and_real_pod_stop
             assert all(e["user"]["uid"] == service_accounts["worker"]
                        and e["user"]["extra"]["authentication.kubernetes.io/pod-uid"]
                            == [pods[successor]["metadata"]["uid"]] for e in gone)
+            if traffic:
+                env.report["http_business"] = traffic.finish()
+                confirmed = env.report["http_business"]["reconciliation"]["counts"]["confirmed_requests"]
             with h.business["connect_as"](h.business["names"]["tgt"], h.business["app"]) as conn:
-                assert conn.execute("SELECT count(*) FROM orders").fetchone()[0] == 50
-                conn.execute("INSERT INTO orders VALUES (9001,'pod-after','pod-after',1)")
+                assert conn.execute("SELECT count(*) FROM orders WHERE customer LIKE 'customer-%'").fetchone()[0] == 50
+                if traffic:
+                    assert conn.execute("SELECT count(*) FROM orders").fetchone()[0] == 50 + confirmed
+                else:
+                    conn.execute("INSERT INTO orders VALUES (9001,'pod-after','pod-after',1)")
             env.report["handoff"] = {"state": status["state"], "original_owner": owner,
                 "recovery_owner": recovered[0][0], "recovery_at": recovered[0][1].isoformat(),
                 "route_patch_requests": len(patches), "pod_absence_audit_observations": len(gone),
                 "effect_status": effects[0][0], "historical_orders_preserved": 50, "target_write_confirmed": True,
                 "client_continuity_qualified": False}
             env.phase("actual successor completed handoff without reissuing route mutation")
+
+
+def test_fixed_worker_image_reconciles_only_after_lease_expiry_and_real_pod_stop(
+        postgres_database, http_business, tmp_path):
+    worker_pod_journey(postgres_database, http_business, tmp_path)

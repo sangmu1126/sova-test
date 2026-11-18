@@ -128,7 +128,7 @@ def main():
     parser.add_argument("--image", required=True, help="Full cached sha256 image ID; no tag or automatic pull")
     parser.add_argument("--security-source", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
-    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods"), default="requests",
+    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http"), default="requests",
                         help="MQ-02, service, runtime API, or worker process/fault qualification checks")
     args = parser.parse_args()
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", args.image):
@@ -138,7 +138,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     args.artifacts.mkdir(parents=True, mode=0o700, exist_ok=False)
     run = {"requests": "mq02-", "service": "mq03-", "runtime": "mq03-runtime-",
-           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-"}[args.suite] + uuid4().hex
+           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-"}[args.suite] + uuid4().hex
     container, network = "sova-" + run, "sova-network-" + run
     report = {"run_id": run, "image_id": args.image, "shared_environment_used": False,
               "qualification_issued": False, "network_created": False, "container_created": False,
@@ -184,13 +184,17 @@ def main():
             "test_owner_ids_that_name_no_pod_are_never_proved_gone"))
         tests.extend(startup_tests)
         measured_sources.extend(root / test.split("::", 1)[0] for test in startup_tests)
-    if args.suite == "pods":
+    if args.suite in ("pods", "pod-http"):
         tests = ["tests/integration/test_worker_pod_journey.py"]
         measured_sources.extend([root / "tests/qualification_pods.py", root / tests[0],
                                  root / "tests/qualification_service.py", root / "tests/contract_world.py",
                                  root / "tests/control_plane_support.py", root / "tests/postgres_fixtures.py",
                                  root / "tests/postgres_business.py", root / "tests/handoff_drive.py",
                                  *sorted((root / "src/sova/service").glob("*.py"))])
+        if args.suite == "pod-http":
+            tests = ["tests/integration/test_worker_pod_http_journey.py"]
+            measured_sources.extend([root / tests[0], root / "tests/qualification_pod_http.py",
+                                     root / "tests/qualification_order_pod.py", root / "tests/qualification_load_client.py"])
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}
@@ -264,7 +268,7 @@ def main():
             env.update(PYTHONPATH=str(root / "src") + os.pathsep + str(args.security_source.resolve()),
                        AWS_EC2_METADATA_DISABLED="true", SOVA_TEST_POSTGRES_DSN=dsn,
                        SOVA_TEST_QUALIFICATION_ARTIFACTS=str(args.artifacts.resolve()))
-            if args.suite == "pods":
+            if args.suite in ("pods", "pod-http"):
                 env.update(SOVA_TEST_QUALIFICATION_RUN=run,
                            SOVA_TEST_QUALIFICATION_DOCKER_NETWORK=network,
                            SOVA_TEST_QUALIFICATION_PG_CONTAINER=container,
@@ -273,7 +277,7 @@ def main():
             try:
                 clocks.start()
                 code = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
-                                       *(["-s"] if args.suite == "pods" else []), *tests,
+                                       *(["-s"] if args.suite in ("pods", "pod-http") else []), *tests,
                                        "--junitxml=" + str(args.artifacts.resolve() / "results.xml")],
                                       cwd=root, env=env, check=False).returncode
                 report["pytest_exit_code"] = code
