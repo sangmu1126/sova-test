@@ -129,7 +129,10 @@ EOF
     wait_sql postgres-tls
     ;;
   gateway)
-    kc() { kubectl --kubeconfig "$KCFG" --context "kind-$CLUSTER" "$@"; }
+    # SOVA_GATEWAY_KUBECONFIG / SOVA_GATEWAY_CONTEXT: install the same pinned
+    # release on another test cluster (a cloud run's managed one).
+    kc() { kubectl --kubeconfig "${SOVA_GATEWAY_KUBECONFIG:-$KCFG}" \
+      --context "${SOVA_GATEWAY_CONTEXT:-kind-$CLUSTER}" "$@"; }
     manifest="$STATE/gateway/envoy-gateway-$EG_VERSION.yaml"
     if [ ! -s "$manifest" ]; then
       mkdir -p "$STATE/gateway"
