@@ -55,7 +55,12 @@ def test_the_jwks_is_fetched_over_https_except_for_a_loopback_test_issuer(tmp_pa
             tmp_path, SOVA_OIDC_JWKS_URL="http://idp.example/certs"))
     ServiceConfig.from_env(service_env(
         tmp_path, SOVA_OIDC_ISSUER="http://127.0.0.1:58080/realms/sova",
-        SOVA_OIDC_JWKS_URL="http://keycloak.test-env.svc:8080/realms/sova/certs"))
+        SOVA_OIDC_JWKS_URL="http://127.0.0.1:58080/realms/sova/certs"))
+    # A loopback issuer never exempts a different network host from TLS.
+    with pytest.raises(ContractError):
+        ServiceConfig.from_env(service_env(
+            tmp_path, SOVA_OIDC_ISSUER="http://127.0.0.1:58080/realms/sova",
+            SOVA_OIDC_JWKS_URL="http://keycloak.test-env.svc:8080/realms/sova/certs"))
 
 
 def test_a_workers_owner_id_names_its_pod_and_is_new_at_every_start(tmp_path):
