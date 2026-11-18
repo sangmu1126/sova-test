@@ -1227,6 +1227,50 @@ RDS에서도 논리 복제(snapshot-cdc)를 실측했다. 실행 전용 매개�
 
 클러스터는 시험을 마친 뒤 `kubernetes-down`으로 클러스터만 지웠다. DB는 임대 끝까지 둔다.
 
+### 볼륨·세션·Gateway·port-forward (2026-11-18)
+
+같은 스위치로 EKS 1.37(t3.medium 노드 1대, EBS)과 GKE Autopilot(Dataplane V2, PD)을 켜고, 로컬 kind에서 돌던 시험 39건을 그대로 겨눴다. 대상은 볼륨 인계, probe, control plane 전체 흐름(offline-copy·snapshot-cdc·바쁜 게시판), port-forward 전송, 애플리케이션(게시판 + 게임 서버), 세션, Gateway다. control plane의 DB는 로컬 시험 환경 것이다. Envoy Gateway는 kind와 같은 고정 판이고, GKE에서는 클러스터가 관리하는 Gateway API CRD를 그대로 썼다.
+
+| 대상 | EKS | GKE Autopilot |
+|---|---|---|
+| 39건 | **39 통과** | **38 통과**, 1 실패(Service 경로의 세션 drain, 아래 #37) |
+| EKS → GKE 볼륨 인계(클라우드 사이, 이 기기를 거침) | 기능 2건 통과. 64MiB 복사 46.3초(Pod 프록시, 1.4MiB/s), 62.5초(port-forward, 1.0MiB/s), 각 1회 | |
+
+처음 실행에서 드러난 것과 고친 것은 다음과 같다. 모두 kind에서는 보이지 않았다.
+
+- **EKS가 볼륨을 만들지 못함(환경).** EBS CSI 드라이버가 없었다. 드라이버를 넣자 컨트롤러가 자격을 얻지 못하고 재시작을 반복했다. 노드의 IMDSv2가 한 홉만 답해 Pod가 노드 역할을 쓸 수 없기 때문이다. 드라이버에 전용 역할을 주고 EKS Pod Identity로 서비스 계정에만 연결했다. 노드 역할에는 EBS 권한을 주지 않는다. 연결 직후 만든 Pod에는 자격이 주입되지 않았으므로(최종 일관성), 자격이 실제로 들어갈 때까지 재시작한다.
+- **시험 디스크가 남을 수 있음(환경).** 클러스터를 지워도 볼륨이 쓰던 EBS·PD 디스크는 남는다. 두 클러스터에 실행 전용 저장소 클래스(`sova-test-<run>`)를 두어 모든 디스크에 실행 태그·라벨을 붙이고, `down`이 그것으로 찾아 지운다.
+- **Gateway API CRD 충돌(환경).** GKE는 Gateway API CRD를 직접 관리하고 표준 채널만 허용한다. 릴리스의 Gateway API CRD 10개는 빼고 나머지만 설치하는 옵션을 두었다.
+- **시험 앱이 블록 볼륨에 쓰지 못함(시험, T14).** 새 EBS·PD 파일시스템의 최상위는 root 소유다. 비 root로 도는 게시판이 바로 실패했다. kind의 local-path 디렉터리는 누구나 쓸 수 있어 가려져 있었다. 블록 볼륨을 쓰는 운영자처럼 앱에 `fsGroup`을, adapter와 agent에 `fs_group`을 준다. 목적지 쓰기 agent와 복원 훈련도 새 디스크에 쓰기 때문이다.
+- **Autopilot이 agent를 거부함(제품, #35).** RWO 디스크를 쓰는 노드에 agent를 붙이려고 호스트 이름 노드 affinity를 썼다. 그런데 GKE Warden이 이를 거부해 모든 인계가 첫 agent에서 멈췄다(400). 거부 본문을 따로 받아 원인을 확인했다. 이제 디스크를 쓰는 Pod의 라벨 전체로 Pod affinity를 건다(`topologyKey: kubernetes.io/hostname`). 이 방식은 Autopilot이 받아들이고 모든 클러스터가 지킨다.
+- **인터넷 너머 API 서버로 가는 연결이 가끔 끊김(제품, #36).** TLS 핸드셰이크 시간 초과, 응답 없는 연결 종료가 단계나 probe를 바로 끝냈다. 이제 GET은 연결 자체가 실패하면 시도마다 새 마감으로 최대 세 번 시도한다. 쓰기는 반복하지 않는다(효과를 알 수 없으므로 호출자가 readback으로 확인).
+- **계획이 인계 도중 만료됨(시험, T15).** 시험 세계의 증거 유효기간은 4분이었고, 시험이 시작된 시각부터 셌다. 관리형 클러스터에서는 게시판·게임 서버를 세우는 데만 몇 분이 걸린다. 그래서 fixture가 준비된 시각부터 세고, control plane 전체 흐름 시험은 20분을 준다. 기본값(4분)은 그대로다.
+- **세션 drain이 Dataplane V2에서 열린 세션을 끊음(제품, #37, 미해결).** Service 경로의 멈춤은 selector를 Pod가 없는 쪽으로 옮긴다. 이미 맺은 연결은 kube-proxy(iptables)의 conntrack으로 계속 흐른다고 보고 설계했다. GKE Dataplane V2(eBPF)에서 실측하니 그렇지 않았다.
+  - 실험(일회용 시험): 열린 경기 3개가 selector를 옮긴 지 7초 만에 모두 클라이언트 쪽 시간 초과로 끝났다(`completed: false`).
+  - 서버 쪽에는 그 세 연결이 2분 넘게 ESTABLISHED로 남았다. 종료 신호도 오지 않았다.
+  - adapter는 drain을 확정하지 않고 보류했다(안전 쪽). 하지만 정지 단계가 오히려 열린 세션을 끊었다.
+  - EKS(kube-proxy)에서는 통과했다. 같은 GKE에서 Gateway(Envoy) 경로의 세션 시험도 통과했다. Envoy는 Service 가상 IP가 아니라 Pod 주소로 직접 연결한다.
+  - 고칠 방법은 아래 남은 일로 둔다.
+
+**쓰기 정지(실측, 1회씩).** 관리형 클러스터에서는 kind보다 몇 배 길다.
+
+| 단위 | kind | EKS | GKE Autopilot |
+|---|---|---|---|
+| 볼륨, offline-copy | 21.6~22.3초 | 83.0초 | 91.7초 |
+| 볼륨, snapshot-cdc | 14.2~15.0초 | 76.1초 | 74.7초 |
+| 애플리케이션, offline-copy | 27.8~29.2초 | 100.5초 | 104.5초 |
+| 애플리케이션, snapshot-cdc | 19.1~20.0초 | 94.1초 | 56.5~71.5초 |
+
+정지 구간의 probe와 readback마다 agent Pod를 따로 띄운다. kind에서는 한 번에 약 0.9초인데, 관리형 클러스터에서는 스케줄링·네트워크 연결·디스크 마운트와 이 기기와의 왕복이 더해져 몇 초씩 걸린다. 이 결과는 probe끼리 agent를 공유하는 설계(앞서 독립성 때문에 미룬 것)의 가치를 키운다.
+
+**남은 일.**
+- #37: 세션 drain을 eBPF 데이터플레인에서도 맞게 하는 방법. 후보는 세 가지다.
+  - 열린 연결의 재전송 증가로 "흐름이 끊겼다"를 커널 수준에서 감지하고 바로 경로를 되돌린다.
+  - 운영자가 데이터플레인을 등록한다.
+  - 이런 클러스터에서는 Gateway 경로만 쓴다.
+- 관리형 클러스터의 쓰기 정지를 줄이는 agent 공유.
+- t3.medium 노드 한 대는 Pod 17개가 한도라 EKS에서는 시험을 병렬로 돌리지 않았다.
+
 ## 부하 분산기 수준 트래픽 전환 (ALB·URL map, 2026-11-15)
 
 DNS 수준 전환(Route 53·Cloud DNS)에 더해, 데이터 adapter의 경로 단계(`commit_route`)가 쓰는 경로 저장소를 실제 부하 분산기로 두고 측정했다. 두 부하 분산기 모두 이 기기 주소만 받는다. AWS는 보안 그룹으로, GCP는 Cloud Armor 정책으로 막는다. 각 쪽은 실행 고유 표식을 돌려주는 작은 서버리스 백엔드다. AWS는 대상 그룹 뒤 Lambda, GCP는 서버리스 NEG 뒤 Cloud Run(부하 분산기 경유만 허용)이다.
@@ -1379,8 +1423,8 @@ PostgreSQL·S3 말고도 세 저장소의 참조 adapter를 만들었다. 세 ad
 - 하드 링크는 보존하지 않는다(2026-11-18 코드 확인). 링크 수가 2 이상인 파일은 거부되지 않고, 경로마다 따로 복사된다. 그래서 목적지에서는 링크 관계가 사라진다. 매니페스트는 경로와 내용만 비교하므로 이 차이를 보지 못한다. 하드 링크에 기대는 앱(로컬 clone한 git 저장소, pnpm 저장소 등)은 아직 대상이 아니다. 보존하려면 agent가 링크 묶음을 매니페스트에 싣고 목적지에서 링크로 만들어야 한다. 서비스 중 복사에서는 배달 중 잠깐 링크를 거는 앱(Maildir 등)도 있으므로 단순 거부는 맞지 않는다.
 - ReadWriteOncePod 볼륨은 start_sync를 쓸 수 없다.
 - ~~API 서버와 agent Pod 사이는 평문이다~~ → 기본 전송(Pod 프록시)은 여전히 평문이다. `agent_transport: port-forward`를 쓰면 데이터가 TLS 안에서만 흐른다(2026-11-18, 아래).
-- 세션 drain은 이미 맺어진 연결이 유지되는 것에 기댄다. kube-proxy(iptables)와 Envoy Gateway에서 확인했고, 다른 Gateway 구현체·서비스 메시에서는 따로 확인해야 한다.
-- 관리형 클러스터에서는 실측하지 않았다. 클러스터 사이 복사는 아래처럼 로컬 kind 두 대로 실측했다.
+- 세션 drain은 이미 맺어진 연결이 유지되는 것에 기댄다. kube-proxy(iptables, kind·EKS)와 Envoy Gateway(kind·GKE)에서 확인했다. **GKE Dataplane V2(eBPF)에서는 Service 경로의 멈춤이 열린 세션을 끊는다**(실측, 위 관리형 절 #37). 이런 클러스터에서는 Gateway 경로를 쓴다. 다른 Gateway 구현체·서비스 메시에서는 따로 확인해야 한다.
+- ~~관리형 클러스터에서는 실측하지 않았다~~ → EKS와 GKE Autopilot에서 실측했다(2026-11-18, 위 관리형 절). 클라우드 사이(EKS → GKE) 인계도 했다.
 - 진입점은 Service selector와 Gateway API(아래 절)다. Ingress는 다루지 않는다.
 
 **쓰기 정지의 구성(실측, 2026-11-17).** 워커 수준에서 단계별로 재 보면, 볼륨 단위의 정지 구간(약 27초)은 대부분 Pod 수명 주기다.
@@ -1496,7 +1540,7 @@ Kubernetes 진입점의 표준은 Ingress에서 Gateway API로 옮겨 갔다(ing
 
 **한계.**
 
-- Envoy Gateway 하나로만 시험했다. 다른 구현체(Istio, Cilium, NGINX Gateway Fabric 등)의 수락 보고 방식은 같은 표준이지만 실측하지 않았다.
+- Envoy Gateway 하나로만 시험했다. kind와 GKE Autopilot(클러스터가 관리하는 Gateway API CRD)에서 통과했다. 다른 구현체(Istio, Cilium, NGINX Gateway Fabric, GKE 자체 Gateway 등)의 수락 보고 방식은 같은 표준이지만 실측하지 않았다.
 - Ingress(구 API)는 다루지 않는다.
 
 ## probe 관측값 보존 (2026-11-17)
@@ -1964,7 +2008,7 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 | MySQL 변경 캡처(서버 복제, snapshot-cdc) | 모의 시험 통과 | 시험용 MySQL 8.4.13 두 대. 적합성 키트, 정지 구간 쓰기 0행(offline 20,158행), control plane 전체 흐름. 잠금 없는 스냅샷, GTID 모드가 다른 두 서버 |
 | Kafka API 토픽 인계 adapter | 모의 시험 통과 | 로컬 Redpanda(SASL/SCRAM, ACL). 한 브로커의 두 토픽과, 서로 다른 kind 클러스터의 두 브로커 사이. control plane 전체 흐름 연결(2026-11-17). TLS 리스너만 연 Redpanda에서 검증된 TLS로 전체 흐름. snapshot-cdc 최종 단계는 sync 이후 레코드만 씀(정지 중 오프셋 11, offline 636). 압축 토픽은 키별 최신 값으로 비교. 복사 뒤 원본의 시간 보존이 지운 레코드는 근거를 확인하고 빼서 비교 |
 | RabbitMQ 큐 인계 adapter | 모의 시험 통과 | 로컬 RabbitMQ 4.1.8. 한 브로커의 두 vhost와, 서로 다른 kind 클러스터의 두 브로커 사이. 개수 비교만(메시지 내용은 읽으면 바뀜). control plane 전체 흐름 연결(2026-11-17). TLS만 받는 브로커에서 AMQP·관리 API 모두 검증된 TLS로 전체 흐름 |
-| Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). agent 전송 port-forward 선택 가능(처리량 프록시와 같음). snapshot-cdc 템플릿으로 쓰기 정지 14.2~15.0초. 관리형 미실측 |
+| Kubernetes 볼륨(파일 상태) 인계 adapter·probe | 모의 시험 통과 | 로컬 kind, SQLite·업로드 시험 앱. 적합성 키트, probe 실패 시험, control plane 전체 흐름, kind 두 대 사이 인계(128MiB 26.6~28.4MiB/s). agent 전송 port-forward 선택 가능(처리량 프록시와 같음). snapshot-cdc 템플릿으로 쓰기 정지 14.2~15.0초. EKS·GKE Autopilot 실측(볼륨 시험 전부 통과, 쓰기 정지 75~92초), EKS → GKE 인계 |
 | 메모리 세션 drain adapter | 모의 시험 통과 | 로컬 kind, WebSocket 시험 서버. 커널 TCP 테이블로 세션 계수, drain 상한 hold·terminate |
 | 애플리케이션 한 단위(볼륨 + 세션) | 모의 시험 통과 | 로컬 kind, 게시판 + 게임 서버를 control plane 전체 흐름으로. 쓰기 정지 offline-copy 27.8~29.2초, snapshot-cdc 19.1~20.0초(각 2회) |
 | Redis 계열(Valkey) 키 공간 adapter·probe | 모의 시험 통과 | 로컬 kind의 Valkey 9.1.3 두 대. 적합성 키트, probe 실패 시험, control plane 전체 흐름, 실행 설정의 검증된 TLS. 등록된 replica까지 차단(승격 뒤에도 유지 실측), Sentinel 시각 대조, Redis 8 → Valkey 9(내용 복사), 클러스터(primary 셋). 만료가 임박한 키·해시 필드는 여유(기본 120초) 안이면 양쪽에서 빼고, 해시 필드 만료까지 비교 |

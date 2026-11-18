@@ -426,3 +426,4 @@ Codex가 경계 분석 도중 사용량 한도로 멈춘 뒤 Claude Code가 같�
   - 회귀 중 공유 Keycloak(원본)이 메모리 한도로 한 번 재시작했다(OOMKilled, 이틀 가동 뒤). 실패한 시험은 없었다. 시험 환경의 메모리 한도를 볼 일로 남긴다.
   - Kafka 보존 기간 수정은 이 회귀 뒤에 들어갔다. Kafka 시험 묶음과 단위 시험으로 확인했다.
 - 열한 번째 전체 회귀(0d66eb5 기준, Kafka 보존 기간 수정과 압축 시험 수정까지): 평문 **1947 PASS / 0 FAIL** / 302 SKIP(56분), TLS 55 PASS / 2 SKIP, suite-exit 0. 이번에는 목적지 Keycloak도 메모리 한도로 재시작했다. 원인을 찾아보니 시험이 realm을 남기고 있었다. 시험마다 만든 realm을 지우게 고쳤다(0a8ad91, T13). 이 수정은 시험 쪽만 바꿨고, 식별 시험 27건으로 확인했다.
+- 관리형 Kubernetes 실측(사용자 승인, 실행 ce27b0): EKS 39/39, GKE Autopilot 38/39, EKS → GKE 볼륨 인계. 제품 결함 #35·#36을 고쳤고, #37(Dataplane V2에서 Service 경로 세션 drain이 열린 세션을 끊음)은 해법 결정이 필요해 남겼다. 시험·환경 결함은 T14~T19다. 끝난 뒤 `down`으로 아무것도 남지 않음을 확인했다. 경위는 [관리형 실측 기록](contract-foundation-2026-11-18-managed.md)에 있다.

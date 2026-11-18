@@ -31,6 +31,22 @@ infra/cloud-env/cloud-env.sh down                  # 이 실행의 자원을 모
 | GCP | GKE Autopilot `sova-test-k8s-<run>` | API 서버는 이 기기 IP /32에서만(master authorized networks) |
 | 둘 다 | 클라우드 쪽 만료 삭제 | EKS: 노드 그룹 +30분, 클러스터 +45분. GKE: 클러스터 +45분. GKE 삭제 권한은 자원 조건을 받지 않아 만료용 서비스 계정이 이 (시험 전용) 프로젝트의 클러스터를 지울 수 있다 |
 
+볼륨 시험을 위해 두 클러스터에 다음을 더한다(2026-11-18).
+
+- **EKS EBS CSI 드라이버.** 애드온 `eks-pod-identity-agent`와 `aws-ebs-csi-driver`를 설치한다. 드라이버는 전용 역할(`sova-test-eks-ebs-<run>`, `AmazonEBSCSIDriverPolicy`)을 Pod Identity로 받는다.
+  - 노드 역할에는 EBS 권한을 주지 않는다. 노드의 IMDSv2는 한 홉만 답하므로, Pod는 노드 역할을 쓸 수 없다(실측).
+- **실행 전용 저장소 클래스 `sova-test-<run>`.** EKS는 gp3(암호화), GKE는 pd-balanced다. 이 클래스로 만든 디스크에는 실행 태그·라벨(`sova-test=<run>`)이 붙는다.
+  - `kubernetes-down`과 `down`은 클러스터를 지운 뒤 그 디스크를 찾아 지운다.
+  - 아직 노드에 붙어 있는 디스크가 있으면 임대를 열어 두고 다음 `down`이 다시 시도한다.
+- **Gateway.** `env`가 `SOVA_TEST_KUBE_MANAGED_STORAGE_CLASS`를 내보내고, 볼륨 시험은 관리형 context에서 그 클래스를 쓴다. Envoy Gateway는 다음처럼 같은 고정 판을 설치한다.
+
+```sh
+eval "$(infra/cloud-env/cloud-env.sh env)"
+SOVA_GATEWAY_KUBECONFIG=$SOVA_TEST_KUBE_MANAGED_KUBECONFIG \
+SOVA_GATEWAY_CONTEXT=$SOVA_TEST_KUBE_EKS_CONTEXT infra/test-env/test-env.sh gateway
+# GKE: 클러스터가 Gateway API CRD를 관리하므로 SOVA_GATEWAY_PROVIDED_CRDS=1을 더한다
+```
+
 kubeconfig는 상태 디렉터리의 0600 파일에만 쓴다. `~/.kube/config`와 현재 context는 건드리지 않는다. 시험은 `SOVA_TEST_KUBECONFIG`에 그 파일을, `SOVA_TEST_KUBE_CONTEXT`에 `sova-test-k8s-<run>-eks`나 `-gke`를 주면 같은 Kubernetes 시험이 그 클러스터에서 돈다. 시험 도우미는 kind(루프백)와 이 실행의 관리형 클러스터만 받는다.
 
 나머지 자원(버킷, 비밀, user pool, compute, DNS 존 등)은 각 시험이 만들고 지운다. 시험이 중간에 멈춰 남긴 것도 `down`이 찾아 지운다.
