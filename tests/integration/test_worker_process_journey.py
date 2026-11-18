@@ -143,7 +143,14 @@ def test_sigkill_after_commit_keeps_recovery_barrier_without_a_quiescence_proof(
                 b.wait(lambda: any(e["event"] == "drive_returned" and e["owner"] == b.owner and e["state"] is None
                                    for e in b.events()))
                 b_result = b.stop()
-                assert h.status(unit) == authority_before
+                # Observation metadata and the lease-derived overlay advance
+                # with DB time, while the witnessed authority must not change.
+                after = h.status(unit)
+                assert {k: after[k] for k in ("state", "epoch", "owner_environment",
+                    "next_operation", "reason", "activation_possible", "history")} == {
+                    k: authority_before[k] for k in ("state", "epoch", "owner_environment",
+                    "next_operation", "reason", "activation_possible", "history")}
+                assert after["recovery"]["reason"] == "OWNER_EXPIRED_UNSETTLED"
                 assert h.route.get() == http_business["names"]["src"]
                 final = execution(h)
                 assert final["owner"] == a.owner and final["epoch"] == expired["epoch"]

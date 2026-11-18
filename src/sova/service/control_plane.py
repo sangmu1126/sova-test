@@ -43,6 +43,7 @@ from sova.domain.operations import OperationRequest
 from sova.domain.plan_compiler import compile_revision, compile_failback
 from sova.domain.plan_lowering import lower_plan
 from sova.domain.plans import PlanApproval, PlanPurpose
+from sova.service.recovery_status import read_status
 
 
 class Role(StrEnum):
@@ -364,17 +365,7 @@ class ControlPlane:
     def status(self, principal, application_id, unit_digest):
         tenant = self._require(principal, *Role)
         _, store = self._coordinator(tenant, application_id)
-        record = store.current(application_id, unit_digest)
-        if record is None:
-            return {"state": None}
-        return {"state": str(record.state), "epoch": record.epoch,
-                "owner_environment": record.owner_environment,
-                "next_operation": record.next_operation, "reason": record.reason,
-                "activation_possible": record.activation_possible,
-                "history": [{"revision": rev, "action": action, "actor": actor,
-                             "state": str(rec.state)}
-                            for rev, action, actor, rec in store.history(application_id,
-                                                                         unit_digest)]}
+        return read_status(store, self._lifecycle(tenant), application_id, unit_digest)
 
     def evidence(self, principal, application_id):
         """The latest signed result of each obligation the worker measured, with
