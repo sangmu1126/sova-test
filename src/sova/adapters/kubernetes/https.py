@@ -131,11 +131,12 @@ class KubernetesTransportFailure(ContractError):
     or read that timed out, a peer that closed without answering."""
 
 
-# A read (GET) is tried again after a failure of the connection itself, each
-# time with its own deadline: the path to an API server over the internet
-# drops now and then (measured against EKS: a TLS handshake timing out, a
-# connection closed without an answer). A write is never repeated - whether
-# it took effect is unknown, and its caller reads back instead.
+# A read (GET) is tried again after a failure of the connection itself, before
+# any answer, each time with its own deadline: the path to an API server over
+# the internet drops now and then (measured against EKS: a TLS handshake timing
+# out, a connection closed without an answer). An answer cut short is final. A
+# write is never repeated - whether it took effect is unknown, and its caller
+# reads back instead.
 _READ_ATTEMPTS = 3
 
 
@@ -360,6 +361,7 @@ class KubernetesHTTPS:
         )
         deadline = time.monotonic() + timeout
         timer = None
+        answered = False  # once the status line is in, a failure is not the path's
 
         # TLS SNI/hostname verification still uses endpoint.hostname. Socket uses
         # only registered numeric IPs; DNS, environment proxies and redirects cannot change it.
@@ -420,6 +422,7 @@ class KubernetesHTTPS:
                 },
             )
             response = connection.getresponse()
+            answered = True
             if response.status not in accept:
                 raise KubernetesRequestRefused(response.status,
                                                refusal_reason(response.read(4096)))
@@ -436,6 +439,13 @@ class KubernetesHTTPS:
         except ssl.SSLCertVerificationError as exc:  # not the path: the peer itself
             raise ContractError("Kubernetes secure request failed") from exc
         except (OSError, http.client.HTTPException) as exc:
+            # An answer cut short - by its own deadline or a dropped connection -
+            # is final: the server already answered, and a body that trickles past
+            # the deadline would trickle past every attempt's.
+            if answered:
+                raise ContractError("Kubernetes read deadline exceeded"
+                                    if time.monotonic() >= deadline
+                                    else "Kubernetes secure request failed") from exc
             raise KubernetesTransportFailure("Kubernetes secure request failed") from exc
         except (UnicodeError, ValueError) as exc:
             raise ContractError("Kubernetes secure request failed") from exc
