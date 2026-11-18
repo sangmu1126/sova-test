@@ -52,9 +52,11 @@ it, and every postcondition about writing is a statement about Pods:
 Agent Pods are reaped after each action or readback, or - ``keep_agents``,
 as the worker's execution runs - readers are kept for the next action or
 readback on the same claims and reaped when the execution ends
-(``release_agents``). Activation first removes every agent, of this adapter
-or of its probes, that mounts a target claim: a single-node volume held by an
-agent on one node would keep the application from attaching it on another.
+(``release_agents``). Activation first reaps every idle kept agent in the
+target's cluster (the application's Pods may need the room they hold), then
+removes every agent, of this adapter or of its probes, that mounts a target
+claim: a single-node volume held by an agent on one node would keep the
+application from attaching it on another.
 Every agent ends by itself after ten idle minutes and within an hour at the
 latest. A readback starts read-only agents only on claims that are already
 bound, so it never changes what it reads. Every action is idempotent; a
@@ -72,6 +74,7 @@ from sova.adapters.kubernetes.volume_agents import (
     AGENT_DIGEST,
     VolumeAgents,
     differences,
+    make_room,
     manifest_digest,
     remove_agents,
     same_tree,
@@ -412,6 +415,7 @@ class KubernetesVolumeHandoffAdapter:
     def _activate_target(self):
         target = self.sides["target"]
         self._stop("target", target.others)
+        make_room(target.controls)  # the application's Pods may need the room kept agents hold
         remove_agents(target.controls, target.claims, self.settle_seconds)
         kind, name = target.app
         found = target.controls.workload(kind, name)

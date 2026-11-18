@@ -98,8 +98,9 @@ def agents_on(world, claim):
 def test_kept_readers_serve_the_next_steps_and_activation_lets_go_of_the_target(world):
     """As the worker runs an execution: the adapter's readers are reused from
     step to step, never a writer; activation removes every agent on the target
-    claim - the probes' too - before the application takes it; the execution's
-    end reaps the rest."""
+    claim - the probes' too - before the application takes it, and gives the
+    room of the idle kept readers back (the source's too); the execution's end
+    reaps the rest."""
     from volume_business import PYTHON, UID
 
     from sova.adapters.kubernetes.volume_agents import VolumeAgents
@@ -122,8 +123,10 @@ def test_kept_readers_serve_the_next_steps_and_activation_lets_go_of_the_target(
         with probe_agents.running((target.controls, target.claims, False)) as (probe,):
             assert probe.manifest(0)["entries"]
         assert len(agents_on(world, "board-data-target")) == 2  # the probes' own, kept
+        assert [role for role, _ in agents_on(world, "board-data-source")] == ["reader"]
         apply(adapter, "activate_target")
         assert agents_on(world, "board-data-target") == []
+        assert agents_on(world, "board-data-source") == []  # idle: its room given back
         assert readback(adapter, "activate_target") == EffectStatus.APPLIED
     finally:
         adapter.release_agents()

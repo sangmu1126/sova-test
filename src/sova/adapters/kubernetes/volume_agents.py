@@ -18,6 +18,12 @@ cluster; a writer is never kept, nor any agent on a ReadWriteOncePod claim
 ``release()`` reaps every kept agent - the execution's end. Every agent also
 ends by itself after ``idle_seconds`` without a request, so one whose worker
 is gone lets go of its volumes; a later start removes its finished Pod.
+
+A kept agent holds a Pod's room - a node's Pod capacity, a namespace's Pod
+quota. When an agent cannot be placed for lack of room, or its creation is
+refused (a quota), ``make_room`` reaps every idle agent kept in that cluster
+by any ``VolumeAgents`` of this process, the adapter's and the probes' alike;
+the activation does the same before the application starts on the target.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -29,6 +35,7 @@ import re
 import secrets
 import threading
 import time
+import weakref
 
 from sova.adapters.kubernetes import volume_agent as _agent_module
 from sova.adapters.kubernetes.https import KubernetesRequestRefused
@@ -49,6 +56,8 @@ AGENT_DIGEST = hashlib.sha256(AGENT_SOURCE.encode()).hexdigest()
 
 
 TRANSPORTS = ("proxy", "port-forward")
+# Every VolumeAgents of this process that keeps agents: make_room reaches them all.
+_KEEPERS, _KEEPERS_LOCK = weakref.WeakSet(), threading.Lock()
 
 
 class Agent:
@@ -167,6 +176,9 @@ class VolumeAgents:
         self._kept, self._single_pod, self._lock = {}, {}, threading.Lock()
         self.label, self.key, self.image, self.run_as = label, key, image, run_as
         self.fs_group, self.start_seconds, self.scratch = fs_group, start_seconds, scratch
+        if keep:
+            with _KEEPERS_LOCK:
+                _KEEPERS.add(self)
 
     def token(self, controls, name):
         return hmac.new(self.key, f"{controls.registration.namespace}/{name}".encode(),
@@ -232,18 +244,31 @@ class VolumeAgents:
             for name in controls.pods({**mine, "sova.dev/volume-role": "writer"}):
                 controls.delete_pod(name)
         name = f"sova-vol-{self.label[:10]}-{'w' if writable else 'r'}-{secrets.token_hex(4)}"
+        body = self.pod(controls, claims, name, writable, beside(controls, claims))
         try:
-            controls.create_pod(self.pod(controls, claims, name, writable,
-                                         beside(controls, claims)))
+            controls.create_pod(body)
         except KubernetesRequestRefused as refused:
-            raise ContractError(f"Volume agent refused by the cluster ({refused.status})") \
-                from refused
+            # A Pod quota answers Forbidden: the room idle kept agents hold is
+            # given back, once; any other refusal stands.
+            if refused.status != 403 or not make_room(controls, seconds=60):
+                raise ContractError(f"Volume agent refused by the cluster ({refused.status})") \
+                    from refused
+            try:
+                controls.create_pod(body)
+            except KubernetesRequestRefused as again:
+                raise ContractError(f"Volume agent refused by the cluster ({again.status})") \
+                    from again
         return name
 
     def ready(self, controls, name):
-        deadline = time.monotonic() + self.start_seconds
+        deadline, yielded = time.monotonic() + self.start_seconds, False
         while True:
             pod = controls.pod(name)
+            if not yielded and pod is not None and _unschedulable(pod):
+                # No room for it (a full node, a Pod quota): the idle agents kept
+                # in this cluster give theirs back, and it waits on.
+                yielded = True
+                make_room(controls)
             if pod is not None and ready(pod):
                 return Agent(controls, name, self.token(controls, name), self.transport)
             if pod is not None and _running(pod):
@@ -329,10 +354,35 @@ class VolumeAgents:
         _reap([(controls, name) for controls, name, _ in kept.values()])
 
 
+def make_room(controls, seconds=0):
+    """Reap every idle agent kept in ``controls``' cluster by any keeping
+    ``VolumeAgents`` of this process; with ``seconds``, wait (bounded) until
+    they are gone. An agent in use is not kept meanwhile, so it is never
+    taken. Returns the names reaped."""
+    endpoint = controls.registration.endpoint
+    with _KEEPERS_LOCK:
+        keepers = list(_KEEPERS)
+    taken = []
+    for keeper in keepers:
+        with keeper._lock:
+            for key in [k for k in keeper._kept if k[0] == endpoint]:
+                taken.append(keeper._kept.pop(key))
+    _reap([(where, name) for where, name, _ in taken], seconds)
+    return [name for _, name, _ in taken]
+
+
+def _unschedulable(pod):
+    return any(c.get("type") == "PodScheduled" and c.get("status") == "False" and
+               c.get("reason") == "Unschedulable"
+               for c in (pod.get("status") or {}).get("conditions") or ())
+
+
 def _reap(agents, seconds=60):
     """Delete agent Pods and wait, bounded, until they are gone."""
     for controls, name in agents:
         controls.delete_pod(name)
+    if seconds <= 0:
+        return
     for controls, name in agents:
         deadline = time.monotonic() + seconds
         while controls.pod(name) is not None and time.monotonic() < deadline:

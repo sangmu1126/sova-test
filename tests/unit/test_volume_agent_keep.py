@@ -1,40 +1,64 @@
 """Readers kept between the steps of one execution: reused only by the object
 that started them, never a writer, never on a claim that admits one Pod;
 reaped when a use fails, when the execution ends, and - every agent on the
-target claims, whoever started it - before the application takes the volume.
-Against a stand-in cluster that records what is created and deleted."""
+target claims, whoever started it - before the application takes the volume;
+idle kept agents give their room back to an agent that cannot be placed or is
+refused by a quota. Against a stand-in cluster that records what is created
+and deleted, with a bounded number of Pods it holds."""
 
 import copy
+import itertools
 from types import SimpleNamespace
 
 import pytest
 
-from sova.adapters.kubernetes.volume_agents import VolumeAgents, remove_agents
+from sova.adapters.kubernetes.https import KubernetesRequestRefused
+from sova.adapters.kubernetes.volume_agents import VolumeAgents, make_room, remove_agents
 from sova.domain.contracts import ContractError
 
 IMAGE = "docker.io/library/python@sha256:" + "a" * 64
+CLUSTERS = itertools.count()
+RUNNING = {"phase": "Running", "podIP": "10.0.0.9",
+           "conditions": [{"type": "Ready", "status": "True"}],
+           "containerStatuses": [{"state": {"running": {"startedAt": "2026-11-19T00:00:00Z"}}}]}
+UNSCHEDULABLE = {"phase": "Pending", "conditions": [{
+    "type": "PodScheduled", "status": "False", "reason": "Unschedulable",
+    "message": "0/1 nodes are available: 1 Too many pods."}]}
 
 
 class Cluster:
-    def __init__(self, access=("ReadWriteOnce",)):
-        self.registration = SimpleNamespace(endpoint="https://api.test:6443", namespace="apps")
+    """``room``: the Pods a node takes - one more stays Pending, unschedulable,
+    until another goes. ``quota``: the Pods the namespace admits - one more is
+    refused (403)."""
+
+    def __init__(self, access=("ReadWriteOnce",), room=None, quota=None, refusal=403):
+        self.registration = SimpleNamespace(endpoint=f"https://api.test-{next(CLUSTERS)}:6443",
+                                            namespace="apps")
         self.access, self.live, self.created, self.deleted = access, {}, [], []
+        self.room, self.quota, self.refusal, self.refused = room, quota, refusal, 0
 
     def claim(self, name):
         return {"spec": {"accessModes": list(self.access)}}
 
+    def _placed(self):
+        return [n for n, p in self.live.items() if p["status"]["phase"] == "Running"]
+
     def create_pod(self, body):
+        if self.quota is not None and len(self.live) >= self.quota:
+            self.refused += 1
+            raise KubernetesRequestRefused(self.refusal, "Forbidden")
         body = copy.deepcopy(body)
         body["spec"]["nodeName"] = "node-a"
-        body["status"] = {"phase": "Running", "podIP": "10.0.0.9",
-                          "conditions": [{"type": "Ready", "status": "True"}],
-                          "containerStatuses": [{"state": {"running": {
-                              "startedAt": "2026-11-19T00:00:00Z"}}}]}
+        full = self.room is not None and len(self._placed()) >= self.room
+        body["status"] = copy.deepcopy(UNSCHEDULABLE if full else RUNNING)
         self.live[body["metadata"]["name"]] = body
         self.created.append(body["metadata"]["name"])
 
     def pod(self, name):
-        return self.live.get(name)
+        found = self.live.get(name)
+        if found and found["status"]["phase"] == "Pending" and len(self._placed()) < self.room:
+            found["status"] = copy.deepcopy(RUNNING)  # the scheduler retries once room frees
+        return found
 
     def delete_pod(self, name):
         self.live.pop(name, None)
@@ -160,3 +184,53 @@ def test_every_agent_ends_by_itself_after_its_idle_time():
             agents(idle_seconds=idle)
     with pytest.raises(ContractError):
         agents(keep="yes")
+
+
+def test_an_agent_with_no_room_takes_the_room_idle_kept_agents_hold():
+    """A full node (Too many pods): the adapter's and the probes' idle readers
+    in that cluster are reaped, the one in use is not, and the new agent runs."""
+    c = Cluster(room=3)
+    mine, probes = agents(keep=True), agents(label="probeunit", keep=True)
+    idle = [use(mine, c, ("logs",)), use(probes, c)]
+    with mine.running((c, ("data",), False)) as (busy,):
+        assert len(c.live) == 3
+        written = use(probes, c, ("data",), writable=True)  # waits for room, then runs
+        assert sorted(c.deleted) == sorted([*idle, written])
+        assert busy.name in c.live  # in use: never taken
+    assert written in c.created and c.live == {busy.name: c.live[busy.name]}
+    assert use(mine, c, ("logs",)) not in idle  # a new one where the kept one went
+
+
+def test_without_kept_agents_an_agent_with_no_room_still_waits_for_its_deadline():
+    c = Cluster(room=0)
+    with pytest.raises(ContractError, match="in time"):
+        use(agents(keep=True), c)
+
+
+def test_a_quota_refusal_gives_back_the_room_of_idle_kept_agents_once():
+    c = Cluster(quota=2)
+    mine, probes = agents(keep=True), agents(label="probeunit", keep=True)
+    idle = [use(mine, c, ("logs",)), use(probes, c)]
+    written = use(mine, c, writable=True)
+    assert c.refused == 1 and sorted(c.deleted) == sorted([*idle, written])
+    full = Cluster(quota=0)  # nothing kept to give back: refused, not retried
+    with pytest.raises(ContractError, match="403"):
+        use(agents(keep=True), full)
+    assert full.refused == 1
+
+
+def test_another_refusal_leaves_the_kept_agents_alone():
+    c, keeper = Cluster(quota=1, refusal=422), agents(keep=True)
+    kept = use(keeper, c)
+    with pytest.raises(ContractError, match="422"):
+        use(agents(label="probeunit", keep=True), c, ("logs",))
+    assert c.refused == 1 and kept in c.live
+
+
+def test_room_is_made_only_in_the_cluster_that_needs_it():
+    here, there = Cluster(), Cluster()
+    mine = agents(keep=True)
+    near, far = use(mine, here), use(mine, there)
+    assert make_room(here) == [near]
+    assert near not in here.live and far in there.live
+    assert make_room(here) == []
