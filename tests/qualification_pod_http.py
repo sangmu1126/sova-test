@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+import psycopg
 from qualification_pods import NAMESPACE, app_pod, command, secret, wait_for
 
 from sova.qualification.postgres_orders import observe_orders
@@ -57,7 +58,13 @@ class HttpTraffic:
         self.started = False
         self.run_id, self.token = "traffic-" + uuid4().hex, uuid4().hex
         self.root = Path(__file__).resolve().parents[1]
-        self.profile_digest = hashlib.sha256((self.root / "examples/qualification/orders-pod-https-postgres-v1.json").read_bytes()).hexdigest()
+        self.mode = os.environ.get("SOVA_TEST_HTTP_MODE", "cold_deferred")
+        self.comparison = "SOVA_TEST_HTTP_MODE" in os.environ
+        if self.mode not in ("cold_deferred", "prepared_deferred", "prepared_bounded"):
+            raise ValueError("Unknown HTTP comparison mode")
+        self.prepared = self.mode.startswith("prepared_")
+        profile = "orders-pod-https-comparison-v2.json" if self.comparison else "orders-pod-https-postgres-v1.json"
+        self.profile_digest = hashlib.sha256((self.root / "examples/qualification" / profile).read_bytes()).hexdigest()
         self.scope = {"version": 1, "run_id": self.run_id, "tenant_id": journey.tenant, "profile_digest": self.profile_digest}
 
     def __enter__(self):
@@ -86,7 +93,8 @@ class HttpTraffic:
         node = json.loads(command(["docker", "inspect", env.node]).stdout)[0]
         self.node_ip = node["NetworkSettings"]["Networks"][network]["IPAddress"]
         self.origin = "https://orders.fixture:30443"
-        config = {"origin": self.origin, "run_id": self.run_id, "tenant_id": h.tenant, "profile_digest": self.profile_digest}
+        config = {"origin": self.origin, "run_id": self.run_id, "tenant_id": h.tenant, "profile_digest": self.profile_digest,
+                  "mode": self.mode, "minimum_orders": 100 if self.comparison else 0}
         for name, value in {"client.json": json.dumps(config), "token": self.token, "ca.pem": certs["ca.pem"],
                             "client.py": (self.root / "tests/qualification_load_client.py").read_text()}.items():
             path = self.config_dir / name
@@ -95,7 +103,33 @@ class HttpTraffic:
         env.apply(app_pod(env, self.observer_pod, "observer"))
         env.kube("-n", NAMESPACE, "wait", "--for=condition=Ready", "pod/" + self.observer_pod, "--timeout=60s")
         env.report["http_fixture_sources_sha256"] = {p: hashlib.sha256(v.encode()).hexdigest() for p, v in sources.items()}
+        env.report["http_mode"] = self.mode
+        if self.prepared:
+            target = self.pod("orders-target", "target")
+            target["metadata"]["labels"]["side"] = "prepared"
+            env.apply(target)
+            env.kube("-n", NAMESPACE, "wait", "--for=condition=Ready", "pod/orders-target", "--timeout=60s")
+            self.target_uid = env.object("pod", "orders-target")["metadata"]["uid"]
+            with h.business["connect_as"](h.business["names"]["src"], h.business["app"]) as connection:
+                assert connection.execute("SELECT 1").fetchone() == (1,)
+            try:
+                with h.business["connect_as"](h.business["names"]["tgt"], h.business["app"]) as connection:
+                    connection.execute("INSERT INTO orders VALUES (-1,'prewarm-probe','prewarm-probe',1)")
+                    raise AssertionError("Prepared target allowed writes before migration")
+            except psycopg.Error as error:
+                assert error.sqlstate == "42501", "Prepared target denial was not an authorization failure"
+            env.report["target_prepared"] = {"pod_uid": self.target_uid, "health_ready": True,
+                "selected_by_route": False, "business_writes_enabled_early": False,
+                "target_write_denial_sqlstate": "42501", "source_positive_control": True}
         return self
+
+    def activate_target(self):
+        if self.prepared:
+            assert self.env.object("pod", "orders-target")["metadata"]["uid"] == self.target_uid
+            self.env.kube("-n", NAMESPACE, "patch", "pod", "orders-target", "--type=merge", "-p",
+                          json.dumps({"metadata": {"labels": {"side": "target"}}}))
+        else:
+            self.env.apply(self.pod("orders-target", "target"))
 
     def pod(self, name, side):
         spec = app_pod(self.env, name, side)
@@ -132,6 +166,8 @@ class HttpTraffic:
     def finish(self):
         wait_for(lambda: len([e for e in self.events() if e["status"] == 200 and e["side"] == "target"]) >= 3,
                  15, "successful HTTPS orders on the same Service after handoff")
+        if self.comparison:
+            wait_for(lambda: sum(e["phase"] == "load" for e in self.events()) == 100, 90, "exactly 100 initial orders")
         (self.results / "stop").touch()
         exit_code = int(command(["docker", "wait", self.name], timeout=60).stdout)
         assert exit_code == 0, "HTTP client failed; inspect private client log"
@@ -147,7 +183,12 @@ class HttpTraffic:
         assert comparison["data_integrity"] == "SATISFIED"
         assert comparison["counts"]["confirmed_requests"] == comparison["counts"]["logical_requests"] > 3
         assert comparison["counts"]["unfinished_attempts"] == 0
-        assert client["initial_failures"] > 0, "The deliberately interrupted route had no recorded first-attempt failure"
+        if self.mode == "cold_deferred":
+            assert client["initial_failures"] > 0, "The deliberately interrupted route had no recorded first-attempt failure"
+        if self.mode == "prepared_bounded":
+            assert len(client["bounded_results"]) == 100
+            assert all(r["result"] == "CONFIRMED" for r in client["bounded_results"])
+            assert not any(e["phase"] == "recovery" for e in self.events())
         assert self.env.object("service", "orders")["metadata"]["uid"] == self.service_uid
         (self.results / "independent-observation.json").write_text(json.dumps(observed, indent=2) + "\n")
         (self.results / "reconciliation.json").write_text(json.dumps(comparison, indent=2) + "\n")

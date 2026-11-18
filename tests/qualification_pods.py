@@ -18,7 +18,8 @@ from uuid import uuid4
 
 from sova.qualification.image import inspect_image
 
-SERVICE_IMAGE = "sha256:117a14eadae2cc25b43a434dbf9a06e1497f8e1c96ebc5e9da62a4c0fb7591f6"
+SERVICE_IMAGE = "sha256:97cd599e6a87c312fa422e55508fcd052c0f8302d0a455113f776a378b18f5a7"
+SERVICE_SOURCE = "18a0b7d8b70fdc5327bf178ddccbbe31202c46db"
 NODE_IMAGE = "sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a"
 NAMESPACE = "worker-qualification"
 
@@ -57,6 +58,7 @@ class PodRun:
         self.audit.chmod(0o777)
         self.report = {"run_id": self.run, "shared_cluster_used": False,
                        "service_image_id": SERVICE_IMAGE, "node_image_id": NODE_IMAGE,
+                       "service_source_revision": SERVICE_SOURCE,
                        "qualification_issued": False, "phases": []}
 
     def phase(self, name):

@@ -15,7 +15,7 @@ import re
 import time
 
 import pytest
-from qualification_pods import (NAMESPACE, app_pod, command, owned_cluster,
+from qualification_pods import (NAMESPACE, SERVICE_SOURCE, app_pod, command, owned_cluster,
                                 prepare_workload, wait_for, worker_pod)
 from qualification_service import service_journey
 from test_order_http_handoff import http_business as http_business  # noqa: F401
@@ -81,7 +81,7 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
             # Read installed bytes from a real Pod, not from its image label.
             root = Path(__file__).resolve().parents[2]
             security = Path(os.environ["SOVA_TEST_QUALIFICATION_SECURITY_SOURCE"])
-            source = "24e17165ac6ef657ba9fa79c4ab8f784e98f20eb"
+            source = SERVICE_SOURCE
             producer = "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf"
             expected = {"sova": source_inventory(root, source, "sova"),
                         "sova_security": source_inventory(security, producer, "sova_security")}
@@ -123,7 +123,10 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
             env.phase("owner task paused; Pod is still Running")
             # The target endpoint must be ready before recovery's readback;
             # the old owner remains frozen and cannot finish its own step.
-            env.apply(traffic.pod("orders-target", "target") if traffic else app_pod(env, "orders-target", "target"))
+            if traffic:
+                traffic.activate_target()
+            else:
+                env.apply(app_pod(env, "orders-target", "target"))
             env.kube("-n", NAMESPACE, "wait", "--for=condition=Ready", "pod/orders-target", "--timeout=60s")
             wait_for(lambda: sql_state(h)[0][1] < sql_state(h)[0][2], 20, "real database lease expiry")
             time.sleep(2)  # several real successor polling intervals

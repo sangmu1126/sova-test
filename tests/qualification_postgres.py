@@ -130,7 +130,10 @@ def main():
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
     parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http"), default="requests",
                         help="MQ-02, service, runtime API, or worker process/fault qualification checks")
+    parser.add_argument("--http-mode", choices=("cold_deferred", "prepared_deferred", "prepared_bounded"))
     args = parser.parse_args()
+    if args.http_mode and args.suite != "pod-http":
+        parser.error("HTTP comparison mode requires --suite pod-http")
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", args.image):
         parser.error("An exact cached image ID is required")
     if not (args.security_source / "sova_security").is_dir():
@@ -196,6 +199,8 @@ def main():
             measured_sources.extend([root / tests[0], root / "tests/qualification_pod_http.py",
                                      root / "tests/qualification_order_pod.py", root / "tests/qualification_load_client.py",
                                      root / "examples/qualification/orders-pod-https-postgres-v1.json"])
+            if args.http_mode:
+                measured_sources.append(root / "examples/qualification/orders-pod-https-comparison-v2.json")
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}
@@ -274,6 +279,8 @@ def main():
                            SOVA_TEST_QUALIFICATION_DOCKER_NETWORK=network,
                            SOVA_TEST_QUALIFICATION_PG_CONTAINER=container,
                            SOVA_TEST_QUALIFICATION_SECURITY_SOURCE=str(args.security_source.resolve().parent))
+                if args.http_mode:
+                    env["SOVA_TEST_HTTP_MODE"] = args.http_mode
             clocks = ClockWatch(dsn)
             try:
                 clocks.start()

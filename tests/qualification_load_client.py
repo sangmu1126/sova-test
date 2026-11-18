@@ -6,10 +6,12 @@ Every HTTP attempt remains in SQLite and the fsynced JSONL trace.
 """
 
 from collections import Counter
+import asyncio
 from datetime import UTC, datetime
 import json
 import math
 import os
+import random
 from pathlib import Path
 import ssl
 import socket
@@ -18,6 +20,7 @@ import time
 import httpx
 
 from sova.qualification.http_orders import OrderHttpClient
+from sova.qualification.bounded_orders import BoundedOrderClient, CompletionBudget
 from sova.qualification.requests import OrderIntent, RequestJournal
 
 
@@ -87,17 +90,44 @@ def main():
                 if name == "verified_https":
                     raise
                 tls[name] = True
-        end, number = time.monotonic() + 120, 0
-        while time.monotonic() < end:
-            if (result_dir / "stop").exists():
-                stop_received = True
-                break
-            intent = OrderIntent(f"request-{number:05d}", "load-" + config["run_id"], f"key-{number:05d}", "12.34")
-            status = attempt(intent, "submit", "load")
-            if status != 200:
-                pending.append(intent)
-            number += 1
-            time.sleep(.2)
+        bounded_results = []
+        async def run_load():
+            nonlocal stop_received
+            async def bounded_run(transport):
+                nonlocal stop_received
+                def observe(event):
+                    event["phase"] = "load" if event["sequence"] == 1 else "inline_retry"
+                    with (result_dir / "traffic.jsonl").open("a") as stream:
+                        stream.write(json.dumps(event) + "\n")
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    events.append(event)
+                bounded = BoundedOrderClient(config["origin"], bearer_token=(config_dir / "token").read_text().strip(),
+                    journal=journal, client=transport, budget=CompletionBudget(), observer=observe,
+                    jitter=random.Random(0).uniform)
+                end, number = time.monotonic() + 120, 0
+                while time.monotonic() < end:
+                    minimum = config.get("minimum_orders", 0)
+                    if (result_dir / "stop").exists() and number >= minimum:
+                        stop_received = True
+                        break
+                    if minimum and number >= minimum:
+                        await asyncio.sleep(.05)
+                        continue
+                    intent = OrderIntent(f"request-{number:05d}", "load-" + config["run_id"], f"key-{number:05d}", "12.34")
+                    if config.get("mode") == "prepared_bounded":
+                        outcome = await bounded.complete(intent)
+                        bounded_results.append(outcome)
+                        if outcome["result"] != "CONFIRMED":
+                            pending.append(intent)
+                    elif attempt(intent, "submit", "load") != 200:
+                        pending.append(intent)
+                    number += 1
+                    await asyncio.sleep(.2)
+            async with httpx.AsyncClient(verify=ssl.create_default_context(cafile=str(config_dir / "ca.pem")),
+                timeout=1, trust_env=False, follow_redirects=False, limits=httpx.Limits(max_keepalive_connections=0)) as async_transport:
+                await bounded_run(async_transport)
+        asyncio.run(run_load())
         # No transparent retry in the first-attempt trace. Recovery is explicit
         # and uses this same process/clock and unchanged business keys.
         for intent in pending:
@@ -105,7 +135,8 @@ def main():
                 attempt(intent, "submit", "recovery")
         snapshot = journal.snapshot()
         (result_dir / "journal.json").write_text(json.dumps(snapshot, indent=2) + "\n")
-        report = {"stop_received": stop_received, "tls": tls, **metrics(events)}
+        report = {"stop_received": stop_received, "tls": tls, "mode": config.get("mode", "cold_deferred"),
+                  "bounded_results": bounded_results, **metrics(events)}
         (result_dir / "client.json").write_text(json.dumps(report, indent=2) + "\n")
     finally:
         transport.close()
