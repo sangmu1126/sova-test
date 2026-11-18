@@ -161,21 +161,27 @@ def main():
     parser.add_argument("--security-source", type=Path, required=True)
     parser.add_argument("--pool-source", type=Path, help="Private pinned psycopg_pool source for pool suite only")
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
-    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap", "clocks", "backpressure", "restore", "timing", "profile", "pool", "pool-lifecycle", "settlement"), default="requests",
+    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap", "clocks", "backpressure", "restore", "timing", "profile", "pool", "pool-lifecycle", "settlement", "journey"), default="requests",
                         help="MQ-02, service, runtime API, or worker process/fault qualification checks")
     parser.add_argument("--http-mode", choices=("cold_deferred", "prepared_deferred", "prepared_bounded", "ready_deferred", "ready_bounded", "ready_backpressure"))
     parser.add_argument("--browser-tools", type=Path)
     parser.add_argument("--browser-executable", type=Path)
     parser.add_argument("--browser-node", type=Path)
+    parser.add_argument("--keycloak-image", help="Exact cached Keycloak image ID, required only for journey")
     args = parser.parse_args()
     browser_options = (args.browser_tools, args.browser_executable, args.browser_node)
     if any(browser_options):
-        if not all(browser_options) or args.suite != 'settlement':
-            parser.error('Browser options must be supplied together for settlement only')
+        if not all(browser_options) or args.suite not in ('settlement', 'journey'):
+            parser.error('Browser options must be supplied together for settlement or journey')
         if (not all(p.is_absolute() for p in browser_options)
                 or not args.browser_executable.is_file() or not args.browser_node.is_file()
                 or not (args.browser_tools/'node_modules/playwright-core/index.mjs').is_file()):
             parser.error('Explicit local browser driver, executable and node required')
+    if args.suite == 'journey':
+        if not all(browser_options) or args.keycloak_image != 'sha256:923a431c08971d49727a857e64870d8d63b5bf294a730e5dde729b5138c26c9e':
+            parser.error('Journey requires explicit browser tools and the pinned native Keycloak image')
+    elif args.keycloak_image:
+        parser.error('Identity container is used only by the journey suite')
     if args.http_mode and args.suite != "pod-http":
         parser.error("HTTP comparison mode requires --suite pod-http")
     if (args.suite in ('pool', 'pool-lifecycle')) != (args.pool_source is not None):
@@ -189,7 +195,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     args.artifacts.mkdir(parents=True, mode=0o700, exist_ok=False)
     run = {"requests": "mq02-", "service": "mq03-", "runtime": "mq03-runtime-",
-           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-", "bootstrap": "database-bootstrap-", "clocks": "clock-observation-", "backpressure": "lookup-backpressure-", "restore": "restore-snapshot-", "timing": "cutover-timing-", "profile": "worker-profile-", "pool": "control-pool-", "pool-lifecycle": "pool-lifecycle-", "settlement": "effect-settlement-"}[args.suite] + uuid4().hex
+           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-", "bootstrap": "database-bootstrap-", "clocks": "clock-observation-", "backpressure": "lookup-backpressure-", "restore": "restore-snapshot-", "timing": "cutover-timing-", "profile": "worker-profile-", "pool": "control-pool-", "pool-lifecycle": "pool-lifecycle-", "settlement": "effect-settlement-", "journey": "workspace-journey-"}[args.suite] + uuid4().hex
     container, network = "sova-" + run, "sova-network-" + run
     report = {"run_id": run, "image_id": args.image, "shared_environment_used": False,
               "qualification_issued": False, "network_created": False, "container_created": False,
@@ -338,6 +344,19 @@ def main():
             measured_sources.extend(sorted((root/'console/dist').rglob('*.*')))
             report['browser_driver_lock_sha256'] = hashlib.sha256((args.browser_tools/'package-lock.json').read_bytes()).hexdigest()
             report['browser_executable_sha256'] = hashlib.sha256(args.browser_executable.read_bytes()).hexdigest()
+    if args.suite == 'journey':
+        tests = ['tests/integration/test_workspace_user_journey.py']
+        measured_sources.extend([root / tests[0], root / 'tests/qualification_workspace_oidc.py',
+            root / 'tests/qualification_workspace_browser.mjs', root / 'tests/keycloak_fixtures.py',
+            root / 'tests/qualification_runtime.py', root / 'tests/qualification_service.py',
+            root / 'tests/qualification_worker.py', root / 'tests/postgres_fixtures.py',
+            root / 'tests/postgres_business.py', root / 'tests/contract_world.py',
+            root / 'tests/control_plane_support.py', root / 'tests/handoff_drive.py',
+            *sorted((root / 'src/sova').rglob('*.py')),
+            *sorted((root / 'console/dist').rglob('*.*'))])
+        report['keycloak_image_id'] = args.keycloak_image
+        report['browser_driver_lock_sha256'] = hashlib.sha256((args.browser_tools/'package-lock.json').read_bytes()).hexdigest()
+        report['browser_executable_sha256'] = hashlib.sha256(args.browser_executable.read_bytes()).hexdigest()
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}
@@ -417,6 +436,8 @@ def main():
                 env.update(SOVA_TEST_RECOVERY_BROWSER_TOOLS=str(args.browser_tools),
                            SOVA_TEST_RECOVERY_BROWSER_EXECUTABLE=str(args.browser_executable),
                            SOVA_TEST_RECOVERY_BROWSER_NODE=str(args.browser_node))
+            if args.keycloak_image:
+                env['SOVA_TEST_JOURNEY_KEYCLOAK_IMAGE'] = args.keycloak_image
             if args.suite in ("pods", "pod-http"):
                 env.update(SOVA_TEST_QUALIFICATION_RUN=run,
                            SOVA_TEST_QUALIFICATION_DOCKER_NETWORK=network,

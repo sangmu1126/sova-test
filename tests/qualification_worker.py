@@ -123,7 +123,13 @@ def child(path):
     factory = postgres_factory(spec["adapter_id"], resolve)
     def wrapped(tenant, app, revision):
         execution = factory(tenant, app, revision)
-        return Execution(PauseAfterApply(execution.adapter, spec), execution.measure)
+        def measure(obligation, times):
+            if spec.get("stop_before_stabilization") and obligation["kind"] == "measured_budget":
+                trace(spec["trace"], event="fixture_stop_before_stabilization", owner=spec["owner"])
+                w.stopping.set()
+                raise RuntimeError("Explicit local fixture fault before stabilization")
+            return execution.measure(obligation, times)
+        return Execution(PauseAfterApply(execution.adapter, spec), measure)
     signer = Ed25519EvidenceSigner(
         Ed25519PrivateKey.from_private_bytes(bytes.fromhex(Path(spec["key_file"]).read_text())),
         issuer_id=config.evidence_issuer, key_id=spec["key_id"])
@@ -149,7 +155,8 @@ def child(path):
 
 
 class WorkerProcess:
-    def __init__(self, h, *, label, pause_after=None, business_dsn=None, remote_after_apply=False):
+    def __init__(self, h, *, label, pause_after=None, business_dsn=None, remote_after_apply=False,
+                 stop_before_stabilization=False, reverse=False):
         # Parent-side controller only. The child must not import the HTTP test
         # fixtures or rely on pytest adding tests/integration to sys.path.
         from qualification_runtime import private_file
@@ -162,15 +169,19 @@ class WorkerProcess:
         self.trace_file = h.directory / "worker-trace.jsonl"
         key = private_file(h.directory / (label + ".key"), h.signer._key.private_bytes_raw().hex())
         dsn = private_file(h.directory / (label + ".dsn"), business_dsn or h.business["dsn"])
+        names = dict(h.business["names"])
+        if reverse:
+            names["src"], names["tgt"] = names["tgt"], names["src"]
         private_file(self.path, json.dumps({
             "owner": self.owner, "tenant": h.tenant, "application": h.app,
-            "names": h.business["names"], "business_dsn_file": str(dsn),
+            "names": names, "business_dsn_file": str(dsn),
             "app_role": h.business["app"], "batch_role": h.business["batch"],
             "adapter_id": h.world["manifest"].adapter_id,
             "route_file": str(h.route.path), "scope": h.route.scope,
             "key_file": str(key), "key_id": h.signer.key_id,
             "pause_after": pause_after, "trace": str(self.trace_file),
             "tag_requests": business_dsn is not None, "remote_after_apply": remote_after_apply,
+            "stop_before_stabilization": stop_before_stabilization,
             "ready": str(self.ready), "release": str(self.release)}))
         self.output_path = h.directory / (label + ".log")
         self.output = self.output_path.open("x")
