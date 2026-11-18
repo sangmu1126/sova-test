@@ -47,7 +47,11 @@ export function NativePlanView({ data }: { data: NativeStatus }) {
         )}
         <p>
           작업별 보안 보류 플래그:{" "}
-          {recovery.security_holds.operation_hold ? "설정됨" : "설정되지 않음"}
+          {recovery.security_holds.operation_hold === null
+            ? "미확인"
+            : recovery.security_holds.operation_hold
+              ? "설정됨"
+              : "설정되지 않음"}
         </p>
         <p>
           보류의 상세 근거와 해제 조건은 기존 보안 검토 절차에서 확인합니다.

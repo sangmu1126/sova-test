@@ -55,7 +55,8 @@ def project_status(value, scope, *, now=None):
         if (type(ids) is not list or len(ids) > 256
                 or type(security["active_count"]) is not int
                 or security["active_count"] != len(ids)
-                or type(security["operation_hold"]) is not bool):
+                or (security["operation_hold"] is not None and type(security["operation_hold"]) is not bool)
+                or (r["status"] != "unavailable" and security["operation_hold"] is None)):
             raise ValueError
         ids = [identifier(hold_id) for hold_id in ids]
         if len(set(ids)) != len(ids):

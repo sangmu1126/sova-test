@@ -17,7 +17,7 @@ NEXT_STEPS = ["VERIFY_REMOTE_SETTLEMENT", "READBACK_EXISTING_COMMAND", "REVIEW_R
 VERSION = "handoff-recovery-status-v2"
 
 
-def security_projection(hold_ids=(), operation_hold=False):
+def security_projection(hold_ids=(), operation_hold=None):
     return {"active_count": len(hold_ids), "hold_ids": list(hold_ids),
             "operation_hold": operation_hold}
 

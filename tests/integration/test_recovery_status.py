@@ -44,6 +44,7 @@ def test_status_does_not_invent_authority_or_treat_open_without_operation_as_cle
     assert view["scope"]["operation_id"] is None
     assert view["recovery"]["status"] == "unavailable"
     assert view["recovery"]["required"] is None
+    assert view["recovery"]["security_holds"]["operation_hold"] is None
     assert h["store"].current(h["app"], h["unit"]) == original
     assert len(h["store"].history(h["app"], h["unit"])) == 1
 

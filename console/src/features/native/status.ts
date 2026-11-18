@@ -56,7 +56,7 @@ export type NativeStatus = {
     security_holds: {
       active_count: number;
       hold_ids: string[];
-      operation_hold: boolean;
+      operation_hold: boolean | null;
     };
     pending_effects: {
       fingerprint: string;
@@ -134,7 +134,9 @@ export function nativeStatus(value: unknown, now = Date.now()): NativeStatus {
     new Set(holds.hold_ids).size !== holds.hold_ids.length ||
     !Number.isSafeInteger(holds.active_count) ||
     holds.active_count !== holds.hold_ids.length ||
-    typeof holds.operation_hold !== "boolean"
+    (holds.operation_hold !== null &&
+      typeof holds.operation_hold !== "boolean") ||
+    (r.status !== "unavailable" && holds.operation_hold === null)
   )
     return fail();
   const securityBlocked = holds.hold_ids.length > 0 || holds.operation_hold;
