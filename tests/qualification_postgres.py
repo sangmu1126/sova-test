@@ -90,25 +90,47 @@ class ClockWatch:
         self.done = threading.Event()
         self.thread = threading.Thread(target=self.watch, daemon=True)
 
-    def sample(self):
-        before = datetime.now(UTC)
-        with psycopg.connect(self.dsn) as conn:
-            database = conn.execute("SELECT clock_timestamp()").fetchone()[0]
-        after = datetime.now(UTC)
-        # A DB timestamp within the real round trip needs no inferred offset.
-        lower_bound = max(0.0, (before - database).total_seconds(), (database - after).total_seconds())
+    def sample(self, phase="periodic"):
+        before, started, stage = datetime.now(UTC), time.monotonic(), "connect"
+        try:
+            with psycopg.connect(self.dsn) as conn:
+                stage = "query"
+                database = conn.execute("SELECT clock_timestamp()").fetchone()[0]
+                stage = "close"
+            stage = "validate"
+            after = datetime.now(UTC)
+            # A DB timestamp within the real round trip needs no inferred offset.
+            lower_bound = max(0.0, (before - database).total_seconds(), (database - after).total_seconds())
+        except Exception as error:
+            # Class names must come from the driver, not an arbitrary exception
+            # subclass. Never record messages, repr, args, DSNs, diag or pgconn.
+            known = {value: name for module in (psycopg, psycopg.errors)
+                     for name, value in vars(module).items()
+                     if isinstance(value, type) and issubclass(value, psycopg.Error)}
+            category = known.get(type(error), "PsycopgError" if isinstance(error, psycopg.Error)
+                                 else "UnexpectedSamplerError")
+            state = getattr(error, "sqlstate", None) if type(error) in known else None
+            self.samples.append({"error": "clock_sample_failed", "phase": phase, "stage": stage,
+                "host_before": before.isoformat(), "host_after": datetime.now(UTC).isoformat(),
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
+                "exception_class": category,
+                "sqlstate": state if isinstance(state, str) and re.fullmatch(r"[0-9A-Z]{5}", state) else None})
+            raise
         self.samples.append({"host_before": before.isoformat(), "database": database.isoformat(),
-                             "host_after": after.isoformat(), "skew_lower_bound_seconds": lower_bound})
+                             "host_after": after.isoformat(), "skew_lower_bound_seconds": lower_bound,
+                             "phase": phase, "elapsed_ms": round((time.monotonic() - started) * 1000, 3)})
 
     def watch(self):
         while not self.done.wait(0.5):
             try:
                 self.sample()
             except psycopg.Error:
-                self.samples.append({"error": "clock_sample_failed"})
+                pass  # The failed observation is already retained; next fixed-cadence sample is independent.
+            except Exception:
+                self.done.set()  # Never silently lose a background sampler and report prior observations as complete.
 
     def start(self):
-        self.sample()
+        self.sample("start")
         if self.samples[-1]["skew_lower_bound_seconds"] > 1:
             raise RuntimeError("Dedicated DB and host clocks differ by more than one second")
         self.thread.start()
@@ -117,10 +139,20 @@ class ClockWatch:
         self.done.set()
         if self.thread.is_alive():
             self.thread.join(timeout=5)
-        self.sample()
-        return {"max_allowed_skew_seconds": 1, "samples": self.samples,
-                "passed": all("error" not in s and s["skew_lower_bound_seconds"] <= 1
-                              for s in self.samples)}
+        stopped = not self.thread.is_alive()
+        if not stopped:
+            self.samples.append({"error": "clock_sampler_still_running", "phase": "stop",
+                                 "host_observed_at": datetime.now(UTC).isoformat()})
+        else:
+            try:
+                self.sample("stop")
+            except Exception:
+                pass  # Preserve final observation failure in the report instead of losing clock_checks.
+        return {"version": 2, "max_allowed_skew_seconds": 1, "samples": self.samples,
+                "sampling_interval_seconds": 0.5, "stop_join_seconds": 5, "thread_stopped": stopped,
+                "sampling_failure_count": sum("error" in s for s in self.samples),
+                "passed": stopped and bool(self.samples) and
+                    all("error" not in s and s["skew_lower_bound_seconds"] <= 1 for s in self.samples)}
 
 
 def main():
@@ -128,7 +160,7 @@ def main():
     parser.add_argument("--image", required=True, help="Full cached sha256 image ID; no tag or automatic pull")
     parser.add_argument("--security-source", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
-    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap"), default="requests",
+    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap", "clocks"), default="requests",
                         help="MQ-02, service, runtime API, or worker process/fault qualification checks")
     parser.add_argument("--http-mode", choices=("cold_deferred", "prepared_deferred", "prepared_bounded", "ready_deferred", "ready_bounded"))
     args = parser.parse_args()
@@ -141,7 +173,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     args.artifacts.mkdir(parents=True, mode=0o700, exist_ok=False)
     run = {"requests": "mq02-", "service": "mq03-", "runtime": "mq03-runtime-",
-           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-", "bootstrap": "database-bootstrap-"}[args.suite] + uuid4().hex
+           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-", "bootstrap": "database-bootstrap-", "clocks": "clock-observation-"}[args.suite] + uuid4().hex
     container, network = "sova-" + run, "sova-network-" + run
     report = {"run_id": run, "image_id": args.image, "shared_environment_used": False,
               "qualification_issued": False, "network_created": False, "container_created": False,
@@ -221,6 +253,9 @@ def main():
         measured_sources.extend([*(root / t for t in tests), root / "tests/qualification_service.py",
                                  root / "tests/qualification_diagnostics.py", root / "tests/postgres_business.py",
                                  root / "tests/contract_world.py", root / "tests/control_plane_support.py"])
+    if args.suite == "clocks":
+        tests = ["tests/unit/test_qualification_clock.py", "tests/integration/test_clock_observation_postgres.py"]
+        measured_sources.extend(root / t for t in tests)
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}
