@@ -21,12 +21,16 @@ from uuid import uuid4
 from qualification_postgres import certificates
 from postgres_business import SCHEMA
 
+ERROR_DIRECTORY = None
+
 
 def docker(*args, data=None):
     result = subprocess.run(["docker", *args], input=data, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=90)
     if result.returncode:
         # Keep driver errors private; they can include credential-bearing SQL.
+        if ERROR_DIRECTORY is not None:
+            (ERROR_DIRECTORY / ("docker-error-" + uuid4().hex + ".txt")).write_text(result.stderr[:1048576])
         raise RuntimeError("Docker qualification operation failed")
     return result.stdout.strip()
 
@@ -46,6 +50,8 @@ def main():
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", args.postgres_image):
         parser.error("Exact cached PostgreSQL image ID required")
     args.artifacts.mkdir(mode=0o700, parents=True, exist_ok=False)
+    global ERROR_DIRECTORY
+    ERROR_DIRECTORY = args.artifacts
     image = json.loads((args.image_directory / "image.json").read_text())
     scan = json.loads((args.image_directory / "scan-summary.json").read_text())
     if (scan["manifest_digest"] != image["manifest_digest"] or scan["preflight"] != "PASS"
@@ -93,9 +99,10 @@ def main():
             attempted.append(pg_init)
             docker("run", "--name", pg_init, "--label", "sova.qualification=" + run,
                 "--network", "none", "--user", "0:0", "--cap-drop", "ALL", "--cap-add", "CHOWN",
+                "--cap-add", "DAC_OVERRIDE",
                 "--security-opt", "no-new-privileges", "--mount", f"type=volume,src={pg_volume},dst=/config",
                 "--mount", f"type=bind,src={root / 'server'},dst=/input,readonly", "--entrypoint", "sh", ref,
-                "-ec", "cp /input/* /config/; chown -R 70:70 /config; chmod 0700 /config; chmod 0600 /config/*")
+                "-ec", "cp /input/* /config/; chmod 0700 /config; chmod 0600 /config/*; chown -R 70:70 /config")
             if pg_image["Config"]["User"] != "70:70":
                 raise ValueError("This physical-profile PostgreSQL must always start non-root")
             attempted.append(pg)
@@ -145,9 +152,10 @@ def main():
             attempted.append(init)
             docker("run", "--name", init, "--label", "sova.qualification=" + run,
                 "--network", "none", "--user", "0:0", "--cap-drop", "ALL", "--cap-add", "CHOWN",
+                "--cap-add", "DAC_OVERRIDE",
                 "--security-opt", "no-new-privileges", "--mount", f"type=volume,src={volume},dst=/config",
                 "--mount", f"type=bind,src={mounted},dst=/input,readonly", "--entrypoint", "sh", ref,
-                "-ec", "cp /input/* /config/; chown -R 10001:10001 /config; chmod 0700 /config; chmod 0600 /config/*")
+                "-ec", "cp /input/* /config/; chmod 0700 /config; chmod 0600 /config/*; chown -R 10001:10001 /config")
             attempted.append(app)
             docker("run", "-d", "--name", app, "--label", "sova.qualification=" + run,
                 "--network", network, "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
