@@ -53,20 +53,26 @@ def main():
     client = OrderHttpClient(config["origin"], bearer_token=(config_dir / "token").read_text().strip(),
                              journal=journal, client=transport)
     events, pending = [], []
-    side = None
+    side, retry_after = None, None
+    def wait_hint(response):
+        raw = response.headers.get("retry-after")
+        return (int(raw) if len(raw) <= 5 and raw.isascii() and raw.isdecimal() else "unsupported") if raw is not None else None
+
     def response_seen(response):
-        nonlocal side
+        nonlocal side, retry_after
         side = response.headers.get("x-qualification-side")
+        retry_after = wait_hint(response)
     transport.event_hooks["response"] = [response_seen]
 
     def attempt(intent, kind, phase):
-        nonlocal side
-        side = None
+        nonlocal side, retry_after
+        side, retry_after = None, None
         at, start = datetime.now(UTC), time.monotonic()
         status = client.submit(intent) if kind == "submit" else client.lookup(intent)
         event = {"request_id": intent.request_id, "kind": kind, "phase": phase,
                  "started_at": at.isoformat(), "finished_at": datetime.now(UTC).isoformat(),
-                 "elapsed_ms": round((time.monotonic() - start) * 1000, 3), "status": status, "side": side}
+                 "elapsed_ms": round((time.monotonic() - start) * 1000, 3), "status": status, "side": side,
+                 "retry_after": retry_after if status is not None else None}
         with (result_dir / "traffic.jsonl").open("a") as stream:
             stream.write(json.dumps(event) + "\n")
             stream.flush()
@@ -94,10 +100,16 @@ def main():
         bounded_results = []
         async def run_load():
             nonlocal stop_received
+            bounded_hint = None
+            async def bounded_response_seen(response):
+                nonlocal bounded_hint
+                bounded_hint = wait_hint(response)
             async def bounded_run(transport):
                 nonlocal stop_received
                 def observe(event):
                     event["phase"] = "load" if event["sequence"] == 1 else "inline_retry"
+                    event["retry_after"] = bounded_hint if event["status"] is not None else None
+                    event["observed_monotonic"] = time.monotonic()
                     with (result_dir / "traffic.jsonl").open("a") as stream:
                         stream.write(json.dumps(event) + "\n")
                         stream.flush()
@@ -116,7 +128,7 @@ def main():
                         await asyncio.sleep(.05)
                         continue
                     intent = OrderIntent(f"request-{number:05d}", "load-" + config["run_id"], f"key-{number:05d}", "12.34")
-                    if config.get("mode") in ("prepared_bounded", "ready_bounded"):
+                    if config.get("mode") in ("prepared_bounded", "ready_bounded", "ready_backpressure"):
                         outcome = await bounded.complete(intent)
                         bounded_results.append(outcome)
                         if outcome["result"] != "CONFIRMED":
@@ -126,7 +138,8 @@ def main():
                     number += 1
                     await asyncio.sleep(.2)
             async with httpx.AsyncClient(verify=ssl.create_default_context(cafile=str(config_dir / "ca.pem")),
-                timeout=1, trust_env=False, follow_redirects=False, limits=httpx.Limits(max_keepalive_connections=0)) as async_transport:
+                timeout=1, trust_env=False, follow_redirects=False, limits=httpx.Limits(max_keepalive_connections=0),
+                event_hooks={"response": [bounded_response_seen]}) as async_transport:
                 await bounded_run(async_transport)
         asyncio.run(run_load())
         # No transparent retry in the first-attempt trace. Recovery is explicit

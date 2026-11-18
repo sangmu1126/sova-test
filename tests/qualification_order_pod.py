@@ -32,7 +32,8 @@ def main():
         return psycopg.connect(dsn, dbname=database, connect_timeout=2)
 
     app = application({"connect_as": connect_as, "app": role}, FixedDatabase(),
-                      config["scope"], (directory / "token").read_text().strip())
+                      config["scope"], (directory / "token").read_text().strip(),
+                      lookup_retry_after_seconds=config.get("lookup_retry_after_seconds"))
 
     @app.middleware("http")
     async def side_marker(request, call_next):

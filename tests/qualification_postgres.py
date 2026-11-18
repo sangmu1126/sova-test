@@ -160,9 +160,9 @@ def main():
     parser.add_argument("--image", required=True, help="Full cached sha256 image ID; no tag or automatic pull")
     parser.add_argument("--security-source", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
-    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap", "clocks"), default="requests",
+    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap", "clocks", "backpressure"), default="requests",
                         help="MQ-02, service, runtime API, or worker process/fault qualification checks")
-    parser.add_argument("--http-mode", choices=("cold_deferred", "prepared_deferred", "prepared_bounded", "ready_deferred", "ready_bounded"))
+    parser.add_argument("--http-mode", choices=("cold_deferred", "prepared_deferred", "prepared_bounded", "ready_deferred", "ready_bounded", "ready_backpressure"))
     args = parser.parse_args()
     if args.http_mode and args.suite != "pod-http":
         parser.error("HTTP comparison mode requires --suite pod-http")
@@ -173,7 +173,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     args.artifacts.mkdir(parents=True, mode=0o700, exist_ok=False)
     run = {"requests": "mq02-", "service": "mq03-", "runtime": "mq03-runtime-",
-           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-", "bootstrap": "database-bootstrap-", "clocks": "clock-observation-"}[args.suite] + uuid4().hex
+           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-", "bootstrap": "database-bootstrap-", "clocks": "clock-observation-", "backpressure": "lookup-backpressure-"}[args.suite] + uuid4().hex
     container, network = "sova-" + run, "sova-network-" + run
     report = {"run_id": run, "image_id": args.image, "shared_environment_used": False,
               "qualification_issued": False, "network_created": False, "container_created": False,
@@ -232,7 +232,8 @@ def main():
                                      root / "tests/qualification_order_pod.py", root / "tests/qualification_load_client.py",
                                      root / "examples/qualification/orders-pod-https-postgres-v1.json"])
             if args.http_mode:
-                measured_sources.append(root / "examples/qualification" / ("orders-ready-target-v3.json"
+                measured_sources.append(root / "examples/qualification" / ("orders-lookup-backpressure-v4.json"
+                    if args.http_mode == "ready_backpressure" else "orders-ready-target-v3.json"
                     if args.http_mode.startswith("ready_") else "orders-pod-https-comparison-v2.json"))
     if args.suite == "authority":
         tests = ["tests/integration/test_authority_read_concurrency.py",
@@ -256,6 +257,13 @@ def main():
     if args.suite == "clocks":
         tests = ["tests/unit/test_qualification_clock.py", "tests/integration/test_clock_observation_postgres.py"]
         measured_sources.extend(root / t for t in tests)
+    if args.suite == "backpressure":
+        tests = ["tests/unit/test_lookup_backpressure_config.py", "tests/integration/test_order_lookup_backpressure.py",
+                 "tests/integration/test_lookup_backpressure_tcp.py", "tests/unit/test_bounded_orders.py",
+                 "tests/unit/test_pod_http_metrics.py", "tests/integration/test_bounded_order_http.py"]
+        measured_sources.extend([*(root / t for t in tests), root / "tests/qualification_orders.py",
+                                 root / "tests/qualification_load_client.py", root / "tests/postgres_fixtures.py",
+                                 root / "tests/postgres_business.py"])
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}

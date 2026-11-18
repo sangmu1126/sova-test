@@ -27,7 +27,12 @@ def receipt(row):
             "amount": str(row[3]), "result": row[4]}
 
 
-def application(business, route, scope, token, *, after_commit=None, paused=None):
+def application(business, route, scope, token, *, after_commit=None, paused=None, lookup_retry_after_seconds=None):
+    # Opt-in fixture policy, not an inferred recovery promise or a client
+    # deadline override. Leave historical profiles' response contract intact.
+    if lookup_retry_after_seconds is not None and (type(lookup_retry_after_seconds) is not int
+                                                 or not 1 <= lookup_retry_after_seconds <= 30):
+        raise ValueError("Bounded integer lookup Retry-After required")
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     select = ("SELECT o.id,o.customer,o.idempotency_key,o.amount,r.result FROM orders o "
               "JOIN idempotency_results r USING(customer,idempotency_key) "
@@ -92,7 +97,8 @@ def application(business, route, scope, token, *, after_commit=None, paused=None
                 row = conn.execute(select, (customer, idempotency_key)).fetchone()
                 return receipt(row) if row else JSONResponse({"error": "not found"}, status_code=404)
         except psycopg.Error:
-            return JSONResponse({"error": "temporarily unavailable"}, status_code=503)
+            return JSONResponse({"error": "temporarily unavailable"}, status_code=503,
+                headers=({"retry-after": str(lookup_retry_after_seconds)} if lookup_retry_after_seconds is not None else None))
 
     return app
 

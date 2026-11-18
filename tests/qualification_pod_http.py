@@ -61,11 +61,12 @@ class HttpTraffic:
         self.root = Path(__file__).resolve().parents[1]
         self.mode = os.environ.get("SOVA_TEST_HTTP_MODE", "cold_deferred")
         self.comparison = "SOVA_TEST_HTTP_MODE" in os.environ
-        if self.mode not in ("cold_deferred", "prepared_deferred", "prepared_bounded", "ready_deferred", "ready_bounded"):
+        if self.mode not in ("cold_deferred", "prepared_deferred", "prepared_bounded", "ready_deferred", "ready_bounded", "ready_backpressure"):
             raise ValueError("Unknown HTTP comparison mode")
         self.ready_before_switch = self.mode.startswith("ready_")
         self.prepared = self.mode.startswith("prepared_") or self.ready_before_switch
-        profile = ("orders-ready-target-v3.json" if self.ready_before_switch else
+        profile = ("orders-lookup-backpressure-v4.json" if self.mode == "ready_backpressure" else
+                   "orders-ready-target-v3.json" if self.ready_before_switch else
                    "orders-pod-https-comparison-v2.json" if self.comparison else "orders-pod-https-postgres-v1.json")
         self.profile_digest = hashlib.sha256((self.root / "examples/qualification" / profile).read_bytes()).hexdigest()
         self.scope = {"version": 1, "run_id": self.run_id, "tenant_id": journey.tenant, "profile_digest": self.profile_digest}
@@ -85,7 +86,8 @@ class HttpTraffic:
                 "sslcert": "/etc/order-fixture/db-client.pem", "sslkey": "/etc/order-fixture/db-client-key.pem"})
             env.apply(secret("orders-" + side, {**certs, **tls_files, "dsn": dsn, "token": self.token,
                 "config.json": json.dumps({"database": h.business["names"][key], "role": h.business["app"],
-                                           "side": side, "scope": self.scope})}))
+                                           "side": side, "scope": self.scope,
+                                           "lookup_retry_after_seconds": 1 if self.mode == "ready_backpressure" else None})}))
         service = env.object("service", "orders")
         self.service_uid = service["metadata"]["uid"]
         # The same Service, clusterIP, NodePort and client origin survive the
@@ -107,6 +109,7 @@ class HttpTraffic:
         env.kube("-n", NAMESPACE, "wait", "--for=condition=Ready", "pod/" + self.observer_pod, "--timeout=60s")
         env.report["http_fixture_sources_sha256"] = {p: hashlib.sha256(v.encode()).hexdigest() for p, v in sources.items()}
         env.report["http_mode"] = self.mode
+        env.report["lookup_retry_after_seconds"] = 1 if self.mode == "ready_backpressure" else None
         if self.prepared:
             target = self.pod("orders-target", "target")
             target["metadata"]["labels"]["side"] = "target" if self.ready_before_switch else "prepared"
@@ -193,7 +196,7 @@ class HttpTraffic:
         assert comparison["counts"]["unfinished_attempts"] == 0
         if self.mode == "cold_deferred":
             assert client["initial_failures"] > 0, "The deliberately interrupted route had no recorded first-attempt failure"
-        if self.mode in ("prepared_bounded", "ready_bounded"):
+        if self.mode in ("prepared_bounded", "ready_bounded", "ready_backpressure"):
             assert len(client["bounded_results"]) == 100
             assert all(r["result"] in ("CONFIRMED", "EXHAUSTED", "REJECTED") for r in client["bounded_results"])
             client["completion_budget_satisfied"] = all(r["result"] == "CONFIRMED" for r in client["bounded_results"])
