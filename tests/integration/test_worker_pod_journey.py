@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import time
 
 import pytest
@@ -165,13 +166,29 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
             env.phase("lease expired but recovery refused for live or unauthorized Pod observation")
             # Normal kubelet deletion, not --force/zero grace (which by itself
             # could remove the API object before its process really stopped).
-            env.kube("-n", NAMESPACE, "delete", "pod", lost, "--grace-period=1", "--wait=true")
+            watched = env.object("pod", lost)
+            watch_path = env.directory / "owner-terminal-watch.log"
+            with watch_path.open("w") as watch_output:
+                watch = subprocess.Popen(["kubectl", "--kubeconfig", str(env.config), "--context", "kind-"+env.run,
+                    "-n", NAMESPACE, "get", "pod", lost, "--watch-only", "--output-watch-events",
+                    "--resource-version="+watched["metadata"]["resourceVersion"],
+                    '-o=jsonpath={.type} {.object.metadata.uid} {.object.status.phase}{"\\n"}'],
+                    stdout=watch_output, stderr=subprocess.DEVNULL)
+                deletion_requested_at = datetime.now(UTC)
+                try:
+                    env.kube("-n", NAMESPACE, "delete", "pod", lost, "--grace-period=1", "--wait=true")
+                finally:
+                    watch.terminate()
+                    watch.wait(timeout=5)
+            terminal = [line for line in watch_path.read_text().splitlines()
+                        if uid in line and line.split()[-1] in ("Succeeded", "Failed")]
             stopped_at = datetime.now(UTC)
             all_containers = json.loads(command(["docker", "exec", env.node, "crictl", "ps", "-a", "-o", "json"]).stdout)
             old = [c for c in all_containers["containers"] if c["id"] == container]
             assert not old or old[0]["state"] == "CONTAINER_EXITED"
             env.report["runtime_stop"] = {"container_id": container, "observed_at": stopped_at.isoformat(),
-                "state": "CONTAINER_EXITED" if old else "absent from CRI inventory", "force_api_deletion": False}
+                "state": "CONTAINER_EXITED" if old else "absent from CRI inventory", "force_api_deletion": False,
+                "terminal_pod_watch": terminal}
             env.phase("old Pod gone and runtime container confirmed stopped")
             status = wait_for(lambda: (s if (s := h.status(admitted["unit_digest"]))["state"]
                                       == "HANDOFF_COMPLETE" else None), 90, "handoff completion by actual successor")
@@ -191,10 +208,15 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
             assert patches[0]["user"]["extra"]["authentication.kubernetes.io/pod-uid"] == [uid]
             gone = [e for e in env.audit_events() if e.get("stage") == "ResponseComplete" and e.get("verb") == "get"
                     and e.get("objectRef", {}).get("name") == lost and e.get("responseStatus", {}).get("code") == 404]
-            assert gone, "No authenticated Pod absence observation"
+            terminal_gets = [e for e in env.audit_events() if terminal and e.get("stage") == "ResponseComplete"
+                            and e.get("verb") == "get" and e.get("objectRef", {}).get("name") == lost
+                            and e.get("responseStatus", {}).get("code") == 200
+                            and datetime.fromisoformat(e["requestReceivedTimestamp"].replace("Z", "+00:00")) >= deletion_requested_at]
+            stopped_observations = gone + terminal_gets
+            assert stopped_observations, "No authenticated missing/terminal Pod observation with runtime stop proof"
             assert all(e["user"]["uid"] == service_accounts["worker"]
                        and e["user"]["extra"]["authentication.kubernetes.io/pod-uid"]
-                           == [pods[successor]["metadata"]["uid"]] for e in gone)
+                           == [pods[successor]["metadata"]["uid"]] for e in stopped_observations)
             if traffic:
                 env.report["http_business"] = traffic.finish()
                 confirmed = env.report["http_business"]["reconciliation"]["counts"]["confirmed_requests"]
@@ -207,6 +229,7 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
             env.report["handoff"] = {"state": status["state"], "original_owner": owner,
                 "recovery_owner": recovered[0][0], "recovery_at": recovered[0][1].isoformat(),
                 "route_patch_requests": len(patches), "pod_absence_audit_observations": len(gone),
+                "stopped_pod_observation_http_statuses": sorted({e["responseStatus"]["code"] for e in stopped_observations}),
                 "effect_status": effects[0][0], "historical_orders_preserved": 50, "target_write_confirmed": True,
                 "client_continuity_qualified": False}
             env.phase("actual successor completed handoff without reissuing route mutation")

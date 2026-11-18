@@ -18,8 +18,8 @@ from uuid import uuid4
 
 from sova.qualification.image import inspect_image
 
-SERVICE_IMAGE = "sha256:97cd599e6a87c312fa422e55508fcd052c0f8302d0a455113f776a378b18f5a7"
-SERVICE_SOURCE = "18a0b7d8b70fdc5327bf178ddccbbe31202c46db"
+SERVICE_IMAGE = "sha256:09630fd2d03b4221e346cbd63515f2f7d2b5499bf441b7765d7615e1e0dfa4d8"
+SERVICE_SOURCE = "c222fde4212c85d4fbb68717d2375ae349a83d80"
 NODE_IMAGE = "sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a"
 NAMESPACE = "worker-qualification"
 
