@@ -159,13 +159,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True, help="Full cached sha256 image ID; no tag or automatic pull")
     parser.add_argument("--security-source", type=Path, required=True)
+    parser.add_argument("--pool-source", type=Path, help="Private pinned psycopg_pool source for pool suite only")
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
-    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap", "clocks", "backpressure", "restore", "timing", "profile"), default="requests",
+    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap", "clocks", "backpressure", "restore", "timing", "profile", "pool"), default="requests",
                         help="MQ-02, service, runtime API, or worker process/fault qualification checks")
     parser.add_argument("--http-mode", choices=("cold_deferred", "prepared_deferred", "prepared_bounded", "ready_deferred", "ready_bounded", "ready_backpressure"))
     args = parser.parse_args()
     if args.http_mode and args.suite != "pod-http":
         parser.error("HTTP comparison mode requires --suite pod-http")
+    if (args.suite == 'pool') != (args.pool_source is not None):
+        parser.error('Only the pool suite requires --pool-source')
+    if args.pool_source and not (args.pool_source / 'psycopg_pool-3.3.3.dist-info/METADATA').is_file():
+        parser.error('Pinned psycopg_pool 3.3.3 installation required')
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", args.image):
         parser.error("An exact cached image ID is required")
     if not (args.security_source / "sova_security").is_dir():
@@ -173,7 +178,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     args.artifacts.mkdir(parents=True, mode=0o700, exist_ok=False)
     run = {"requests": "mq02-", "service": "mq03-", "runtime": "mq03-runtime-",
-           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-", "bootstrap": "database-bootstrap-", "clocks": "clock-observation-", "backpressure": "lookup-backpressure-", "restore": "restore-snapshot-", "timing": "cutover-timing-", "profile": "worker-profile-"}[args.suite] + uuid4().hex
+           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-", "bootstrap": "database-bootstrap-", "clocks": "clock-observation-", "backpressure": "lookup-backpressure-", "restore": "restore-snapshot-", "timing": "cutover-timing-", "profile": "worker-profile-", "pool": "control-pool-"}[args.suite] + uuid4().hex
     container, network = "sova-" + run, "sova-network-" + run
     report = {"run_id": run, "image_id": args.image, "shared_environment_used": False,
               "qualification_issued": False, "network_created": False, "container_created": False,
@@ -288,6 +293,16 @@ def main():
             root / 'tests/contract_world.py', root / 'tests/control_plane_support.py',
             root / 'tests/handoff_drive.py', root / 'tests/postgres_fixtures.py', root / 'tests/postgres_business.py',
             *sorted((root / 'src/sova').rglob('*.py'))])
+    if args.suite == 'pool':
+        tests = ['tests/integration/test_control_pool_postgres.py']
+        measured_sources.extend([root / tests[0], root / 'tests/qualification_pool.py',
+            root / 'tests/qualification_timing.py', root / 'tests/qualification_service.py',
+            root / 'tests/contract_world.py', root / 'tests/control_plane_support.py',
+            root / 'tests/handoff_drive.py', root / 'tests/postgres_fixtures.py', root / 'tests/postgres_business.py',
+            root / 'examples/qualification/control-pool-requirements.txt',
+            *sorted((root / 'src/sova').rglob('*.py'))])
+        report['external_pool_source_sha256'] = {str(p.relative_to(args.pool_source)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted((args.pool_source / 'psycopg_pool').glob('*.py'))}
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}
@@ -361,6 +376,8 @@ def main():
             env.update(PYTHONPATH=str(root / "src") + os.pathsep + str(args.security_source.resolve()),
                        AWS_EC2_METADATA_DISABLED="true", SOVA_TEST_POSTGRES_DSN=dsn,
                        SOVA_TEST_QUALIFICATION_ARTIFACTS=str(args.artifacts.resolve()))
+            if args.pool_source:
+                env['PYTHONPATH'] += os.pathsep + str(args.pool_source.resolve())
             if args.suite in ("pods", "pod-http"):
                 env.update(SOVA_TEST_QUALIFICATION_RUN=run,
                            SOVA_TEST_QUALIFICATION_DOCKER_NETWORK=network,
