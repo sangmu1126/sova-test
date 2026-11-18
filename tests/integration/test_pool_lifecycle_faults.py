@@ -27,13 +27,13 @@ def record(name, **value):
             file.write('\n')
 
 
-@pytest.mark.parametrize('stall', [False, True])
-def test_real_tls_checkout_reveals_queue_timeout_is_not_a_full_network_deadline(postgres_database, stall):
+def network_observation(postgres_database, stall, stage):
     dsn, role = postgres_database
-    name = 'pool-checkout-stalled' if stall else 'pool-checkout-healthy'
-    facts = {'server_response_stalled': stall, 'business_effect_executed': False, 'complete': False}
+    name = 'fresh-query-stalled' if stage=='fresh-query' else 'pool-checkout-stalled' if stall else 'pool-checkout-healthy'
+    facts = {'server_response_stalled': stall, 'pool_used': stage!='fresh-query',
+             'business_effect_executed': False, 'complete': False}
     with Relay(dsn) as relay:
-        child = Child(relay.dsn, role, 'checkout')
+        child = Child(relay.dsn, role, stage)
         try:
             ready = child.receive(5)
             assert ready['event']=='ready'
@@ -50,8 +50,11 @@ def test_real_tls_checkout_reveals_queue_timeout_is_not_a_full_network_deadline(
                     state = admin.execute('SELECT state FROM pg_stat_activity WHERE pid=%s', (ready['pid'],)).fetchone()
                 assert state is not None
                 facts['actual_backend_state'] = state[0]
-                facts['queue_timeout_seconds'] = 1
-                facts['queue_timeout_did_not_bound_checkout'] = True
+                if stage=='checkout':
+                    facts['queue_timeout_seconds'] = 1
+                    facts['queue_timeout_did_not_bound_checkout'] = True
+                else:
+                    facts['synchronous_query_wait_observed'] = True
             relay.pause.clear()
             outcome = child.receive(4)
             assert outcome['event'] in ('acquired','rejected'), outcome
@@ -69,6 +72,15 @@ def test_real_tls_checkout_reveals_queue_timeout_is_not_a_full_network_deadline(
                          guard_forced_stop=child.forced_stop, held_tls_bytes=relay.held_bytes)
             record(name, **facts)
     assert not facts['guard_forced_stop']
+
+
+@pytest.mark.parametrize('stall', [False, True])
+def test_real_tls_checkout_reveals_queue_timeout_is_not_a_full_network_deadline(postgres_database, stall):
+    network_observation(postgres_database, stall, 'checkout')
+
+
+def test_fresh_connection_query_also_requires_an_operation_deadline(postgres_database):
+    network_observation(postgres_database, True, 'fresh-query')
 
 
 def test_stalled_real_reset_does_not_lend_the_unclean_backend(postgres_database):

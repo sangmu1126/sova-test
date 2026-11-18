@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 
+import psycopg
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 
@@ -23,6 +24,10 @@ class Relay:
         host = config.get('hostaddr', config.get('host', ''))
         if not ipaddress.ip_address(host).is_loopback or config.get('sslmode') != 'verify-full':
             raise ValueError('Only a certificate-verified loopback test DB may be relayed')
+        with psycopg.connect(dsn, connect_timeout=10) as conn:
+            if conn.execute("SELECT current_setting('cluster_name'),current_database()").fetchone() != (
+                    'sova-persistence-test', 'sova_test'):
+                raise ValueError('Relay requires the explicitly isolated qualification database')
         self.upstream = (host, int(config['port']))
         self.pause, self.blocked, self.stopped = threading.Event(), threading.Event(), threading.Event()
         self.sockets, self.threads = [], []
@@ -61,7 +66,12 @@ class Relay:
                 continue
             except OSError:
                 break
-            server = socket.create_connection(self.upstream, timeout=1)
+            try:
+                server = socket.create_connection(self.upstream, timeout=1)
+            except OSError:
+                client.close()
+                self.stopped.set()
+                break
             self.sockets.extend([client, server])
             for source, target, direction in [(client, server, False), (server, client, True)]:
                 source.settimeout(.05)

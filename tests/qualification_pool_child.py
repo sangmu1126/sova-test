@@ -4,6 +4,8 @@ import json
 import sys
 import time
 
+import psycopg
+
 from qualification_pool import ControlPool
 
 
@@ -18,8 +20,20 @@ def command():
 
 def main():
     config = json.loads(sys.stdin.readline())
-    if set(config) != {'dsn', 'role', 'stage'} or config['stage'] not in ('checkout', 'reset'):
+    if set(config) != {'dsn', 'role', 'stage'} or config['stage'] not in ('checkout', 'reset', 'fresh-query'):
         raise ValueError('Unexpected qualification configuration')
+    if config['stage']=='fresh-query':
+        with psycopg.connect(config['dsn'], user=config['role'], connect_timeout=10) as conn:
+            assert conn.execute('SELECT 1').fetchone()==(1,)
+            emit(event='ready', pid=conn.info.backend_pid)
+            command()
+            emit(event='started')
+            started = time.monotonic()
+            assert conn.execute('SELECT 1').fetchone()==(1,)
+            emit(event='acquired', elapsed_ms=round((time.monotonic()-started)*1000,3))
+            command()
+        emit(event='closed')
+        return
     with ControlPool(config['dsn'], config['role'], max_size=1) as pool:
         with pool.connect() as conn:
             pid = conn.info.backend_pid
