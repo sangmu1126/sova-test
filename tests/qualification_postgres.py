@@ -213,10 +213,12 @@ def main():
     measured_sources = [*sorted((root / "src/sova/qualification").glob("*.py")),
                         root / "tests/oidc_fixture.py",
                         root / "tests/unit/test_request_qualification.py",
+                        root / "tests/unit/test_order_canary_runtime.py",
                         root / "tests/integration/test_order_http_handoff.py",
                         root / "tests/qualification_orders.py", Path(__file__).resolve(),
                         root / "examples/qualification/orders-http-postgres-v1.json"]
-    tests = ["tests/unit/test_request_qualification.py", "tests/integration/test_order_http_handoff.py"]
+    tests = ["tests/unit/test_request_qualification.py", "tests/unit/test_order_canary_runtime.py",
+             "tests/integration/test_order_http_handoff.py"]
     if args.suite in ("service", "runtime", "worker", "startup"):
         tests.extend(("tests/integration/test_service_api.py",
                       "tests/integration/test_workspace_api.py",
