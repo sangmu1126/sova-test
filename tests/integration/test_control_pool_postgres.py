@@ -18,6 +18,15 @@ from qualification_service import service_journey
 from qualification_timing import read_ledger
 from test_order_http_handoff import http_business as http_business  # noqa: F401
 from sova.adapters.postgres_plans import PostgresLifecycleRepository
+from sova.adapters.postgres_operations import PostgresOperationRepository
+from sova.adapters.postgres_execution import PostgresExecutionOwnership
+from sova.adapters.postgres_verifier_registry import PostgresVerifierRegistry
+from sova.adapters.ed25519_evidence import Ed25519EvidenceVerifier
+from sova.domain.contracts import ContractError
+from sova.domain.operations import OperationRequest
+from sova.domain.evidence import EvidenceRecord, VerificationResult
+from sova.ports.execution import ExecutionBusy
+from sova.ports.operations import LeaseLost
 from sova.ports.plans import RecordNotFound
 from sova.service import schema
 from sova.service.worker import HandoffWorker
@@ -87,7 +96,10 @@ def test_transaction_attributes_are_reset_and_readonly_is_not_leaked(postgres_da
 def test_rls_and_concurrent_tenants_remain_isolated(pool, postgres_bundle):
     original, plan, *_ = postgres_bundle
     a = PostgresLifecycleRepository(pool.connect, tenant_id=plan.tenant_id)
-    other_plan = replace(plan, tenant_id='tenant-'+uuid4().hex)
+    tenant = 'tenant-'+uuid4().hex
+    other_plan = replace(plan, tenant_id=tenant,
+        steps=tuple(replace(s, scope=replace(s.scope, tenant_id=tenant)) for s in plan.steps),
+        obligations=tuple(replace(o, scope=replace(o.scope, tenant_id=tenant)) for o in plan.obligations))
     b = PostgresLifecycleRepository(pool.connect, tenant_id=other_plan.tenant_id)
     a.save_plan(plan)
     b.save_plan(other_plan)
@@ -139,6 +151,83 @@ def test_live_role_revocation_is_checked_even_for_existing_backend(postgres_data
                 pytest.fail('old session bypassed current role check')
     with psycopg.connect(dsn, autocommit=True) as admin:
         admin.execute(sql.SQL('ALTER ROLE {} LOGIN NOBYPASSRLS').format(sql.Identifier(role)))
+
+
+def test_connect_privilege_revocation_is_not_bypassed_by_existing_session(postgres_database):
+    dsn, role = postgres_database
+    database = sql.Identifier('sova_test')
+    with psycopg.connect(dsn, autocommit=True) as admin:
+        admin.execute(sql.SQL('GRANT CONNECT ON DATABASE {} TO {}').format(database, sql.Identifier(role)))
+        admin.execute(sql.SQL('REVOKE CONNECT ON DATABASE {} FROM PUBLIC').format(database))
+    try:
+        with ControlPool(dsn, role, max_size=1) as pool:
+            with pool.connect() as c:
+                assert c.execute('SELECT 1').fetchone() == (1,)
+            with psycopg.connect(dsn, autocommit=True) as admin:
+                admin.execute(sql.SQL('REVOKE CONNECT ON DATABASE {} FROM {}').format(database, sql.Identifier(role)))
+            with pytest.raises(PoolTimeout):
+                with pool.connect():
+                    pytest.fail('existing session ignored CONNECT revocation')
+    finally:
+        with psycopg.connect(dsn, autocommit=True) as admin:
+            admin.execute(sql.SQL('GRANT CONNECT ON DATABASE {} TO PUBLIC').format(database))
+
+
+def test_revoked_approval_cannot_be_admitted_through_a_warm_pool(pool, postgres_bundle):
+    fresh, plan, approval, *_ = postgres_bundle
+    fresh.save_plan(plan)
+    fresh.save_approval('app', 'plan', 'pool-approval', approval)
+    repo = PostgresLifecycleRepository(pool.connect, tenant_id=plan.tenant_id)
+    assert not repo.get_approval('app', 'pool-approval').revoked
+    fresh.revoke_approval('app', 'pool-approval', expected_revision=1, actor_id='revoker')
+    assert repo.get_approval('app', 'pool-approval').revoked
+    with pytest.raises(ContractError, match='authorize'):
+        PostgresOperationRepository(repo).submit(OperationRequest(plan.tenant_id, 'app', 'pooled-operation',
+            'plan', plan.fingerprint, 'pool-approval', 1, 'operator', 'pool-request'))
+
+
+def test_ownership_epoch_and_expired_owner_checks_survive_reuse(pool, postgres_bundle):
+    fresh, plan, approval, *_ = postgres_bundle
+    repo = PostgresLifecycleRepository(pool.connect, tenant_id=plan.tenant_id)
+    repo.save_plan(plan)
+    repo.save_approval('app', 'plan', 'epoch-approval', approval)
+    PostgresOperationRepository(repo).submit(OperationRequest(plan.tenant_id, 'app', 'epoch-operation',
+        'plan', plan.fingerprint, 'epoch-approval', 1, 'operator', 'epoch-request'))
+    owners = PostgresExecutionOwnership(repo)
+    old = owners.acquire('app', 'epoch-operation', 'owner-old')
+    with pytest.raises(ExecutionBusy):
+        owners.acquire('app', 'epoch-operation', 'owner-new')
+    with fresh.transaction() as c:
+        c.execute("UPDATE sova_control.app_execution SET valid_until=clock_timestamp()-interval '1 second' "
+                  'WHERE application_id=%s', ('app',))
+    new = owners.acquire('app', 'epoch-operation', 'owner-new')
+    assert new.epoch == old.epoch+1 and new.token != old.token
+    with pytest.raises(LeaseLost):
+        owners.renew(old)
+    with pytest.raises(LeaseLost):
+        owners.release(old)
+    owners.release(new)
+
+
+def test_current_signed_evidence_trust_revocation_is_not_cached(postgres_database, http_business, tmp_path):
+    from datetime import timedelta
+    with service_journey(postgres_database, http_business, tmp_path) as h:
+        compiled = h.register_forward()
+        plan = h.approve(compiled, 'trust-approval')
+        o = plan.obligations[0]
+        at = h.clock()-timedelta(milliseconds=1)
+        record = EvidenceRecord('pool-evidence', o.obligation_id, o.scope, plan.revisions,
+            h.settings.evidence_verifier, at, at+timedelta(minutes=1), VerificationResult.PASS,
+            'observation', 'e'*64)
+        envelope = h.signer.sign(record, issued_at=at)
+        with ControlPool(*postgres_database) as pool:
+            registry = PostgresVerifierRegistry(pool.connect, tenant_id=h.tenant, application_id=h.app)
+            verifier = Ed25519EvidenceVerifier(registry.resolve)
+            verifier.verify(envelope, expected_record=record, now=h.clock())
+            prior = registry.latest(h.signer.issuer_id, h.signer.key_id)
+            h.publish_trust(replace(prior.trust, revoked=True), version=prior.revision+1)
+            with pytest.raises(ContractError, match='revoked'):
+                verifier.verify(envelope, expected_record=record, now=h.clock())
 
 
 @pytest.mark.parametrize('mode', ['fresh-before', 'pooled', 'fresh-after'])
