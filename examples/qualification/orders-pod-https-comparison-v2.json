@@ -14,25 +14,39 @@
     "model": "one closed-loop client; delay after each logical completion",
     "think_time_seconds": 0.2,
     "fresh_connection_per_attempt": true,
-    "maximum_load_seconds": 120
+    "maximum_load_seconds": 120,
+    "post_handoff_probe_orders": 3
   },
   "completion": {
     "deadline_seconds": 5,
     "maximum_wire_attempts_including_lookups": 8,
     "per_attempt_absolute_network_timeout_seconds": 1,
-    "retryable_statuses": [503, null],
+    "retryable_statuses": [
+      503,
+      null
+    ],
     "lookup_before_resubmission": true,
     "resubmit_only_after_lookup_404": true,
     "honor_delta_seconds_retry_after": true,
     "unsupported_retry_after": "stop",
-    "full_jitter_backoff_seconds": [0, 0.5],
+    "full_jitter_backoff_seconds": [
+      0,
+      0.5
+    ],
     "fixture_jitter_seed": 0,
-    "post_load_recovery_must_not_hide_inline_exhaustion": true
+    "post_load_recovery_must_not_hide_inline_exhaustion": true,
+    "exhaustion": "retain EXHAUSTED per logical order; separately recover after load for data reconciliation; completion_budget_satisfied remains false"
   },
   "fault": "actual owner task pause, real lease expiry and live-Pod refusal, normal Pod deletion and runtime stop, successor readback",
   "business": "original order schema, unique customer/idempotency key, exactly one order and completed work item, independent final SQL observation",
   "http": "same HTTPS Service NodePort and URL; generated trusted CA with wrong CA/hostname controls",
-  "limitations": ["closed-loop cases have different offered request timing", "single realization per case is not a statistical improvement estimate", "prepared health is not permission to enable writes early", "local disk and scheduling are outside a hard real-time guarantee"],
+  "limitations": [
+    "closed-loop cases have different offered request timing",
+    "single realization per case is not a statistical improvement estimate",
+    "prepared health is not permission to enable writes early",
+    "local disk and scheduling are outside a hard real-time guarantee",
+    "fixture PASS asserts safe ownership and final data reconciliation, not all inline completions within budget"
+  ],
   "production_slo": null,
   "qualification_issued": false,
   "authorizes_execution": false

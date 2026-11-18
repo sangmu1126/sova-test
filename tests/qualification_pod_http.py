@@ -164,10 +164,11 @@ class HttpTraffic:
                  25, "successful HTTPS orders on the original Service")
 
     def finish(self):
-        wait_for(lambda: len([e for e in self.events() if e["status"] == 200 and e["side"] == "target"]) >= 3,
-                 15, "successful HTTPS orders on the same Service after handoff")
         if self.comparison:
             wait_for(lambda: sum(e["phase"] == "load" for e in self.events()) == 100, 90, "exactly 100 initial orders")
+        else:
+            wait_for(lambda: len([e for e in self.events() if e["status"] == 200 and e["side"] == "target"]) >= 3,
+                     15, "successful HTTPS orders on the same Service after handoff")
         (self.results / "stop").touch()
         exit_code = int(command(["docker", "wait", self.name], timeout=60).stdout)
         assert exit_code == 0, "HTTP client failed; inspect private client log"
@@ -187,8 +188,12 @@ class HttpTraffic:
             assert client["initial_failures"] > 0, "The deliberately interrupted route had no recorded first-attempt failure"
         if self.mode == "prepared_bounded":
             assert len(client["bounded_results"]) == 100
-            assert all(r["result"] == "CONFIRMED" for r in client["bounded_results"])
-            assert not any(e["phase"] == "recovery" for e in self.events())
+            assert all(r["result"] in ("CONFIRMED", "EXHAUSTED", "REJECTED") for r in client["bounded_results"])
+            client["completion_budget_satisfied"] = all(r["result"] == "CONFIRMED" for r in client["bounded_results"])
+        if self.comparison:
+            probes = [e for e in self.events() if e["phase"] == "post_handoff_probe"]
+            assert len(probes) == 3 and all(e["status"] == 200 and e["side"] == "target" for e in probes)
+            assert comparison["counts"]["logical_requests"] == 103
         assert self.env.object("service", "orders")["metadata"]["uid"] == self.service_uid
         (self.results / "independent-observation.json").write_text(json.dumps(observed, indent=2) + "\n")
         (self.results / "reconciliation.json").write_text(json.dumps(comparison, indent=2) + "\n")

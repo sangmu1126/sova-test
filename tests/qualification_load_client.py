@@ -35,7 +35,8 @@ def metrics(events):
     return {"attempts": len(events), "status_counts": dict(sorted(counts.items())),
             "initial_attempts": len(initial),
             "initial_failures": sum(e["status"] != 200 for e in initial),
-            "recovery_attempts": len(events) - len(initial),
+            "recovery_attempts": sum(e["phase"] in ("inline_retry", "recovery") for e in events),
+            "phase_counts": dict(sorted(Counter(e["phase"] for e in events).items())),
             "elapsed_ms": {"p50": durations[math.ceil(len(durations) * .5) - 1],
                            "p95": durations[math.ceil(len(durations) * .95) - 1], "max": durations[-1]},
             "load_model": "single closed-loop client; 0.2s think time; fresh connection per attempt",
@@ -133,6 +134,14 @@ def main():
         for intent in pending:
             if attempt(intent, "lookup", "recovery") == 404:
                 attempt(intent, "submit", "recovery")
+        # Separate probes verify the live target even if the finite measured
+        # load ended before handoff. Never relabel these as initial successes.
+        if config.get("minimum_orders"):
+            for number in range(3):
+                intent = OrderIntent(f"probe-{number:05d}", "load-" + config["run_id"],
+                                     f"probe-key-{number:05d}", "12.34")
+                if attempt(intent, "submit", "post_handoff_probe") != 200 or side != "target":
+                    raise RuntimeError("Post-handoff target probe failed")
         snapshot = journal.snapshot()
         (result_dir / "journal.json").write_text(json.dumps(snapshot, indent=2) + "\n")
         report = {"stop_received": stop_received, "tls": tls, "mode": config.get("mode", "cold_deferred"),

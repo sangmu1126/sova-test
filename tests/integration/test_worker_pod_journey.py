@@ -63,9 +63,6 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
             witness_path = env.witness / (h.tenant + ".log")
             witness_path.touch()
             witness_path.chmod(0o666)
-            if traffic:
-                traffic.start()
-                env.phase("continuous HTTPS orders started at fixed Service origin")
             env.apply(worker_pod(env, "worker-a"), worker_pod(env, "worker-b"))
             for name in ("worker-a", "worker-b"):
                 env.kube("-n", NAMESPACE, "wait", "--for=condition=Ready", "pod/" + name, "--timeout=90s")
@@ -106,6 +103,9 @@ def worker_pod_journey(postgres_database, http_business, tmp_path, *, traffic_fa
                 "print(json.dumps({'status':r.status_code}))")
             assert json.loads(env.exec("worker-b", secret_probe)) == {"status": 403}
             env.report["actual_worker_secret_read_status"] = 403
+            if traffic:
+                traffic.start()
+                env.phase("continuous HTTPS orders started at fixed Service origin")
             admitted = h.admit("pod-worker-approval")
             env.phase("work admitted after identity and authorization observations")
 

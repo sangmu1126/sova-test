@@ -27,3 +27,11 @@ def test_invalid_timings_cannot_be_reported_as_latency(elapsed):
 def test_empty_traffic_cannot_be_reported_as_success():
     with pytest.raises(ValueError, match="nonempty"):
         metrics([])
+
+
+def test_post_handoff_probe_is_neither_initial_success_nor_recovery():
+    result = metrics([event(503, 10), event(200, 10, "inline_retry"),
+                      event(200, 10, "recovery"), event(200, 10, "post_handoff_probe")])
+    assert result["initial_attempts"] == result["initial_failures"] == 1
+    assert result["recovery_attempts"] == 2
+    assert result["phase_counts"]["post_handoff_probe"] == 1
