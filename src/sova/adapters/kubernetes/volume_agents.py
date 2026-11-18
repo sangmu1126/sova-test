@@ -106,12 +106,22 @@ class Agent:
                    body=b"")
 
 
-def single_node(controls, claims):
-    """The one node where the claims are in use, if exactly one: a second Pod of a
-    single-node (ReadWriteOnce) volume must run there."""
-    nodes = {(p.get("spec") or {}).get("nodeName") for p in controls.all_pods()
-             if mounts(p, claims) is not None and alive(p)} - {None}
-    return next(iter(nodes)) if len(nodes) == 1 else None
+def beside(controls, claims):
+    """Where a second Pod of a single-node (ReadWriteOnce) volume must run: beside
+    the live Pod that holds the claims, if they are held on exactly one node.
+    ``{"labels": ...}`` names that Pod by all its labels, for a Pod affinity on
+    the host; ``{"node": ...}`` only for a holder without labels. GKE Autopilot
+    refuses a node affinity on the host name, a Pod affinity it admits
+    (measured)."""
+    holders = [p for p in controls.all_pods() if mounts(p, claims) is not None and alive(p)
+               and (p.get("spec") or {}).get("nodeName")]
+    nodes = {p["spec"]["nodeName"] for p in holders}
+    if len(nodes) != 1:
+        return None
+    labelled = [p for p in holders if (p.get("metadata") or {}).get("labels")]
+    if labelled:
+        return {"labels": dict(labelled[0]["metadata"]["labels"])}
+    return {"node": next(iter(nodes))}
 
 
 class VolumeAgents:
@@ -142,7 +152,7 @@ class VolumeAgents:
         return hmac.new(self.key, f"{controls.registration.namespace}/{name}".encode(),
                         hashlib.sha256).hexdigest()
 
-    def pod(self, controls, claims, name, writable, node):
+    def pod(self, controls, claims, name, writable, place):
         digest = hashlib.sha256(self.token(controls, name).encode()).hexdigest()
         security = {"runAsNonRoot": True, "runAsUser": self.run_as[0],
                     "runAsGroup": self.run_as[1], "seccompProfile": {"type": "RuntimeDefault"}}
@@ -177,11 +187,15 @@ class VolumeAgents:
                 "claimName": claim, "readOnly": not writable}}
                 for i, claim in enumerate(claims)),
                 {"name": "scratch", "emptyDir": {"sizeLimit": self.scratch}}]}
-        if node is not None:
+        if place and "labels" in place:
+            spec["affinity"] = {"podAffinity": {"requiredDuringSchedulingIgnoredDuringExecution": [
+                {"labelSelector": {"matchLabels": place["labels"]},
+                 "topologyKey": "kubernetes.io/hostname"}]}}
+        elif place:
             spec["affinity"] = {"nodeAffinity": {"requiredDuringSchedulingIgnoredDuringExecution":
                                 {"nodeSelectorTerms": [{"matchExpressions": [{
                                     "key": "kubernetes.io/hostname", "operator": "In",
-                                    "values": [node]}]}]}}}
+                                    "values": [place["node"]]}]}]}}}
         return {"apiVersion": "v1", "kind": "Pod", "metadata": {
             "name": name, "labels": {"app.kubernetes.io/managed-by": "sova",
                                      "sova.dev/volume-unit": self.label,
@@ -196,7 +210,7 @@ class VolumeAgents:
         name = f"sova-vol-{self.label[:10]}-{'w' if writable else 'r'}-{secrets.token_hex(4)}"
         try:
             controls.create_pod(self.pod(controls, claims, name, writable,
-                                         single_node(controls, claims)))
+                                         beside(controls, claims)))
         except KubernetesRequestRefused as refused:
             raise ContractError(f"Volume agent refused by the cluster ({refused.status})") \
                 from refused
