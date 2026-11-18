@@ -194,11 +194,27 @@ class PostgresHandoffProbes:
                              "connect_granted": granted}
 
     def restore_drill(self, scratch_db):
-        """Copy the authoritative tables into an empty database and compare."""
+        """Restore and verify one consistent read-only source snapshot.
+
+        Comparing the restored copy to later live reads would misclassify a
+        concurrent legitimate commit, and READ COMMITTED can mix table epochs.
+        The scratch write transaction also keeps verification isolated from
+        another drill's subsequent TRUNCATE. This is not a durable backup/PITR.
+        """
+        if scratch_db in (self.source_db, self.target_db):
+            raise ContractError("Restore scratch must be a separate database")
         with self.admin_connect(self.target_db) as source, \
                 self.admin_connect(scratch_db) as scratch:
+            source.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            snapshot, isolation, read_only = source.execute(
+                "SELECT pg_current_snapshot()::text,current_setting('transaction_isolation'),"
+                "current_setting('transaction_read_only')").fetchone()
+            if isolation != "repeatable read" or read_only != "on":
+                raise ContractError("Restore source snapshot configuration invalid")
             with scratch.transaction():
+                expected = {}
                 for table, key in self.tables:
+                    expected[table] = table_digest(source, table)
                     scratch.execute(sql.SQL("TRUNCATE {}").format(sql.Identifier(table)))
                     with source.cursor().copy(sql.SQL(
                         "COPY (SELECT * FROM {} ORDER BY {}) TO STDOUT").format(
@@ -207,7 +223,7 @@ class PostgresHandoffProbes:
                                 sql.Identifier(table))) as into:
                         for chunk in out:
                             into.write(chunk)
-        restored = {table: self._rows("target", table) == self._rows(None, table,
-                                                                      database=scratch_db)
-                    for table, _ in self.tables}
-        return all(restored.values()), {"probe": "restore_drill", "tables": restored}
+                restored = {table: expected[table] == table_digest(scratch, table) for table, _ in self.tables}
+        return all(restored.values()), {"probe": "restore_drill", "tables": restored,
+            "source_snapshot": snapshot, "source_isolation": isolation, "source_read_only": True,
+            "comparison": "copied_snapshot", "durable_backup_qualified": False}

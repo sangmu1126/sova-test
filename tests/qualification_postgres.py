@@ -265,7 +265,13 @@ def main():
                                  root / "tests/qualification_load_client.py", root / "tests/postgres_fixtures.py",
                                  root / "tests/postgres_business.py"])
     if args.suite == "restore":
-        tests = ["tests/integration/test_restore_snapshot_concurrency.py::test_concurrent_commit_between_table_copies_is_not_misclassified_as_restore_corruption"]
+        tests = ["tests/integration/test_restore_snapshot_concurrency.py"]
+        tests.extend("tests/integration/test_postgres_real_handoff.py::" + t for t in [
+            "test_data_really_moves_and_authority_really_changes",
+            "test_failback_brings_back_writes_made_on_the_target",
+            "test_a_measured_pause_over_budget_requires_failback",
+            "test_independence_is_measured_with_the_source_really_unreachable",
+            "test_equal_content_in_a_different_row_order_is_equal"])
         measured_sources.extend([*(root / t.split('::', 1)[0] for t in tests),
             root / "src/sova/adapters/postgres_handoff_probes.py", root / "tests/handoff_drive.py",
             root / "tests/postgres_business.py"])
