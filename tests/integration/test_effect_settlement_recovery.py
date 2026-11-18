@@ -21,6 +21,7 @@ from test_order_http_handoff import http_business as http_business  # noqa: F401
 from test_worker_process_journey import execution, orders
 from native_status_bridge import NativeStatusBridge
 from qualification_runtime import private_file
+from qualification_recovery_browser import observe_browser
 import json
 
 from sova.domain.contracts import ContractError
@@ -212,6 +213,8 @@ def test_real_effect_is_not_replayed_and_recovery_requires_remote_settlement(
                 assert final_view['recovery']['status']==('clear' if mode=='committed' else 'required')
                 assert final_view['recovery']['reason']==(None if mode=='committed' else 'EFFECT_RESULT_UNKNOWN')
                 assert final_view['recovery']['authorizes_execution'] is False
+                browser = observe_browser(h, bridge,
+                    {'state':final_view['state'], 'required':mode=='uncommitted'}, tmp_path)
                 # The next GET must fail after credential replacement. A prior
                 # successful observation is never returned from a bridge cache.
                 bridge_token.write_text(h.issuer.token('another-tenant','auditor')['authorization'].removeprefix('Bearer '))
@@ -234,6 +237,7 @@ def test_real_effect_is_not_replayed_and_recovery_requires_remote_settlement(
                     migration_completed=(mode=='committed'), effect_apply_replayed=False)
                 h.record('recovery-status-'+mode, initial=initial_view, blocked=blocked_view,
                     final=final_view, wrong_tenant_denied=True, credential_replacement_denied=True,
+                    browser=browser,
                     local_native_api_and_bridge=True, production_deployed=False,
                     operational_proof_issued=False, automatic_replay_added=False)
             finally:

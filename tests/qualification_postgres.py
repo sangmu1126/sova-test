@@ -164,7 +164,18 @@ def main():
     parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap", "clocks", "backpressure", "restore", "timing", "profile", "pool", "pool-lifecycle", "settlement"), default="requests",
                         help="MQ-02, service, runtime API, or worker process/fault qualification checks")
     parser.add_argument("--http-mode", choices=("cold_deferred", "prepared_deferred", "prepared_bounded", "ready_deferred", "ready_bounded", "ready_backpressure"))
+    parser.add_argument("--browser-tools", type=Path)
+    parser.add_argument("--browser-executable", type=Path)
+    parser.add_argument("--browser-node", type=Path)
     args = parser.parse_args()
+    browser_options = (args.browser_tools, args.browser_executable, args.browser_node)
+    if any(browser_options):
+        if not all(browser_options) or args.suite != 'settlement':
+            parser.error('Browser options must be supplied together for settlement only')
+        if (not all(p.is_absolute() for p in browser_options)
+                or not args.browser_executable.is_file() or not args.browser_node.is_file()
+                or not (args.browser_tools/'node_modules/playwright-core/index.mjs').is_file()):
+            parser.error('Explicit local browser driver, executable and node required')
     if args.http_mode and args.suite != "pod-http":
         parser.error("HTTP comparison mode requires --suite pod-http")
     if (args.suite in ('pool', 'pool-lifecycle')) != (args.pool_source is not None):
@@ -313,11 +324,17 @@ def main():
                  'tests/integration/test_recovery_status.py']
         measured_sources.extend([*(root / t for t in tests), root / 'tests/qualification_settlement.py',
             root / 'demo/native_status_bridge.py',
+            root / 'tests/qualification_recovery_browser.py', root / 'tests/qualification_recovery_browser.mjs',
+            root / 'demo/security_console.py', root / 'demo/operator_auth.py', root / 'demo/console_web.py',
             root / 'tests/qualification_worker.py', root / 'tests/qualification_runtime.py',
             root / 'tests/qualification_service.py', root / 'tests/qualification_pool_relay.py',
             root / 'tests/postgres_fixtures.py', root / 'tests/postgres_business.py',
             root / 'tests/contract_world.py', root / 'tests/control_plane_support.py', root / 'tests/handoff_drive.py',
             *sorted((root / 'src/sova').rglob('*.py'))])
+        if args.browser_tools:
+            measured_sources.extend(sorted((root/'console/dist').rglob('*.*')))
+            report['browser_driver_lock_sha256'] = hashlib.sha256((args.browser_tools/'package-lock.json').read_bytes()).hexdigest()
+            report['browser_executable_sha256'] = hashlib.sha256(args.browser_executable.read_bytes()).hexdigest()
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}
@@ -393,6 +410,10 @@ def main():
                        SOVA_TEST_QUALIFICATION_ARTIFACTS=str(args.artifacts.resolve()))
             if args.pool_source:
                 env['PYTHONPATH'] += os.pathsep + str(args.pool_source.resolve())
+            if args.browser_tools:
+                env.update(SOVA_TEST_RECOVERY_BROWSER_TOOLS=str(args.browser_tools),
+                           SOVA_TEST_RECOVERY_BROWSER_EXECUTABLE=str(args.browser_executable),
+                           SOVA_TEST_RECOVERY_BROWSER_NODE=str(args.browser_node))
             if args.suite in ("pods", "pod-http"):
                 env.update(SOVA_TEST_QUALIFICATION_RUN=run,
                            SOVA_TEST_QUALIFICATION_DOCKER_NETWORK=network,
