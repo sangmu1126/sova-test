@@ -40,7 +40,7 @@ from sova.application.registry_authentication import postgres_registry_authentic
 from sova.application.signed_evidence import SignedEvidenceAuthority
 from sova.domain.contracts import ContractError, identifier, utc
 from sova.domain.operations import OperationRequest
-from sova.domain.plan_compiler import compile_revision
+from sova.domain.plan_compiler import compile_revision, compile_failback
 from sova.domain.plan_lowering import lower_plan
 from sova.domain.plans import PlanApproval, PlanPurpose
 
@@ -104,6 +104,30 @@ class PlanRequest:
                 "source_profile": self.source_profile, "target_profile": self.target_profile,
                 "manifest": self.manifest, "qualification": self.qualification,
                 "nodes": list(self.nodes), "rows": self.rows}
+
+
+@dataclass(frozen=True, slots=True)
+class FailbackPlanRequest:
+    forward_plan_id: str
+    request: PlanRequest
+
+    @property
+    def service_id(self):
+        return self.request.service_id
+
+    @property
+    def document(self):
+        return {"request_kind": "failback.v1", "forward_plan_id": self.forward_plan_id,
+                "request": self.request.document}
+
+    @classmethod
+    def from_document(cls, data):
+        if type(data) is not dict or set(data) != {"request_kind", "forward_plan_id", "request"}:
+            raise ContractError("Stored failback request fields do not match the schema")
+        if data["request_kind"] != "failback.v1":
+            raise ContractError("Unsupported stored failback request version")
+        identifier(data["forward_plan_id"], "forward plan")
+        return cls(data["forward_plan_id"], PlanRequest.from_document(data["request"]))
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +209,8 @@ class ControlPlane:
 
     # -- planning ------------------------------------------------------------------
     def _recompile(self, tenant, request):
+        forward = request if isinstance(request, FailbackPlanRequest) else None
+        request = request.request if forward else request
         r = self._registrations(tenant)
 
         def current(kind, subject):
@@ -196,20 +222,43 @@ class ControlPlane:
         authenticate = postgres_registry_authenticator(
             self.connect, tenant_id=tenant, application_id=request.service_id,
             verifier_version=self.settings.registry_verifier_version, clock=self.clock)
-        return compile_revision(
-            current("service_contract", request.service_id),
-            current("dependency_snapshot", request.snapshot_id),
+        inputs = dict(
             requested_nodes=request.nodes, expected_tenant=tenant,
             source=current("environment_profile", request.source_profile),
             target=current("environment_profile", request.target_profile),
             manifest=current("capability_manifest", request.manifest),
             qualification=current("strategy_qualification", request.qualification),
             rows=request.rows, authenticate=authenticate, clock=self.clock)
+        if forward:
+            original, digest = self._request(tenant, request.service_id, forward.forward_plan_id)
+            if isinstance(original, FailbackPlanRequest):
+                raise ContractError("A failback must refer to a forward migration")
+            revision = PostgresCompiledPlans(self.connect, tenant_id=tenant).load(digest)
+            _, store = self._coordinator(tenant, request.service_id)
+            unit = json.loads(revision.canonical)["unit"]["unit_digest"]
+            return compile_failback(
+                revision, store.current(request.service_id, unit),
+                current("service_contract", request.service_id),
+                current("dependency_snapshot", request.snapshot_id), **inputs)
+        return compile_revision(
+            current("service_contract", request.service_id),
+            current("dependency_snapshot", request.snapshot_id),
+            **inputs)
 
     def compile(self, principal, request):
         tenant = self._require(principal, Role.PLANNER)
         if not isinstance(request, PlanRequest):
             raise ContractError("A typed plan request is required")
+        return self._compile_and_store(principal, tenant, request)
+
+    def plan_failback(self, principal, application_id, forward_plan_id, request):
+        tenant = self._require(principal, Role.PLANNER)
+        if not isinstance(request, PlanRequest) or request.service_id != application_id:
+            raise ContractError("A typed request for the same application is required")
+        identifier(forward_plan_id, "forward plan")
+        return self._compile_and_store(principal, tenant, FailbackPlanRequest(forward_plan_id, request))
+
+    def _compile_and_store(self, principal, tenant, request):
         revision, result = self._recompile(tenant, request)
         if result["status"] != "COMPILED":
             return {"status": result["status"], "blockers": result["blockers"]}
@@ -236,7 +285,35 @@ class ControlPlane:
                 (tenant, application_id, plan_id)).fetchone()
         if row is None:
             raise ContractError("No plan request for this plan")
-        return PlanRequest.from_document(json.loads(row[0])), row[1]
+        document = json.loads(row[0])
+        request_type = FailbackPlanRequest if "request_kind" in document else PlanRequest
+        return request_type.from_document(document), row[1]
+
+    def require_failback(self, principal, application_id, plan_id, *, reason):
+        """An operator may request recovery, not grant writes or approve a plan.
+
+        Terminal handoffs retain their existing prohibition; a repeated request
+        does not revise the authority again and invalidate a pending approval.
+        """
+        tenant = self._require(principal, Role.OPERATOR)
+        if type(reason) is not str or reason not in {
+                "operator_requested", "service_regression", "destination_incident"}:
+            raise ContractError("Unsupported failback reason")
+        request, digest = self._request(tenant, application_id, plan_id)
+        if isinstance(request, FailbackPlanRequest):
+            raise ContractError("A failback must refer to a forward migration")
+        plan = self._lifecycle(tenant).get_plan(application_id, plan_id)
+        revision = PostgresCompiledPlans(self.connect, tenant_id=tenant).load(digest)
+        coordinator, store = self._coordinator(tenant, application_id)
+        unit = json.loads(revision.canonical)["unit"]["unit_digest"]
+        record = store.current(application_id, unit)
+        if record is None or record.plan_digest != plan.fingerprint or record.compiled_digest != revision.digest:
+            raise ContractError("Forward authority does not match this plan")
+        if str(record.state) != "FAILBACK_REQUIRED":
+            record = coordinator.require_failback(revision, plan, reason=reason,
+                                                  actor_id=principal.subject)
+        return {"state": str(record.state), "revision": record.revision,
+                "plan_id": plan_id, "unit_digest": unit}
 
     # -- approval and admission -------------------------------------------------------
     def approve(self, principal, application_id, plan_id, approval_id, *,

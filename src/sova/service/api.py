@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse
 from sova.adapters.postgres_registrations import RegistrationConflict
 from sova.adapters.registration import registry_codec as codecs
 from sova.domain.contracts import ContractError
+from sova.ports.plans import RecordNotFound, RepositoryConflict
 from sova.service.auth import Unauthenticated
 from sova.service.control_plane import Forbidden, NotFound, PlanRequest
 
@@ -60,6 +61,14 @@ def create_app(plane, authenticate, *, ready=lambda: True):
     @app.exception_handler(NotFound)
     async def not_found(request, error):
         return JSONResponse({"error": str(error)[:300]}, status_code=404)
+
+    @app.exception_handler(RecordNotFound)
+    async def record_not_found(request, error):
+        return JSONResponse({"error": "record not found"}, status_code=404)
+
+    @app.exception_handler(RepositoryConflict)
+    async def revision_conflict(request, error):
+        return JSONResponse({"error": "stored revision moved"}, status_code=409)
 
     @app.exception_handler(ContractError)
     async def refused(request, error):
@@ -127,6 +136,20 @@ def create_app(plane, authenticate, *, ready=lambda: True):
         return plane.approve(who, application, plan, body["approval_id"],
                              purpose=body.get("purpose", "migration_phase"),
                              valid_for=timedelta(minutes=minutes))
+
+    @app.post("/v1/tenants/{tenant}/applications/{application}/plans/{plan}/failback-requests")
+    def require_failback(application: str, plan: str, body: dict = Body(...), who=Depends(principal)):
+        if set(body) != {"reason"} or type(body["reason"]) is not str:
+            raise ContractError("Body is {reason: supported reason code}")
+        return plane.require_failback(who, application, plan, reason=body["reason"])
+
+    @app.post("/v1/tenants/{tenant}/applications/{application}/plans/{plan}/failback-plans",
+              status_code=201)
+    def plan_failback(application: str, plan: str, body: dict = Body(...), who=Depends(principal)):
+        result = plane.plan_failback(who, application, plan, PlanRequest.from_document(body))
+        if result["status"] != "COMPILED":
+            return JSONResponse(result, status_code=422)
+        return result
 
     @app.post("/v1/tenants/{tenant}/applications/{application}/admissions", status_code=201)
     def admit(application: str, body: dict = Body(...), who=Depends(principal)):
