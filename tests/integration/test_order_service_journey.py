@@ -138,7 +138,9 @@ def test_service_orders_survive_target_writes_and_separately_approved_failback(
             # Polling/restarting an already finished worker must not replay effects.
             again = h.worker().drive(h.tenant, h.app, reverse_unit["unit_digest"])
             assert again.state == HandoffState.HANDOFF_COMPLETE
-            assert h.status(reverse_unit["unit_digest"]) == returned_status
+            observed_again = h.status(reverse_unit["unit_digest"])
+            assert {k: v for k, v in observed_again.items() if k not in ("observed_at", "expires_at")} == {
+                k: v for k, v in returned_status.items() if k not in ("observed_at", "expires_at")}
             reject_nested = h.call("POST", f"{h.app_base}/plans/{returned['plan_id']}/failback-requests",
                                    role="operator", body={"reason": "operator_requested"})
             assert reject_nested.status_code == 422

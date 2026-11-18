@@ -1,6 +1,7 @@
 """Real PostgreSQL status reads; synthetic admission, no resource mutation."""
 from datetime import datetime
 import json
+import psycopg
 
 import pytest
 
@@ -53,7 +54,9 @@ def test_status_is_plan_bound_and_never_returns_execution_token(postgres_databas
     assert view["recovery"]["automatic_replay_allowed"] is False
     assert (datetime.fromisoformat(view["expires_at"])-datetime.fromisoformat(view["observed_at"])).total_seconds() == 5
     assert not {"token", "command_document", "parameters", "connection_string"} & set(json.dumps(view).split('"'))
-    with h["lifecycle"].transaction() as conn:
+    # Seed the fixture-only operation flag as its migration owner. The normal
+    # runtime intentionally lacks direct UPDATE on this protected column.
+    with psycopg.connect(postgres_database[0]) as conn:
         conn.execute("UPDATE sova_control.operations SET security_hold=true "
                      "WHERE tenant_id=%s AND application_id=%s", (h["tenant"], h["app"]))
     held = status(h)
