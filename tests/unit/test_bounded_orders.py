@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 
 import httpx
 import pytest
@@ -103,6 +104,21 @@ def test_whole_network_attempt_is_cancelled_and_recorded_at_deadline(journal):
     result = execute(journal,handler,budget=CompletionBudget(seconds=.05,attempt_seconds=.05))
     assert result["result"] == "EXHAUSTED" and result["attempts"] == 1
     assert cancelled and journal.snapshot()["outcomes"][0]["error"] == "transport_error"
+
+
+def test_expired_budget_after_durable_recording_never_invokes_transport(journal, monkeypatch):
+    begin = journal.begin
+    def slow_begin(*args, **kwargs):
+        value = begin(*args, **kwargs)
+        time.sleep(.07)
+        return value
+    monkeypatch.setattr(journal,"begin",slow_begin)
+    def forbidden(request):
+        pytest.fail("Expired budget reached network transport")
+    events = []
+    result = execute(journal,forbidden,budget=CompletionBudget(seconds=.05,attempt_seconds=.05),events=events)
+    assert result["result"]=="EXHAUSTED" and result["transport_calls"]==0
+    assert events[0]["transport_invoked"] is False
 
 
 @pytest.mark.parametrize("change", [{"seconds":float("nan")},{"seconds":float("inf")},{"seconds":True},

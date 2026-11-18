@@ -55,20 +55,27 @@ class BoundedOrderClient:
         if self.owned:
             await self.client.aclose()
 
-    async def _attempt(self, intent, kind, seconds, sequence):
+    async def _attempt(self, intent, kind, seconds, sequence, deadline):
         self.journal.request(intent)
         attempt = self.journal.begin(intent.request_id, kind=kind)
         status, error, receipt, retry_after, side = None, None, None, None, None
         start, at = time.monotonic(), datetime.now(UTC)
+        transport_invoked = False
+        # Durably recording intent/attempt can itself consume the remaining
+        # budget. Recheck afterwards instead of starting a fresh full timeout.
+        seconds = min(seconds, deadline - start)
         headers = {"authorization": "Bearer " + self.token, "idempotency-key": intent.idempotency_key,
                    "x-qualification-tenant": self.journal.scope["tenant_id"],
                    "x-qualification-run": self.journal.scope["run_id"]}
         kwargs = ({"json": {"customer": intent.customer, "amount": intent.amount}} if kind == "submit" else
                   {"params": {"customer": intent.customer, "idempotency_key": intent.idempotency_key}})
         try:
+            if seconds <= 0:
+                raise TimeoutError()
             # Absolute timeout includes response-body streaming, not just a
             # per-read idle timeout that a slow byte stream could keep alive.
             async with asyncio.timeout(seconds):
+                transport_invoked = True
                 async with self.client.stream("POST" if kind == "submit" else "GET", self.origin + "/orders",
                                               headers=headers, follow_redirects=False, timeout=seconds, **kwargs) as response:
                     status = response.status_code
@@ -101,13 +108,14 @@ class BoundedOrderClient:
             self.observer({"request_id": intent.request_id, "kind": kind, "sequence": sequence,
                 "started_at": at.isoformat(), "finished_at": datetime.now(UTC).isoformat(),
                 "elapsed_ms": round((time.monotonic() - start) * 1000, 3), "status": status,
-                "error": error, "side": side if side in ("source", "target") else None})
-        return status, error, receipt, retry_after
+                "error": error, "transport_invoked": transport_invoked,
+                "side": side if side in ("source", "target") else None})
+        return status, error, receipt, retry_after, transport_invoked
 
     async def complete(self, intent):
         if not isinstance(intent, OrderIntent):
             raise ValueError("A typed order intent is required")
-        start, kind, attempts, delay = time.monotonic(), "submit", 0, 0.0
+        start, kind, attempts, delay, transport_calls = time.monotonic(), "submit", 0, 0.0, 0
         result, reason = "EXHAUSTED", "attempt_limit"
         while attempts < self.budget.max_attempts:
             remaining = self.budget.seconds - (time.monotonic() - start)
@@ -121,8 +129,9 @@ class BoundedOrderClient:
                 reason = "deadline"
                 break
             attempts += 1
-            status, error, receipt, retry_after = await self._attempt(
-                intent, kind, min(remaining, self.budget.attempt_seconds), attempts)
+            status, error, receipt, retry_after, invoked = await self._attempt(
+                intent, kind, min(remaining, self.budget.attempt_seconds), attempts, start+self.budget.seconds)
+            transport_calls += invoked
             if receipt is not None:
                 result, reason = "CONFIRMED", "validated_receipt"
                 break
@@ -147,5 +156,5 @@ class BoundedOrderClient:
                 raise ValueError("Invalid retry jitter")
             delay = max(sampled, retry_after or 0)
         return {"request_id": intent.request_id, "result": result, "reason": reason, "attempts": attempts,
-                "elapsed_ms": round((time.monotonic() - start) * 1000, 3),
+                "elapsed_ms": round((time.monotonic() - start) * 1000, 3), "transport_calls": transport_calls,
                 "qualification_issued": False, "authorizes_execution": False}
