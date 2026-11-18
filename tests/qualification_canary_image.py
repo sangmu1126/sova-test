@@ -119,7 +119,9 @@ def main():
             until = time.monotonic() + 45
             while True:
                 try:
-                    docker("exec", pg, "pg_isready", "-U", "postgres", "-d", "orders_source")
+                    # The entrypoint's temporary init server is socket-only.
+                    # Wait for the real TCP server, not that short-lived phase.
+                    docker("exec", pg, "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "orders_source")
                     break
                 except RuntimeError:
                     if time.monotonic() >= until:
