@@ -85,6 +85,13 @@ class PauseAfterApply:
               command_digest=command.fingerprint)
         if command.action == s["pause_after"]:
             trace(s["ready"], event="after_apply_barrier", command_digest=command.fingerprint)
+            if s.get('remote_after_apply'):
+                # A real outstanding DB request after the real copy committed.
+                # The test relay can retain it after this process is killed.
+                with psycopg.connect(Path(s['business_dsn_file']).read_text(), dbname=s['names']['tgt'],
+                                     application_name=s['owner'], connect_timeout=10) as conn:
+                    conn.execute('SELECT pg_sleep(30)')
+                return
             deadline = time.monotonic() + 30
             while not Path(s["release"]).exists():
                 if time.monotonic() >= deadline:
@@ -105,8 +112,9 @@ def child(path):
     def resolve(tenant, app):
         if (tenant, app) != (spec["tenant"], spec["application"]):
             raise ValueError("Wrong worker application")
-        return {"connect": lambda db: psycopg.connect(dsn, dbname=db),
-                "connect_as": lambda db, role: psycopg.connect(dsn, dbname=db, user=role),
+        tagged = {'application_name': spec['owner']} if spec.get('tag_requests') else {}
+        return {"connect": lambda db: psycopg.connect(dsn, dbname=db, **tagged),
+                "connect_as": lambda db, role: psycopg.connect(dsn, dbname=db, user=role, **tagged),
                 "source_db": names["src"], "target_db": names["tgt"],
                 "scratch_db": names["scratch"], "other_db": names["other"],
                 "app_role": spec["app_role"], "writer_roles": (spec["app_role"], spec["batch_role"]),
@@ -141,7 +149,7 @@ def child(path):
 
 
 class WorkerProcess:
-    def __init__(self, h, *, label, pause_after=None):
+    def __init__(self, h, *, label, pause_after=None, business_dsn=None, remote_after_apply=False):
         # Parent-side controller only. The child must not import the HTTP test
         # fixtures or rely on pytest adding tests/integration to sys.path.
         from qualification_runtime import private_file
@@ -153,7 +161,7 @@ class WorkerProcess:
         self.release = h.directory / (label + ".release")
         self.trace_file = h.directory / "worker-trace.jsonl"
         key = private_file(h.directory / (label + ".key"), h.signer._key.private_bytes_raw().hex())
-        dsn = private_file(h.directory / (label + ".dsn"), h.business["dsn"])
+        dsn = private_file(h.directory / (label + ".dsn"), business_dsn or h.business["dsn"])
         private_file(self.path, json.dumps({
             "owner": self.owner, "tenant": h.tenant, "application": h.app,
             "names": h.business["names"], "business_dsn_file": str(dsn),
@@ -162,6 +170,7 @@ class WorkerProcess:
             "route_file": str(h.route.path), "scope": h.route.scope,
             "key_file": str(key), "key_id": h.signer.key_id,
             "pause_after": pause_after, "trace": str(self.trace_file),
+            "tag_requests": business_dsn is not None, "remote_after_apply": remote_after_apply,
             "ready": str(self.ready), "release": str(self.release)}))
         self.output_path = h.directory / (label + ".log")
         self.output = self.output_path.open("x")
@@ -193,6 +202,11 @@ class WorkerProcess:
     def kill_after_apply(self):
         if not self.ready.exists():
             raise RuntimeError("No after-apply boundary observed")
+        self.kill_owned_process()
+
+    def kill_owned_process(self):
+        if self.process.poll() is not None:
+            raise RuntimeError('Owned worker already stopped')
         self.intentional_kill = True
         self.process.kill()
         if self.process.wait(timeout=5) != -signal.SIGKILL:
