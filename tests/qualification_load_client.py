@@ -131,17 +131,20 @@ def main():
         asyncio.run(run_load())
         # No transparent retry in the first-attempt trace. Recovery is explicit
         # and uses this same process/clock and unchanged business keys.
-        for intent in pending:
-            if attempt(intent, "lookup", "recovery") == 404:
-                attempt(intent, "submit", "recovery")
-        # Separate probes verify the live target even if the finite measured
-        # load ended before handoff. Never relabel these as initial successes.
-        if config.get("minimum_orders"):
-            for number in range(3):
-                intent = OrderIntent(f"probe-{number:05d}", "load-" + config["run_id"],
-                                     f"probe-key-{number:05d}", "12.34")
-                if attempt(intent, "submit", "post_handoff_probe") != 200 or side != "target":
-                    raise RuntimeError("Post-handoff target probe failed")
+        # Only the parent, after verified handoff, may release recovery/probes.
+        # Hitting the load timeout alone is never evidence of handoff.
+        if stop_received:
+            for intent in pending:
+                if attempt(intent, "lookup", "recovery") == 404:
+                    attempt(intent, "submit", "recovery")
+            # Separate probes verify the live target even if the finite measured
+            # load ended before handoff. Never relabel these as initial successes.
+            if config.get("minimum_orders"):
+                for number in range(3):
+                    intent = OrderIntent(f"probe-{number:05d}", "load-" + config["run_id"],
+                                         f"probe-key-{number:05d}", "12.34")
+                    if attempt(intent, "submit", "post_handoff_probe") != 200 or side != "target":
+                        raise RuntimeError("Post-handoff target probe failed")
         snapshot = journal.snapshot()
         (result_dir / "journal.json").write_text(json.dumps(snapshot, indent=2) + "\n")
         report = {"stop_received": stop_received, "tls": tls, "mode": config.get("mode", "cold_deferred"),
