@@ -33,7 +33,7 @@ names = {
     'bin/containerd', 'bin/containerd-shim-runc-v2', 'bin/ctr', 'bin/runc', 'bin/nerdctl',
     'lib/systemd/system/containerd.service',
     *('libexec/cni/' + n for n in (
-        'bridge', 'loopback', 'host-local', 'portmap', 'firewall', 'tuning', 'isolation')),
+        'bridge', 'loopback', 'host-local', 'portmap', 'firewall', 'tuning')),
 }
 with tarfile.open(sys.argv[1]) as archive:
     listed = [m.name for m in archive.getmembers()]
@@ -56,7 +56,7 @@ install -d -m 0755 /usr/local/bin /usr/local/libexec/cni
 for binary in containerd containerd-shim-runc-v2 ctr runc nerdctl; do
   install -m 0755 "$directory/unpacked/bin/$binary" "/usr/local/bin/$binary"
 done
-for plugin in bridge loopback host-local portmap firewall tuning isolation; do
+for plugin in bridge loopback host-local portmap firewall tuning; do
   install -m 0755 "$directory/unpacked/libexec/cni/$plugin" "/usr/local/libexec/cni/$plugin"
 done
 install -m 0644 "$directory/unpacked/lib/systemd/system/containerd.service" \
