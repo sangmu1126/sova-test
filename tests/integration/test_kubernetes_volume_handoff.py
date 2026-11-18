@@ -82,3 +82,50 @@ def test_a_readback_neither_binds_a_claim_nor_leaves_an_agent(world):
     assert world._bound("board-data-target")  # staging binds it, not a readback
     assert readback(world.adapter(), "copy_content") == EffectStatus.UNKNOWN
     assert agents_left(world) == []
+
+
+def agents_on(world, claim):
+    """The agent Pods (of any unit or probe) that mount ``claim``, by role."""
+    from sova.adapters.kubernetes.volume_controls import mounts
+
+    return sorted((p["metadata"]["labels"]["sova.dev/volume-role"], p["metadata"]["name"])
+                  for p in world._pods()
+                  if (p["metadata"].get("labels") or {}).get("sova.dev/volume-role")
+                  and not p["metadata"].get("deletionTimestamp")
+                  and mounts(p, (claim,)) is not None)
+
+
+def test_kept_readers_serve_the_next_steps_and_activation_lets_go_of_the_target(world):
+    """As the worker runs an execution: the adapter's readers are reused from
+    step to step, never a writer; activation removes every agent on the target
+    claim - the probes' too - before the application takes it; the execution's
+    end reaps the rest."""
+    from volume_business import PYTHON, UID
+
+    from sova.adapters.kubernetes.volume_agents import VolumeAgents
+
+    adapter = world.adapter(keep_agents=True)
+    probe_agents = VolumeAgents(label="probekeep", key=world.KEY, image=PYTHON,
+                                run_as=(UID, UID), fs_group=UID, keep=True)
+    target = adapter.sides["target"]
+    try:
+        for action in HANDOFF[:4]:
+            apply(adapter, action)
+        assert [role for role, _ in agents_on(world, "board-data-target")] == []  # writer gone
+        seen = [adapter.readback(command("kubernetes-volume-handoff", "copy_content"),
+                                 datetime.now(UTC)) for _ in range(2)]
+        assert [s.status for s in seen] == [EffectStatus.APPLIED] * 2
+        kept = agents_on(world, "board-data-target")
+        assert [role for role, _ in kept] == ["reader"]  # one reader, used twice
+        apply(adapter, "verify_final_state")
+        assert agents_on(world, "board-data-target") == kept
+        with probe_agents.running((target.controls, target.claims, False)) as (probe,):
+            assert probe.manifest(0)["entries"]
+        assert len(agents_on(world, "board-data-target")) == 2  # the probes' own, kept
+        apply(adapter, "activate_target")
+        assert agents_on(world, "board-data-target") == []
+        assert readback(adapter, "activate_target") == EffectStatus.APPLIED
+    finally:
+        adapter.release_agents()
+        probe_agents.release()
+    assert agents_left(world) == []

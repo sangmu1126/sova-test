@@ -57,10 +57,23 @@ EVIDENCE_LIFETIME = timedelta(minutes=30)
 
 @dataclass(frozen=True)
 class Execution:
-    """What a catalog builds for one handoff: the adapter of its manifest and
-    the measurement of each obligation kind it can verify."""
+    """What a catalog builds for one handoff: the adapter of its manifest, the
+    measurement of each obligation kind it can verify, and what ends it - the
+    worker calls ``close`` once the steps it runs in a row are done (helpers
+    kept between steps, such as volume agents, are let go)."""
     adapter: object
     measure: object  # (obligation, step_times) -> (passed, observation)
+    close: object = None  # () -> None
+
+
+def close_execution(execution):
+    """End an execution; a failure to end it is logged, never raised over the
+    step's own outcome."""
+    if execution is not None and execution.close is not None:
+        try:
+            execution.close()
+        except Exception:  # noqa: BLE001 - what it holds ends by itself in the end
+            log.exception("ending an execution failed")
 
 
 class AdapterCatalog:
@@ -242,8 +255,11 @@ class HandoffWorker:
         # The same command the lost worker issued (its epoch), read back only.
         command = coordinator.next_command(revision, plan, operation_id=operation,
                                            epoch=proof.source_epoch)
-        effect = self._executor(ownership, recovery)[1].reconcile(command, permit_for(command),
-                                                                  execution.adapter)
+        try:
+            effect = self._executor(ownership, recovery)[1].reconcile(
+                command, permit_for(command), execution.adapter)
+        finally:
+            close_execution(execution)
         ownership.release(recovery)
         log.info("reconciled %s/%s step %s after a lost worker: %s", application_id, operation,
                  op["kind"], effect.status)
@@ -254,28 +270,34 @@ class HandoffWorker:
     def _run(self, tenant, application_id, unit_digest, lifecycle, plan, revision, doc,
              operation, ownership, lease, coordinator, store, *, recovered=None):
         obligations = {o["id"]: o for o in doc["obligations"]}
-        execution = None
-        while not self.stopping.is_set():
-            self.progressed = time.monotonic()
-            record = store.current(application_id, unit_digest)
-            if record.state in _BLOCKED or record.next_operation >= len(doc["operations"]):
-                return record
-            op = doc["operations"][record.next_operation]
-            lease = ownership.renew(lease, lease_seconds=self.lease_seconds)
-            with LeaseKeeper(ownership, lease, lease_seconds=self.lease_seconds,
-                             max_seconds=self.max_step_seconds):
-                record, recovered, execution, done = self._step(
-                    tenant, application_id, lifecycle, plan, revision, doc, operation,
-                    ownership, lease, coordinator, record, op, obligations, recovered,
-                    execution)
-            if done:
-                return record
+        execution, opened = None, []  # opened: built by a step that may then fail
+        try:
+            while not self.stopping.is_set():
+                self.progressed = time.monotonic()
+                record = store.current(application_id, unit_digest)
+                if record.state in _BLOCKED or record.next_operation >= len(doc["operations"]):
+                    return record
+                op = doc["operations"][record.next_operation]
+                lease = ownership.renew(lease, lease_seconds=self.lease_seconds)
+                with LeaseKeeper(ownership, lease, lease_seconds=self.lease_seconds,
+                                 max_seconds=self.max_step_seconds):
+                    record, recovered, execution, done = self._step(
+                        tenant, application_id, lifecycle, plan, revision, doc, operation,
+                        ownership, lease, coordinator, record, op, obligations, recovered,
+                        execution, opened)
+                if done:
+                    return record
+        finally:
+            close_execution(execution if execution is not None else
+                            (opened[-1] if opened else None))
         return store.current(application_id, unit_digest)
 
     def _step(self, tenant, application_id, lifecycle, plan, revision, doc, operation,
-              ownership, lease, coordinator, record, op, obligations, recovered, execution):
+              ownership, lease, coordinator, record, op, obligations, recovered, execution,
+              opened):
         """One step: its effect (or the recovered one), its measured evidence,
-        the authority advanced. Returns (record, recovered, execution, stop)."""
+        the authority advanced. Returns (record, recovered, execution, stop); an
+        execution it builds is also put in ``opened``, to be ended if it fails."""
         journal, engine = self._executor(ownership, lease)
         effect = None
         if recovered is not None and recovered[0] == record.next_operation:
@@ -284,10 +306,12 @@ class HandoffWorker:
             if execution is None:
                 execution = self.catalog.build(tenant, application_id,
                                                op["adapter"]["adapter_id"], revision)
+                opened.append(execution)
         elif op["adapter"]:
             if execution is None:
                 execution = self.catalog.build(tenant, application_id,
                                                op["adapter"]["adapter_id"], revision)
+                opened.append(execution)
             command = coordinator.next_command(revision, plan, operation_id=operation,
                                                epoch=lease.epoch)
             try:
@@ -303,6 +327,7 @@ class HandoffWorker:
             adapter_op = next(o for o in doc["operations"] if o["adapter"])
             execution = self.catalog.build(tenant, application_id,
                                            adapter_op["adapter"]["adapter_id"], revision)
+            opened.append(execution)
         times = None
         for oid in op["required_evidence"]:
             if obligations[oid]["required_at"] != op["operation_id"]:

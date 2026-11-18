@@ -7,6 +7,17 @@ ready, talks to them through the API server's Pod proxy and always reaps them.
 Each agent's token is derived from a key and the Pod's namespace and name, so
 any worker instance can reach an agent another one started; the Pod spec
 carries only the token's digest.
+
+With ``keep``, a reader agent is not reaped after its use but kept for the
+next use of the same claims by the same ``VolumeAgents`` - the steps and
+probes of one execution follow one another within seconds, and on a managed
+cluster each new agent costs seconds (scheduling, attaching the volume to its
+node). Only agents this object started are reused, never one found in the
+cluster; a writer is never kept, nor any agent on a ReadWriteOncePod claim
+(it admits one Pod at a time); a use that fails reaps what it used; and
+``release()`` reaps every kept agent - the execution's end. Every agent also
+ends by itself after ``idle_seconds`` without a request, so one whose worker
+is gone lets go of its volumes; a later start removes its finished Pod.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -132,7 +143,7 @@ class VolumeAgents:
     """Start, reach and reap agent Pods for one unit (``label`` tells them apart)."""
 
     def __init__(self, *, label, key, image, run_as, fs_group=None, start_seconds=120.0,
-                 scratch="1Gi", transport="proxy"):
+                 scratch="1Gi", transport="proxy", keep=False, idle_seconds=600):
         if type(key) is not bytes or len(key) < 32:
             raise ContractError("An agent key of at least 32 bytes required")
         if type(image) is not str or not _IMAGE.fullmatch(image):
@@ -148,7 +159,12 @@ class VolumeAgents:
             raise ContractError("A short agent label required")
         if transport not in TRANSPORTS:
             raise ContractError("Agent transport: proxy or port-forward")
-        self.transport = transport
+        if type(keep) is not bool:
+            raise ContractError("keep: true or false")
+        if type(idle_seconds) is not int or not 120 <= idle_seconds <= 3000:
+            raise ContractError("Agent idle seconds between 120 and 3000")
+        self.transport, self.keep, self.idle_seconds = transport, keep, idle_seconds
+        self._kept, self._single_pod, self._lock = {}, {}, threading.Lock()
         self.label, self.key, self.image, self.run_as = label, key, image, run_as
         self.fs_group, self.start_seconds, self.scratch = fs_group, start_seconds, scratch
 
@@ -175,7 +191,8 @@ class VolumeAgents:
                 "env": [{"name": "SOVA_AGENT_MODE", "value": "writer" if writable else "reader"},
                         {"name": "SOVA_AGENT_TOKEN_SHA256", "value": digest},
                         {"name": "SOVA_AGENT_CLAIMS", "value": str(len(claims))},
-                        {"name": "SOVA_AGENT_SCRATCH", "value": "/scratch"}],
+                        {"name": "SOVA_AGENT_SCRATCH", "value": "/scratch"},
+                        {"name": "SOVA_AGENT_IDLE_SECONDS", "value": str(self.idle_seconds)}],
                 "ports": [{"containerPort": AGENT_PORT}],
                 "readinessProbe": {"httpGet": {"path": "/healthz", "port": AGENT_PORT},
                                    "periodSeconds": 1, "failureThreshold": 3},
@@ -207,9 +224,12 @@ class VolumeAgents:
             "annotations": {"sova.dev/agent-sha256": AGENT_DIGEST}}, "spec": spec}
 
     def start(self, controls, claims, writable):
+        mine = {"sova.dev/volume-unit": self.label}
+        for pod in controls.all_pods(mine):  # ended by themselves (idle, deadline)
+            if (pod.get("status") or {}).get("phase") in ("Succeeded", "Failed"):
+                controls.delete_pod(pod["metadata"]["name"])
         if writable:  # a writer agent another worker left behind is never legitimate
-            for name in controls.pods({"sova.dev/volume-unit": self.label,
-                                       "sova.dev/volume-role": "writer"}):
+            for name in controls.pods({**mine, "sova.dev/volume-role": "writer"}):
                 controls.delete_pod(name)
         name = f"sova-vol-{self.label[:10]}-{'w' if writable else 'r'}-{secrets.token_hex(4)}"
         try:
@@ -242,21 +262,93 @@ class VolumeAgents:
                 raise ContractError("Volume agent did not become ready in time")
             time.sleep(0.1)
 
+    @staticmethod
+    def _key(controls, claims):
+        return (controls.registration.endpoint, controls.registration.namespace, tuple(claims))
+
+    def _keepable(self, controls, claims):
+        """A reader on claims that admit more than one Pod (not ReadWriteOncePod)."""
+        key = self._key(controls, claims)
+        if key not in self._single_pod:
+            self._single_pod[key] = any(
+                "ReadWriteOncePod" in (((controls.claim(c) or {}).get("spec") or {})
+                                       .get("accessModes") or ()) for c in claims)
+        return self.keep and not self._single_pod[key]
+
+    def _reuse(self, controls, claims):
+        """The reader this object kept for these claims, if it still serves and
+        is well within its idle time."""
+        with self._lock:
+            kept = self._kept.pop(self._key(controls, claims), None)
+        if kept is None:
+            return None
+        _, name, used = kept
+        pod = controls.pod(name)
+        # Running as when it was taken into use: the kubelet may not have marked
+        # an agent ready yet that already answered (its probe runs once a second).
+        serving = pod is not None and (ready(pod) or _running(pod))
+        if not serving or time.monotonic() - used > self.idle_seconds - 60:
+            if pod is not None:
+                controls.delete_pod(name)
+            return None
+        return name
+
     @contextmanager
     def running(self, *wanted):
-        """Agents for ``(controls, claims, writable)``, started together, always reaped."""
-        started = []
+        """Agents for ``(controls, claims, writable)``, started together; reaped
+        after use, except readers kept for the next use (``keep``)."""
+        used, failed = [], True  # (controls, claims, name, keep, new)
         try:
             for controls, claims, writable in wanted:
-                started.append((controls, self.start(controls, claims, writable)))
-            yield [self.ready(controls, name) for controls, name in started]
+                keep = not writable and self._keepable(controls, claims)
+                name = self._reuse(controls, claims) if keep else None
+                new = name is None
+                if new:
+                    name = self.start(controls, claims, writable)
+                used.append((controls, claims, name, keep, new))
+            agents = [self.ready(controls, name) if new else
+                      Agent(controls, name, self.token(controls, name), self.transport)
+                      for controls, _, name, _, new in used]
+            yield agents
+            failed = False
         finally:
-            for controls, name in started:
-                controls.delete_pod(name)
-            for controls, name in started:
-                deadline = time.monotonic() + 60
-                while controls.pod(name) is not None and time.monotonic() < deadline:
-                    time.sleep(0.25)
+            reaped = []
+            for controls, claims, name, keep, _ in used:
+                if keep and not failed:
+                    with self._lock:
+                        self._kept[self._key(controls, claims)] = (controls, name,
+                                                                   time.monotonic())
+                else:  # a use that failed leaves nothing for the next one
+                    reaped.append((controls, name))
+            _reap(reaped)
+
+    def release(self):
+        """Reap every kept agent (the end of an execution)."""
+        with self._lock:
+            kept, self._kept = self._kept, {}
+        _reap([(controls, name) for controls, name, _ in kept.values()])
+
+
+def _reap(agents, seconds=60):
+    """Delete agent Pods and wait, bounded, until they are gone."""
+    for controls, name in agents:
+        controls.delete_pod(name)
+    for controls, name in agents:
+        deadline = time.monotonic() + seconds
+        while controls.pod(name) is not None and time.monotonic() < deadline:
+            time.sleep(0.25)
+
+
+def remove_agents(controls, claims, seconds=60):
+    """Remove every volume agent - of any unit or probe - that mounts one of
+    ``claims``: before the application takes a single-node volume, nothing
+    else may hold it on another node. Returns the names removed."""
+    found = [p["metadata"]["name"] for p in controls.all_pods(
+        {"app.kubernetes.io/managed-by": "sova"})
+        if (p["metadata"].get("labels") or {}).get("sova.dev/volume-role") in
+        ("reader", "writer") and mounts(p, claims) is not None]
+    _reap([(controls, name) for name in found], seconds)
+    return found
 
 
 def _running(pod):

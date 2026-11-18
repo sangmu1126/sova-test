@@ -36,6 +36,12 @@ from its file, never from the execution file. ``agent_transport``
 proxy, so no data crosses the cluster network in the clear;
 ``kubelet_tls_verified`` is the operator's record that each cluster's API
 server verifies its kubelets' certificates, which a client cannot observe.
+
+The adapter and the probes each keep their reader agents from one step to the
+next while the worker runs the execution's steps in a row - on a managed
+cluster every new agent costs seconds inside the write stop - and the
+execution's ``close`` reaps them. They never share agents with each other:
+the probes measure apart from the adapter that moved the files.
 """
 
 from pathlib import Path
@@ -81,17 +87,24 @@ def volume_factory(adapter_id, resolve):
             routes=d["routes"], agent_key=d["agent_key"], image=d["agent_image"],
             run_as=d["run_as"], fs_group=d.get("fs_group"), storage_class=d.get("storage_class"),
             app_replicas=d.get("app_replicas", 1),
-            agent_transport=d.get("agent_transport", "proxy"))
+            agent_transport=d.get("agent_transport", "proxy"), keep_agents=True)
+        # The probes keep readers of their own, apart from the adapter's.
         agents = VolumeAgents(label="probe" + adapter.unit[:10], key=d["agent_key"],
                               image=d["agent_image"], run_as=d["run_as"],
                               fs_group=d.get("fs_group"),
-                              transport=d.get("agent_transport", "proxy"))
+                              transport=d.get("agent_transport", "proxy"), keep=True)
         probes = KubernetesVolumeProbes(
             source=d["source"], target=d["target"], agents=agents,
             write_probe=d.get("write_probe"), databases=d.get("databases", ()),
             invariants=d.get("invariants"), zone_of=d.get("zone_of"), other=d.get("other"),
             kubelet_tls_verified=d.get("kubelet_tls_verified"))
-        return Execution(adapter, volume_measure(probes, scratch=d["scratch_claim"]))
+        def close():
+            try:
+                adapter.release_agents()
+            finally:
+                agents.release()
+        return Execution(adapter, volume_measure(probes, scratch=d["scratch_claim"]),
+                         close=close)
 
     return factory
 

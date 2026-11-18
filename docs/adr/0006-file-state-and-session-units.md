@@ -39,6 +39,7 @@
 - 토큰은 워커 키와 Pod 이름에서 HMAC으로 만든다. Pod spec에는 그 digest만 들어간다. 그래서 어느 워커 인스턴스든 다른 인스턴스가 띄운 agent와 통신할 수 있다.
 - agent는 root로 돌지 않는다. 소유자를 바꿀 수 없으므로, 다른 사용자의 파일은 "복사됨"이 아니라 "다름"으로 읽힌다.
 - readback은 이미 bound된 claim에만 읽기 전용 agent를 띄운다. claim을 bind하는 것은 준비 단계다. 그래서 readback은 읽는 대상을 바꾸지 않는다.
+- 갱신(2026-11-19): 워커의 한 실행 안에서는 읽기 agent를 지우지 않고 다음 단계·probe에서 다시 쓴다. adapter와 probe는 각자의 agent를 따로 남긴다. 쓰기 agent와 ReadWriteOncePod claim의 agent는 매번 지운다. 실행이 끝날 때와 활성화 직전(목적지 claim의 agent 모두)에 지운다. 정리하지 못한 agent는 10분 동안 요청이 없으면 스스로 끝난다.
 
 내용은 모든 항목의 manifest로 비교한다(경로, 종류, mode, 소유자, 크기, SHA-256 또는 링크 대상). manifest가 같으면 바이트 단위로 같은 트리다.
 

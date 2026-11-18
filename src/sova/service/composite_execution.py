@@ -13,7 +13,7 @@ from sova.adapters.composite_handoff import CompositeHandoffAdapter
 from sova.adapters.kubernetes_session_handoff import KubernetesSessionHandoffAdapter
 from sova.adapters.kubernetes_session_probes import KubernetesSessionProbes, session_measure
 from sova.domain.contracts import ContractError
-from sova.service.worker import Execution
+from sova.service.worker import Execution, close_execution
 
 DATA_KINDS = frozenset({"final_content_comparison", "business_invariant", "restore_drill",
                         "target_control_test", "measured_budget", "external_result_lookup"})
@@ -35,7 +35,11 @@ def composite_execution(adapter_id, executions, *, data):
         return all(passed for passed, _ in results.values()), {
             "probe": "composite",
             "components": {name: {"passed": p, **o} for name, (p, o) in results.items()}}
-    return Execution(adapter, measure)
+
+    def close():
+        for _, execution in executions:  # each one, whatever another's ending does
+            close_execution(execution)
+    return Execution(adapter, measure, close=close)
 
 
 def session_execution(adapter_id, d):

@@ -19,6 +19,10 @@ What it guarantees, whoever calls it:
 * A file reaches its final name only after its whole content was written to a
   temporary name in the same directory, checked against the expected SHA-256
   and flushed; the rename is then flushed with its directory.
+* With ``SOVA_AGENT_IDLE_SECONDS`` set, the agent ends by itself once no
+  authenticated request has come for that long (none in flight): an agent
+  whose worker is gone lets go of its volumes. ``/healthz`` - the kubelet's
+  probe, unauthenticated - does not count.
 
 The manifest lists every entry under a claim's root: ``[path, kind, mode, uid,
 gid, size, digest]`` with kind ``d`` (directory), ``f`` (file, digest = SHA-256
@@ -37,6 +41,8 @@ import json
 import os
 import stat
 import sys
+import threading
+import time
 from urllib.parse import parse_qs, urlsplit
 
 ROOT = os.environ.get("SOVA_AGENT_ROOT", "/v")
@@ -44,10 +50,35 @@ MODE = os.environ.get("SOVA_AGENT_MODE", "reader")
 TOKEN = os.environ.get("SOVA_AGENT_TOKEN_SHA256", "")
 CLAIMS = int(os.environ.get("SOVA_AGENT_CLAIMS", "1"))
 PORT = int(os.environ.get("SOVA_AGENT_PORT", "8080"))
+IDLE = int(os.environ.get("SOVA_AGENT_IDLE_SECONDS", "0"))
 CHUNK = 16 << 20  # the most one request may carry
 MAX_ENTRIES = 500_000
 _DIR = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _FILE = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
+
+
+_activity = {"last": time.monotonic(), "busy": 0}
+_activity_lock = threading.Lock()
+
+
+def _touch(busy):
+    """A request starts (+1) or ends (-1): the agent is in use now."""
+    with _activity_lock:
+        _activity["busy"] += busy
+        _activity["last"] = time.monotonic()
+
+
+def idle_over():
+    """Whether the agent has been unused for ``IDLE`` seconds (never, unset)."""
+    with _activity_lock:
+        return IDLE > 0 and _activity["busy"] == 0 and \
+            time.monotonic() - _activity["last"] >= IDLE
+
+
+def _watch():
+    while not idle_over():
+        time.sleep(1)
+    os._exit(0)  # the Pod ends; its volumes are let go
 
 
 class Refused(Exception):
@@ -517,6 +548,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not TOKEN or not hmac.compare_digest(
                     hashlib.sha256(given.encode()).hexdigest(), TOKEN):
                 raise Refused(403, "token")
+            _touch(1)
+            try:
+                return self._serve(method, url, query)
+            finally:
+                _touch(-1)
+        except Refused as refused:
+            return self._answer(refused.status, json.dumps({"error": refused.reason}).encode())
+
+    def _serve(self, method, url, query):
+        try:
             length = int(self.headers.get("Content-Length") or 0)
             if not 0 <= length <= CHUNK:
                 raise Refused(413, "body_too_large")
@@ -574,8 +615,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 def main():
     if MODE not in ("reader", "writer") or len(TOKEN) != 64:
         sys.exit("sova volume agent: mode and token digest required")
+    if IDLE < 0:
+        sys.exit("sova volume agent: idle seconds must not be negative")
     server = http.server.ThreadingHTTPServer(("", PORT), Handler)
     server.daemon_threads = True
+    if IDLE:
+        threading.Thread(target=_watch, daemon=True).start()
     server.serve_forever()
 
 

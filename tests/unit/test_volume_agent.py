@@ -44,7 +44,7 @@ def free_port():
 def agents(tmp_path):
     started = {}
 
-    def start(name, mode, claims=1):
+    def start(name, mode, claims=1, idle=0):
         root = tmp_path / name
         for i in range(claims):
             (root / str(i)).mkdir(parents=True)
@@ -53,7 +53,7 @@ def agents(tmp_path):
         scratch.mkdir()
         env = {"SOVA_AGENT_ROOT": str(root), "SOVA_AGENT_MODE": mode, "SOVA_AGENT_PORT": str(port),
                "SOVA_AGENT_SCRATCH": str(scratch),
-               "SOVA_AGENT_CLAIMS": str(claims),
+               "SOVA_AGENT_CLAIMS": str(claims), "SOVA_AGENT_IDLE_SECONDS": str(idle),
                "SOVA_AGENT_TOKEN_SHA256": hashlib.sha256(TOKEN.encode()).hexdigest(),
                "PATH": os.environ["PATH"]}
         process = subprocess.Popen([sys.executable, "-I", "-c", AGENT_SOURCE], env=env)
@@ -419,3 +419,47 @@ def test_a_linked_file_that_changes_while_live_leaves_its_whole_group_for_later(
         assert not (target_root / name).exists()
     assert inode(target_root / "Maildir" / "new" / "1.msg") == \
         inode(target_root / "Maildir" / "tmp" / "1.msg")
+
+
+def answers(port):
+    try:
+        return raw(port, "GET", "/healthz", token=None)[0] == 200
+    except OSError:
+        return False
+
+
+def test_an_unused_agent_ends_by_itself_and_the_health_check_does_not_keep_it(agents):
+    _, port = agents("source", "reader", idle=1)
+    deadline = time.monotonic() + 6
+    while answers(port):  # the kubelet's probe, once in a while
+        assert time.monotonic() < deadline, "the agent did not end"
+        time.sleep(0.2)
+
+
+def test_an_agent_in_use_stays(agents):
+    _, port = agents("source", "reader", idle=1)
+    until = time.monotonic() + 3
+    while time.monotonic() < until:
+        assert raw(port, "GET", "/manifest?claim=0")[0] == 200
+        time.sleep(0.4)
+    assert answers(port)
+    deadline = time.monotonic() + 6
+    while answers(port):
+        assert time.monotonic() < deadline, "the agent did not end once unused"
+        time.sleep(0.2)
+
+
+def test_a_request_still_in_flight_keeps_the_agent(agents):
+    """A body that takes longer than the idle time to arrive: the agent waits
+    for it and answers."""
+    _, port = agents("source", "reader", idle=1)
+    body = b'{"queries": {}}'.ljust(30)
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as s:
+        s.sendall(b"POST /sqlite?claim=0&path=missing.db HTTP/1.1\r\nHost: agent\r\n"
+                  b"X-Sova-Agent-Token: " + TOKEN.encode() +
+                  b"\r\nContent-Length: %d\r\n\r\n" % len(body))
+        for byte in body:
+            s.sendall(bytes([byte]))
+            time.sleep(0.1)  # three seconds in all
+        answer = s.recv(4096)
+    assert answer.startswith(b"HTTP/1.1 409"), answer

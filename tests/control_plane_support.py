@@ -108,7 +108,7 @@ def worker_for(h, factory, *, owner):
             passed, observation = execution.measure(obligation, times)
             observations[obligation["id"]] = observation
             return passed, observation
-        return Execution(execution.adapter, measure)
+        return Execution(execution.adapter, measure, close=execution.close)
 
     return HandoffWorker(h["connect"], settings=h["settings"],
                          catalog=AdapterCatalog({h["adapter_id"]: keeping}),

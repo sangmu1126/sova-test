@@ -49,10 +49,16 @@ it, and every postcondition about writing is a statement about Pods:
   stays stopped, and no Pod but the application's mounts a target claim
   read-write.
 
-Agent Pods are reaped after each action or readback (and end by themselves
-after an hour at the latest). A readback starts read-only agents only on
-claims that are already bound, so it never changes what it reads. Every
-action is idempotent; a postcondition that does not hold reads back UNKNOWN.
+Agent Pods are reaped after each action or readback, or - ``keep_agents``,
+as the worker's execution runs - readers are kept for the next action or
+readback on the same claims and reaped when the execution ends
+(``release_agents``). Activation first removes every agent, of this adapter
+or of its probes, that mounts a target claim: a single-node volume held by an
+agent on one node would keep the application from attaching it on another.
+Every agent ends by itself after ten idle minutes and within an hour at the
+latest. A readback starts read-only agents only on claims that are already
+bound, so it never changes what it reads. Every action is idempotent; a
+postcondition that does not hold reads back UNKNOWN.
 """
 
 from dataclasses import dataclass
@@ -67,6 +73,7 @@ from sova.adapters.kubernetes.volume_agents import (
     VolumeAgents,
     differences,
     manifest_digest,
+    remove_agents,
     same_tree,
     sync_trees,
 )
@@ -122,7 +129,7 @@ class KubernetesVolumeHandoffAdapter:
     def __init__(self, adapter_id, *, source, target, route, routes, agent_key, image, run_as,
                  fs_group=None, storage_class=None, app_replicas=1, settle_seconds=60.0,
                  start_seconds=120.0, chunk_bytes=4 << 20, agent_transport="proxy",
-                 sync_passes=3):
+                 sync_passes=3, keep_agents=False):
         """``routes`` is the route value of (source, target); ``agent_key`` (at
         least 32 bytes, from the worker's secrets) derives each agent's token, so
         any worker instance can talk to an agent another one started."""
@@ -150,7 +157,11 @@ class KubernetesVolumeHandoffAdapter:
                                  for s in self.sides.values())]).encode()).hexdigest()[:12]
         self.agents = VolumeAgents(label=self.unit, key=agent_key, image=image, run_as=run_as,
                                    fs_group=fs_group, start_seconds=start_seconds,
-                                   transport=agent_transport)
+                                   transport=agent_transport, keep=keep_agents)
+
+    def release_agents(self):
+        """Reap the readers kept for the next action (the execution's end)."""
+        self.agents.release()
 
     # -- EffectAdapter -------------------------------------------------------
     def validate(self, command):
@@ -401,6 +412,7 @@ class KubernetesVolumeHandoffAdapter:
     def _activate_target(self):
         target = self.sides["target"]
         self._stop("target", target.others)
+        remove_agents(target.controls, target.claims, self.settle_seconds)
         kind, name = target.app
         found = target.controls.workload(kind, name)
         if found is None:

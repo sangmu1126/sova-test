@@ -59,6 +59,7 @@
 | 23 | Redis | 쓰기 정지 10.1초 | redis-py가 로그인 거부도 최대 10번 재시도 | writer 로그인은 한 번만 시도(91b3d57) | 정지 1.75초, 재시도 0 단위 시험 |
 | 27 | 볼륨 | 쓰기 정지 27.5초 | agent 준비를 kubelet의 1초 주기 확인으로 기다림, 쓰기 agent 마운트마다 소유권 전체 변경 | 직접 `/healthz` 확인, `fsGroupChangePolicy: OnRootMismatch`(27e7b20) | 정지 20.4초 |
 | 28 | 볼륨 port-forward(개발 중 발견) | port-forward 전송의 모든 호출이 약 1초 걸려 복사가 1.5MiB/s였다 | agent가 닫은 연결의 종료가 port-forward를 거쳐 약 1초 늦게 옴 | Content-Length만큼 오면 바로 끝냄(11f7487) | 호출 12~40ms, 처리량 프록시와 같음 |
+| 40 | 볼륨(관리형 클러스터) | 쓰기 정지가 75~105초로 kind의 3~5배였다 | 정지 구간의 단계·readback·probe마다 agent Pod를 새로 띄우고 지움(kind 0.9초, 관리형은 몇 초). 단일 노드 볼륨은 agent가 바뀔 때마다 노드를 옮겨 붙을 수도 있음 | 실행 안에서 읽기 agent를 재사용(adapter·probe 각자), 실행 끝과 활성화 직전에 정리, 유휴 10분이면 스스로 종료 | 단위 19건, 결함 주입 9건, kind: 정지 구간의 새 agent 14→6·12→3, 쓰기 정지 1.5~3.5초 단축. 관리형 실측은 남음 |
 
 ## 시험 쪽 결함
 
