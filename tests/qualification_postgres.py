@@ -128,7 +128,7 @@ def main():
     parser.add_argument("--image", required=True, help="Full cached sha256 image ID; no tag or automatic pull")
     parser.add_argument("--security-source", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
-    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker"), default="requests",
+    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup"), default="requests",
                         help="MQ-02, service, runtime API, or worker process/fault qualification checks")
     args = parser.parse_args()
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", args.image):
@@ -138,7 +138,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     args.artifacts.mkdir(parents=True, mode=0o700, exist_ok=False)
     run = {"requests": "mq02-", "service": "mq03-", "runtime": "mq03-runtime-",
-           "worker": "mq04-worker-"}[args.suite] + uuid4().hex
+           "worker": "mq04-worker-", "startup": "worker-startup-"}[args.suite] + uuid4().hex
     container, network = "sova-" + run, "sova-network-" + run
     report = {"run_id": run, "image_id": args.image, "shared_environment_used": False,
               "qualification_issued": False, "network_created": False, "container_created": False,
@@ -146,7 +146,7 @@ def main():
     # The worker regression fixtures leave their many tiny databases for the
     # run-owned container to dispose of. Account for template DBs and WAL, not
     # only business rows; never reset a shared database to make room.
-    data_mib, memory_mib = (1024, 1536) if args.suite == "worker" else (384, 512)
+    data_mib, memory_mib = (1024, 1536) if args.suite in ("worker", "startup") else (384, 512)
     report.update(data_tmpfs_mib=data_mib, container_memory_mib=memory_mib)
     report["source_commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
     report["security_source_commit"] = subprocess.check_output(
@@ -159,7 +159,7 @@ def main():
                         root / "tests/qualification_orders.py", Path(__file__).resolve(),
                         root / "examples/qualification/orders-http-postgres-v1.json"]
     tests = ["tests/unit/test_request_qualification.py", "tests/integration/test_order_http_handoff.py"]
-    if args.suite in ("service", "runtime", "worker"):
+    if args.suite in ("service", "runtime", "worker", "startup"):
         tests.extend(("tests/integration/test_service_api.py",
                       "tests/integration/test_service_control_plane.py",
                       "tests/integration/test_order_service_journey.py",
@@ -168,12 +168,22 @@ def main():
                                  root / "tests/qualification_service.py",
                                  root / "tests/contract_world.py", root / "tests/control_plane_support.py",
                                  *(root / test for test in tests[2:])])
-    if args.suite in ("runtime", "worker"):
+    if args.suite in ("runtime", "worker", "startup"):
         tests.append("tests/integration/test_service_runtime_journey.py")
         measured_sources.extend([root / "tests/qualification_runtime.py", root / tests[-1]])
-    if args.suite == "worker":
+    if args.suite in ("worker", "startup"):
         tests.append("tests/integration/test_worker_process_journey.py")
         measured_sources.extend([root / "tests/qualification_worker.py", root / tests[-1]])
+    if args.suite == "startup":
+        startup_tests = ["tests/unit/test_worker_startup.py",
+                         "tests/integration/test_worker_startup_postgres.py"]
+        startup_tests.extend("tests/unit/test_service_deployment.py::" + name for name in (
+            "test_secrets_are_read_from_mounted_files_never_from_the_environment",
+            "test_the_jwks_is_fetched_over_https_except_for_a_loopback_test_issuer",
+            "test_a_workers_owner_id_names_its_pod_and_is_new_at_every_start",
+            "test_owner_ids_that_name_no_pod_are_never_proved_gone"))
+        tests.extend(startup_tests)
+        measured_sources.extend(root / test.split("::", 1)[0] for test in startup_tests)
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}
