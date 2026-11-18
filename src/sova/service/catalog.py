@@ -51,9 +51,9 @@ ENGINES = {"postgresql": set(MODES), "mysql": {"offline_copy", "replication"}}
 _APP_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode", "databases",
              "role_password_files", "source_db", "target_db", "scratch_db", "other_db",
              "app_role", "writer_roles", "tables", "schema_sql_file", "probe_insert",
-             "source_conninfo_file", "route", "zone_of", "replication"}
+             "source_conninfo_file", "route", "zone_of", "replication", "database_role_password_files"}
 _REQUIRED = _APP_KEYS - {"role_password_files", "source_conninfo_file", "engine", "zone_of",
-                         "replication"}
+                         "replication", "database_role_password_files"}
 _REPLICATION_KEYS = {"source_endpoint", "account", "password_file", "tls", "ca_path",
                      "snapshot"}
 _UNIT_ENGINES = {  # engines whose entries carry their own keys (see each module)
@@ -110,6 +110,16 @@ def application_resolver(app, *, route_for=kubernetes_route):
     writers = _strings(app["writer_roles"], "writer_roles")
     if app["app_role"] not in writers:
         raise ContractError("The application role must be a registered writer")
+    database_passwords = app.get("database_role_password_files")
+    if database_passwords is not None:
+        if engine != "postgresql" or passwords:
+            raise ContractError("Database-specific PostgreSQL credentials cannot mix with legacy role files")
+        if type(database_passwords) is not dict or set(database_passwords) != set(databases):
+            raise ContractError("Every registered database needs an explicit credential mapping")
+        for mapping in database_passwords.values():
+            if (type(mapping) is not dict or set(mapping) != set(writers)
+                    or not all(type(path) is str and path for path in mapping.values())):
+                raise ContractError("Every database needs every registered writer's credential file")
     tables = tuple(tuple(_strings(t, "table and key")) for t in app["tables"])
     if not tables or not all(len(t) == 2 for t in tables):
         raise ContractError("tables: [table, key column] pairs required")
@@ -124,7 +134,7 @@ def application_resolver(app, *, route_for=kubernetes_route):
     if engine == "mysql":
         admin, close, connect_as = _mysql_connections(databases, passwords)
     else:
-        admin, close, connect_as = _postgres_connections(databases, passwords)
+        admin, close, connect_as = _postgres_connections(databases, passwords, database_passwords)
 
     resolved = {
         "connect": admin, "connect_as": connect_as, "source_db": app["source_db"],
@@ -165,7 +175,7 @@ def _replication(spec):
             "ca_path": spec.get("ca_path"), "snapshot": snapshot}
 
 
-def _postgres_connections(databases, passwords):
+def _postgres_connections(databases, passwords, database_passwords=None):
     import psycopg
 
     from sova.adapters.postgres_connections import ReusedConnections
@@ -175,7 +185,12 @@ def _postgres_connections(databases, passwords):
                                                                dbname=database))
 
     def connect_as(database, role):
-        extra = {"password": _read(passwords[role])} if role in passwords else {}
+        if database_passwords is not None:
+            if database not in database_passwords or role not in database_passwords[database]:
+                raise ContractError("No credential registered for this database writer")
+            extra = {"password": _read(database_passwords[database][role])}
+        else:
+            extra = {"password": _read(passwords[role])} if role in passwords else {}
         return psycopg.connect(servers[database], dbname=database, user=role, **extra)
 
     return admin, admin.close, connect_as
