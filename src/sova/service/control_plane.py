@@ -44,6 +44,7 @@ from sova.domain.plan_compiler import compile_revision, compile_failback
 from sova.domain.plan_lowering import lower_plan
 from sova.domain.plans import PlanApproval, PlanPurpose
 from sova.service.recovery_status import read_status
+from sova.service import workspace
 
 
 class Role(StrEnum):
@@ -181,6 +182,23 @@ class ControlPlane:
                                   changes=self._changes(tenant), clock=self.clock), store
 
     # -- registry ------------------------------------------------------------------
+    def identity(self, principal):
+        tenant = self._require(principal, *Role)
+        return {"tenant_id":tenant,"subject":principal.subject,
+                "roles":sorted(str(role) for role in principal.roles)}
+
+    def registry_catalog(self, principal, kind, after=""):
+        tenant = self._require(principal, *Role)
+        return workspace.registrations(self.connect,tenant,kind,after)
+
+    def plan_catalog(self, principal, application_id, after=""):
+        tenant = self._require(principal, *Role)
+        return workspace.plans(self._lifecycle(tenant),application_id,after)
+
+    def plan_detail(self, principal, application_id, plan_id):
+        tenant = self._require(principal, *Role)
+        return workspace.plan_detail(self.connect,self._lifecycle(tenant),application_id,plan_id)
+
     def register(self, principal, kind, subject_id, document, *, expected_revision):
         tenant = self._require(principal, Role.REGISTRAR)
         return self._registrations(tenant).register(

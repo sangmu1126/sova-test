@@ -15,6 +15,7 @@ import base64
 import json
 import threading
 import time
+from urllib.parse import urlsplit
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
@@ -24,6 +25,18 @@ from sova.domain.contracts import ContractError
 from sova.service.control_plane import Principal, Role
 
 SKEW = 60
+
+
+def oidc_url(value):
+    if not isinstance(value,str):
+        return False
+    try:
+        parsed=urlsplit(value)
+        return (bool(parsed.hostname) and parsed.username is None and parsed.password is None
+            and not parsed.query and not parsed.fragment and not any(c.isspace() for c in value)
+            and (parsed.scheme=="https" or (parsed.scheme=="http" and parsed.hostname=="127.0.0.1")))
+    except ValueError:
+        return False
 
 
 class Unauthenticated(ContractError):
@@ -55,7 +68,7 @@ class BearerAuthenticator:
     def __init__(self, *, issuer, audience, fetch_jwks, tenant_claim="sova_tenant",
                  roles_claim="realm_access.roles", role_prefix="sova:",
                  refresh_interval=60.0, clock=time.time):
-        if not issuer.startswith("https://") and not issuer.startswith("http://127.0.0.1"):
+        if not oidc_url(issuer):
             raise ContractError("An HTTPS issuer is required")
         self.issuer, self.audience, self.fetch_jwks = issuer, audience, fetch_jwks
         self.tenant_claim, self.roles_claim, self.role_prefix = (
@@ -65,7 +78,9 @@ class BearerAuthenticator:
 
     def _key(self, kid):
         with self._lock:
-            if kid not in self._keys and self.clock() - self._fetched >= self.refresh_interval:
+            # A known key must expire too: otherwise withdrawing it at the IdP
+            # would never be observed by a long-lived API process.
+            if self.clock() - self._fetched >= self.refresh_interval:
                 published = self.fetch_jwks()
                 self._keys = {k["kid"]: rsa.RSAPublicNumbers(_int(k["e"]), _int(k["n"]))
                               .public_key() for k in published.get("keys", ())

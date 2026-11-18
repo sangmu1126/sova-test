@@ -15,6 +15,7 @@ answers and its schema is the one this code expects.
 
 from datetime import timedelta
 import logging
+import re
 import uuid
 
 from fastapi import Body, Depends, FastAPI, Header, Request
@@ -26,6 +27,7 @@ from sova.domain.contracts import ContractError
 from sova.ports.plans import RecordNotFound, RepositoryConflict
 from sova.service.auth import AuthenticationUnavailable, Unauthenticated
 from sova.service.control_plane import Forbidden, NotFound, PlanRequest
+from sova.service.http_boundary import RequestBodyBoundary
 
 log = logging.getLogger("sova.api")
 MAX_BODY = 1_048_576
@@ -33,15 +35,19 @@ MAX_BODY = 1_048_576
 
 def create_app(plane, authenticate, *, ready=lambda: True):
     app = FastAPI(title="Sova control plane", version="1", docs_url=None, redoc_url=None)
+    app.add_middleware(RequestBodyBoundary,limit=MAX_BODY)
 
     @app.middleware("http")
     async def bounded(request: Request, call_next):
-        request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+        supplied = request.headers.get("x-request-id", "")
+        request_id = supplied if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}",supplied) else uuid.uuid4().hex
         length = request.headers.get("content-length")
         if length is not None and (not length.isdigit() or int(length) > MAX_BODY):
             return JSONResponse({"error": "request too large"}, status_code=413)
         response = await call_next(request)
         response.headers["x-request-id"] = request_id
+        response.headers["cache-control"] = "no-store"
+        response.headers["x-content-type-options"] = "nosniff"
         return response
 
     @app.exception_handler(Unauthenticated)
@@ -107,6 +113,22 @@ def create_app(plane, authenticate, *, ready=lambda: True):
                                expected_revision=body["expected_revision"])
         return {"kind": kind, "subject_id": subject, "revision": saved.revision,
                 "digest": saved.digest}
+
+    @app.get("/v1/tenants/{tenant}/identity")
+    def identity(who=Depends(principal)):
+        return plane.identity(who)
+
+    @app.get("/v1/tenants/{tenant}/registrations/{kind}")
+    def registry_catalog(kind: str, after: str="", who=Depends(principal)):
+        return plane.registry_catalog(who,kind,after)
+
+    @app.get("/v1/tenants/{tenant}/applications/{application}/plans")
+    def plan_catalog(application: str, after: str="", who=Depends(principal)):
+        return plane.plan_catalog(who,application,after)
+
+    @app.get("/v1/tenants/{tenant}/applications/{application}/plans/{plan}")
+    def plan_detail(application: str, plan: str, who=Depends(principal)):
+        return plane.plan_detail(who,application,plan)
 
     @app.get("/v1/tenants/{tenant}/registrations/{kind}/{subject}")
     def registration(kind: str, subject: str, who=Depends(principal)):

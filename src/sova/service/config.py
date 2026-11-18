@@ -32,6 +32,7 @@ from pathlib import Path
 import secrets
 
 from sova.domain.contracts import ContractError
+from sova.service.auth import oidc_url
 
 
 def _secret(name, env=os.environ):
@@ -78,7 +79,7 @@ class ServiceConfig:
     def from_env(cls, env=os.environ):
         witness = _required("SOVA_WITNESS", env)
         issuer, jwks = _required("SOVA_OIDC_ISSUER", env), _required("SOVA_OIDC_JWKS_URL", env)
-        if not jwks.startswith("https://") and not issuer.startswith("http://127.0.0.1"):
+        if not oidc_url(issuer) or not oidc_url(jwks):
             raise ContractError("The JWKS must be fetched over HTTPS")
         return cls(
             database_url=_secret("SOVA_DATABASE_URL_FILE", env),

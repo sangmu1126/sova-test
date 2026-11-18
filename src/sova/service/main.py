@@ -119,6 +119,13 @@ def serve_api(env=os.environ, *, host="0.0.0.0", port=8080):
         role_prefix=config.role_prefix)
     plane = ControlPlane(connect, settings=_settings(config), clock=_clock)
     app = create_app(plane, authenticate, ready=lambda: schema_ready(connect))
+    if env.get("SOVA_CONSOLE_ROOT"):
+        from sova.service.web import mount_workspace
+        from sova.service.config import _required
+        mount_workspace(app,root=env["SOVA_CONSOLE_ROOT"],
+            origin=_required("SOVA_CONSOLE_ORIGIN",env),issuer=config.issuer,
+            client_id=_required("SOVA_CONSOLE_CLIENT_ID",env),
+            tenant_id=_required("SOVA_CONSOLE_TENANT",env),audience=config.audience)
     # uvicorn handles SIGTERM: stop accepting, drain requests in flight.
     uvicorn.run(app, host=host, port=port, log_config=None, access_log=False,
                 proxy_headers=False, server_header=False, timeout_graceful_shutdown=25)

@@ -205,6 +205,7 @@ def main():
     if report["security_source_commit"] != "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf":
         parser.error("The security producer differs from the pinned qualification source")
     measured_sources = [*sorted((root / "src/sova/qualification").glob("*.py")),
+                        root / "tests/oidc_fixture.py",
                         root / "tests/unit/test_request_qualification.py",
                         root / "tests/integration/test_order_http_handoff.py",
                         root / "tests/qualification_orders.py", Path(__file__).resolve(),
@@ -212,6 +213,8 @@ def main():
     tests = ["tests/unit/test_request_qualification.py", "tests/integration/test_order_http_handoff.py"]
     if args.suite in ("service", "runtime", "worker", "startup"):
         tests.extend(("tests/integration/test_service_api.py",
+                      "tests/integration/test_workspace_api.py",
+                      "tests/unit/test_workspace_boundaries.py",
                       "tests/integration/test_service_control_plane.py",
                       "tests/integration/test_order_service_journey.py",
                       "tests/integration/test_service_worker.py"))
