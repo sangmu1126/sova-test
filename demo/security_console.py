@@ -26,6 +26,7 @@ from bounded_http import BoundedLoopbackServer
 from console_web import ConsoleWebBundle
 from dependency_bridge import DependencyBridge
 from migration_bridge import MigrationBridge
+from native_status_bridge import NativeStatusBridge
 
 ROOT = Path(__file__).resolve().parent
 if str(ROOT.parent / "src") not in sys.path:
@@ -829,6 +830,7 @@ def handler(
     ui_bundle=None,
     dependency_bridge=None,
     migration_bridge=None,
+    native_bridge=None,
 ):
     expected_host = urlsplit(origin).netloc
     web = ROOT / "security_web"
@@ -960,6 +962,10 @@ def handler(
             if parsed.path.startswith("/api/") and not self.origin_proof(session):
                 return self.reply(403, {"error": "operator_origin_proof_required"})
             try:
+                if parsed.path == "/api/native/status":
+                    if parsed.query or native_bridge is None:
+                        raise ContractError("Native status registration unavailable")
+                    return self.reply(200, native_bridge.state())
                 if (
                     parsed.path == "/api/migration/readiness"
                     and migration_bridge is not None
@@ -1151,6 +1157,8 @@ def main(argv=None):
     parser.add_argument("--session-root", required=True)
     parser.add_argument("--port", type=int, default=8792)
     parser.add_argument("--ui-root", help="Operator-selected built React bundle")
+    parser.add_argument("--native-status-config", type=Path,
+                        help="Private fixed-scope native GET registration (local only)")
     parser.add_argument(
         "--migration-token-file",
         type=Path,
@@ -1222,6 +1230,8 @@ def main(argv=None):
                 auth,
                 ui_bundle=ui_bundle,
                 dependency_bridge=dependency_bridge,
+                native_bridge=NativeStatusBridge(args.native_status_config)
+                if args.native_status_config else None,
                 migration_bridge=None
                 if args.security_only or args.no_migration
                 else MigrationBridge(

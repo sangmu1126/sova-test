@@ -102,6 +102,27 @@ def test_operator_session_host_origin_and_csrf_are_required(console_http):
     assert console.actions == [("prepare", None)]
 
 
+def test_native_observation_requires_the_same_operator_boundary_and_has_no_post(console_http):
+    server, origin, console = console_http
+    calls = []
+    bridge = SimpleNamespace(state=lambda: calls.append("read") or {"local_test": True})
+    server.RequestHandlerClass = handler(console, origin, console.auth, native_bridge=bridge)
+    path = "/api/native/status"
+    headers = {"Cookie": "sova_security="+console.session_token, "X-Sova-CSRF": console.csrf}
+    assert request(console_http, path)[0] == 404
+    assert request(console_http, path, headers={"Cookie": headers["Cookie"]})[0] == 403
+    assert request(console_http, path, headers={**headers, "Host": "attacker.invalid"})[0] == 403
+    assert calls == []
+    assert request(console_http, path, headers=headers)[0] == 200
+    assert calls == ["read"]
+    assert request(console_http, path+"?unit=another", headers=headers)[0] == 409
+    assert request(console_http, path, method="POST", body='{"action":"prepare"}',
+                   headers={**headers, "Origin": origin, "Content-Type": "application/json"})[0] == 409
+    assert console.actions == [] and calls == ["read"]
+    console.auth.revoke(console.session_token)
+    assert request(console_http, path, headers=headers)[0] == 404
+
+
 @pytest.mark.parametrize(
     "body",
     [

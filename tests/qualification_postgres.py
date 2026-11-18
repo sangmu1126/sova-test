@@ -309,8 +309,10 @@ def main():
                                      root / 'tests/qualification_pool_relay.py'])
     if args.suite == 'settlement':
         tests = ['tests/integration/test_effect_settlement_recovery.py',
-                 'tests/integration/test_worker_process_journey.py']
+                 'tests/integration/test_worker_process_journey.py',
+                 'tests/integration/test_recovery_status.py']
         measured_sources.extend([*(root / t for t in tests), root / 'tests/qualification_settlement.py',
+            root / 'demo/native_status_bridge.py',
             root / 'tests/qualification_worker.py', root / 'tests/qualification_runtime.py',
             root / 'tests/qualification_service.py', root / 'tests/qualification_pool_relay.py',
             root / 'tests/postgres_fixtures.py', root / 'tests/postgres_business.py',

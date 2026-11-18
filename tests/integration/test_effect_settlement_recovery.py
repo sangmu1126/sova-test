@@ -19,6 +19,9 @@ from qualification_worker import WorkerProcess
 from qualification_orders import observe
 from test_order_http_handoff import http_business as http_business  # noqa: F401
 from test_worker_process_journey import execution, orders
+from native_status_bridge import NativeStatusBridge
+from qualification_runtime import private_file
+import json
 
 from sova.domain.contracts import ContractError
 from sova.adapters.postgres_plans import PostgresLifecycleRepository
@@ -83,6 +86,17 @@ def test_real_effect_is_not_replayed_and_recovery_requires_remote_settlement(
                                   case_name='settlement-'+mode) as h:
         admission = h.approve_and_admit(h.register_forward(), 'settlement-approval')
         unit = admission['unit_digest']
+        bridge_token = private_file(tmp_path/'native-status-token',
+            h.issuer.token(h.tenant, 'auditor')['authorization'].removeprefix('Bearer '))
+        config = private_file(tmp_path/'native-status-config', json.dumps({
+            'origin':h.origin, 'tenant_id':h.tenant, 'application_id':h.app,
+            'unit_digest':unit, 'token_file':str(bridge_token)}))
+        bridge = NativeStatusBridge(config)
+        initial_view = bridge.state()
+        assert initial_view['state']=='SOURCE_ACTIVE' and initial_view['recovery']['status']=='clear'
+        assert initial_view['scope']['operation_id']==admission['operation_id']
+        assert h.call('GET',f'{h.app_base}/units/{unit}',
+            headers=h.issuer.token('another-tenant','auditor')).status_code==403
         calls, observations = [], {}
         def counting(factory):
             def build(*args):
@@ -127,6 +141,9 @@ def test_real_effect_is_not_replayed_and_recovery_requires_remote_settlement(
                     assert h.status(unit)['state']!='HANDOFF_COMPLETE'
                     assert h.route.get()==h.business['names']['src']
                     observations['blocked_after_process_death'] = execution(h)
+                    blocked_view = bridge.state()
+                    assert blocked_view['state']=='SOURCE_FENCED'
+                    assert blocked_view['recovery']['reason']=='OWNER_EXPIRED_UNSETTLED'
                     observations['remote_before_fence'] = remote_sessions(h,old.owner)
                     # Only the uniquely tagged old test worker's business DB
                     # backends are fenced, never another process or shared DB.
@@ -190,6 +207,16 @@ def test_real_effect_is_not_replayed_and_recovery_requires_remote_settlement(
                 assert count==(1 if mode=='committed' else 0)
                 assert target_rows==(53 if mode=='committed' else 0)
                 final = execution(h)
+                final_view = bridge.state()
+                assert final_view['state']==('HANDOFF_COMPLETE' if mode=='committed' else 'SOURCE_FENCED')
+                assert final_view['recovery']['status']==('clear' if mode=='committed' else 'required')
+                assert final_view['recovery']['reason']==(None if mode=='committed' else 'EFFECT_RESULT_UNKNOWN')
+                assert final_view['recovery']['authorizes_execution'] is False
+                # The next GET must fail after credential replacement. A prior
+                # successful observation is never returned from a bridge cache.
+                bridge_token.write_text(h.issuer.token('another-tenant','auditor')['authorization'].removeprefix('Bearer '))
+                with pytest.raises(ContractError):
+                    bridge.state()
                 final_copy = [e for e in final['effects'] if e['action']=='copy_content']
                 assert final_copy[0]['status']==('confirmed_applied' if mode=='committed' else 'unknown')
                 assert final['epoch']>old_state['epoch']
@@ -205,6 +232,10 @@ def test_real_effect_is_not_replayed_and_recovery_requires_remote_settlement(
                     committed_copy_audit=count, target_rows=target_rows, source_counts=source_counts,
                     target_counts=target_counts, original_records_verified=original, measurement=report,
                     migration_completed=(mode=='committed'), effect_apply_replayed=False)
+                h.record('recovery-status-'+mode, initial=initial_view, blocked=blocked_view,
+                    final=final_view, wrong_tenant_denied=True, credential_replacement_denied=True,
+                    local_native_api_and_bridge=True, production_deployed=False,
+                    operational_proof_issued=False, automatic_replay_added=False)
             finally:
                 if old is not None:
                     if old.process.poll() is None:
