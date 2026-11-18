@@ -12,7 +12,6 @@ import json
 import os
 from pathlib import Path
 import re
-import time
 
 import pytest
 from qualification_pods import (NAMESPACE, SERVICE_SOURCE, app_pod, command, owned_cluster,
