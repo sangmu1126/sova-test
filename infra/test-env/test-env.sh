@@ -141,7 +141,21 @@ EOF
       mv "$manifest.part" "$manifest"
     fi
     echo "$EG_MANIFEST_SHA256  $manifest" | shasum -a 256 -c -
-    kc apply --server-side -f "$manifest"
+    if [ -n "${SOVA_GATEWAY_PROVIDED_CRDS:-}" ]; then
+      # The cluster keeps its own Gateway API CRDs (GKE manages them and admits
+      # the standard channel only): install everything else of the release.
+      python3 - "$manifest" > "$manifest.no-gateway-api" <<'PY'
+import re, sys
+docs = open(sys.argv[1]).read().split("\n---\n")
+kept = [d for d in docs if not (re.search(r"^kind: CustomResourceDefinition$", d, re.M)
+                                and re.search(r"^  group: gateway\.networking\.k8s\.io$", d, re.M))]
+print(f"# {len(docs) - len(kept)} Gateway API CRDs left to the cluster", file=sys.stderr)
+print("\n---\n".join(kept))
+PY
+      kc apply --server-side -f "$manifest.no-gateway-api"
+    else
+      kc apply --server-side -f "$manifest"
+    fi
     kc -n envoy-gateway-system set image deployment/envoy-gateway "envoy-gateway=$EG_IMAGE"
     kc -n envoy-gateway-system set resources deployment/envoy-gateway \
       --requests=cpu=50m,memory=128Mi

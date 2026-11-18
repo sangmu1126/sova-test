@@ -331,9 +331,9 @@ class Aws:
 
     # -- managed Kubernetes
 
-    def _service_role(self, name, service, policies, run):
+    def _service_role(self, name, service, policies, run, actions=("sts:AssumeRole",)):
         trust = {"Version": "2012-10-17", "Statement": [{
-            "Effect": "Allow", "Principal": {"Service": service}, "Action": "sts:AssumeRole"}]}
+            "Effect": "Allow", "Principal": {"Service": service}, "Action": list(actions)}]}
         if self.cli("iam", "get-role", "--role-name", name, check=False) is None:
             self.cli("iam", "create-role", "--role-name", name, "--assume-role-policy-document",
                      json.dumps(trust), "--tags", json.dumps([{"Key": "sova-test", "Value": run}]))
@@ -353,7 +353,13 @@ class Aws:
         node_role = self._service_role(
             f"sova-test-eks-node-{run}", "ec2.amazonaws.com",
             ["AmazonEKSWorkerNodePolicy", "AmazonEC2ContainerRegistryReadOnly",
-             "AmazonEKS_CNI_Policy", "service-role/AmazonEBSCSIDriverPolicy"], run)
+             "AmazonEKS_CNI_Policy"], run)
+        # The EBS CSI controller's own role, through EKS Pod Identity: a Pod cannot
+        # reach the node's credentials (IMDSv2 answers one hop only: measured).
+        ebs_role = self._service_role(
+            f"sova-test-eks-ebs-{run}", "pods.eks.amazonaws.com",
+            ["service-role/AmazonEBSCSIDriverPolicy"], run,
+            actions=("sts:AssumeRole", "sts:TagSession"))
         vpc = self.cli("ec2", "describe-vpcs", "--filters",
                        "Name=isDefault,Values=true")["Vpcs"][0]["VpcId"]
         subnets = sorted(s["SubnetId"] for s in self.cli("ec2", "describe-subnets", "--filters",
@@ -402,15 +408,27 @@ class Aws:
         self.run(["aws", "eks", "update-kubeconfig", "--name", name, "--kubeconfig",
                   str(kubeconfig), "--alias", context, "--profile", self.profile,
                   "--region", self.region])
-        # Volumes: the EBS CSI driver (credentials from the node role) and the
+        # Volumes: the EBS CSI driver with its own role (Pod Identity) and the
         # run's class - gp3, encrypted, each volume tagged with the run.
-        addon = "aws-ebs-csi-driver"
-        if self.cli("eks", "describe-addon", "--cluster-name", name, "--addon-name", addon,
-                     check=False) is None:
-            self.cli("eks", "create-addon", "--cluster-name", name, "--addon-name", addon,
-                     "--tags", json.dumps(tags))
+        self._addon(name, "eks-pod-identity-agent", tags)
+        association = f"serviceAccount=ebs-csi-controller-sa,roleArn={ebs_role}"
+        found = self.cli("eks", "describe-addon", "--cluster-name", name, "--addon-name",
+                         "aws-ebs-csi-driver", check=False)
+        if found is None:
+            self._addon(name, "aws-ebs-csi-driver", tags, "--pod-identity-associations",
+                        association)
+        elif not self.cli("eks", "list-pod-identity-associations", "--cluster-name", name,
+                          "--namespace", "kube-system", "--service-account",
+                          "ebs-csi-controller-sa").get("associations"):
+            # Made before without its role (an add-on still CREATING takes no
+            # update): associate the account directly; new Pods get the role.
+            self.cli("eks", "create-pod-identity-association", "--cluster-name", name,
+                     "--namespace", "kube-system", "--service-account", "ebs-csi-controller-sa",
+                     "--role-arn", ebs_role, "--tags", json.dumps(tags))
+            self._restart_with_role(kubeconfig, context)
         self.run(["aws", "eks", "wait", "addon-active", "--cluster-name", name,
-                  "--addon-name", addon, "--profile", self.profile, "--region", self.region])
+                  "--addon-name", "aws-ebs-csi-driver", "--profile", self.profile,
+                  "--region", self.region])
         state = {"cluster": name, "nodegroup": group, "context": context,
                  "storage_class": apply_storage_class(
                      self.run, kubeconfig, context, run, "ebs.csi.aws.com",
@@ -418,6 +436,32 @@ class Aws:
                       "tagSpecification_1": f"sova-test={run}"})}
         state["backstop"] = self._eks_backstop(run, state, parse(lease["expires_at"]))
         return state
+
+    def _restart_with_role(self, kubeconfig, context, attempts=6):
+        """Restart the EBS CSI controller until its new Pods carry the Pod Identity
+        credentials: an association reaches the admission webhook a little
+        later, and a Pod made before that starts without it (measured)."""
+        kubectl = ["kubectl", "--kubeconfig", str(kubeconfig), "--context", context,
+                   "-n", "kube-system"]
+        for _ in range(attempts):
+            self.run([*kubectl, "rollout", "restart", "deployment/ebs-csi-controller"])
+            self.run([*kubectl, "rollout", "status", "deployment/ebs-csi-controller",
+                      "--timeout=180s"], check=False)
+            env = self.run([*kubectl, "get", "pods", "-l", "app=ebs-csi-controller", "-o",
+                            "jsonpath={.items[*].spec.containers[*].env[*].name}"],
+                           check=False).stdout
+            if "AWS_CONTAINER_CREDENTIALS_FULL_URI" in (env or ""):
+                return
+            time.sleep(15)
+        raise CloudEnvError("The EBS CSI controller did not get its role")
+
+    def _addon(self, cluster, addon, tags, *extra):
+        if self.cli("eks", "describe-addon", "--cluster-name", cluster, "--addon-name", addon,
+                    check=False) is None:
+            self.cli("eks", "create-addon", "--cluster-name", cluster, "--addon-name", addon,
+                     "--tags", json.dumps(tags), *extra)
+        self.run(["aws", "eks", "wait", "addon-active", "--cluster-name", cluster,
+                  "--addon-name", addon, "--profile", self.profile, "--region", self.region])
 
     def kubernetes_down(self, lease, log):
         """Remove the run's EKS cluster, node groups, schedules and roles only."""
@@ -429,7 +473,8 @@ class Aws:
             if name.endswith(("-ng", "-eks")):
                 self.cli("scheduler", "delete-schedule", "--name", name, check=False)
         self._sweep_clusters(kinds, log)
-        for role in (f"sova-test-eks-cluster-{run}", f"sova-test-eks-node-{run}"):
+        for role in (f"sova-test-eks-cluster-{run}", f"sova-test-eks-node-{run}",
+                     f"sova-test-eks-ebs-{run}"):
             if role in kinds.get("iam-role", []):
                 self._delete_role(role)
                 log(f"aws role deleted: {role}")
