@@ -128,8 +128,8 @@ def main():
     parser.add_argument("--image", required=True, help="Full cached sha256 image ID; no tag or automatic pull")
     parser.add_argument("--security-source", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
-    parser.add_argument("--suite", choices=("requests", "service", "runtime"), default="requests",
-                        help="MQ-02, MQ-03 service, or runtime API subprocess and HTTPS JWKS checks")
+    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker"), default="requests",
+                        help="MQ-02, service, runtime API, or worker process/fault qualification checks")
     args = parser.parse_args()
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", args.image):
         parser.error("An exact cached image ID is required")
@@ -137,11 +137,17 @@ def main():
         parser.error("The pinned security source's src directory is required")
     root = Path(__file__).resolve().parents[1]
     args.artifacts.mkdir(parents=True, mode=0o700, exist_ok=False)
-    run = {"requests": "mq02-", "service": "mq03-", "runtime": "mq03-runtime-"}[args.suite] + uuid4().hex
+    run = {"requests": "mq02-", "service": "mq03-", "runtime": "mq03-runtime-",
+           "worker": "mq04-worker-"}[args.suite] + uuid4().hex
     container, network = "sova-" + run, "sova-network-" + run
     report = {"run_id": run, "image_id": args.image, "shared_environment_used": False,
               "qualification_issued": False, "network_created": False, "container_created": False,
               "suite": args.suite}
+    # The worker regression fixtures leave their many tiny databases for the
+    # run-owned container to dispose of. Account for template DBs and WAL, not
+    # only business rows; never reset a shared database to make room.
+    data_mib, memory_mib = (1024, 1536) if args.suite == "worker" else (384, 512)
+    report.update(data_tmpfs_mib=data_mib, container_memory_mib=memory_mib)
     report["source_commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
     report["security_source_commit"] = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=args.security_source, text=True).strip()
@@ -153,7 +159,7 @@ def main():
                         root / "tests/qualification_orders.py", Path(__file__).resolve(),
                         root / "examples/qualification/orders-http-postgres-v1.json"]
     tests = ["tests/unit/test_request_qualification.py", "tests/integration/test_order_http_handoff.py"]
-    if args.suite in ("service", "runtime"):
+    if args.suite in ("service", "runtime", "worker"):
         tests.extend(("tests/integration/test_service_api.py",
                       "tests/integration/test_service_control_plane.py",
                       "tests/integration/test_order_service_journey.py",
@@ -162,9 +168,12 @@ def main():
                                  root / "tests/qualification_service.py",
                                  root / "tests/contract_world.py", root / "tests/control_plane_support.py",
                                  *(root / test for test in tests[2:])])
-    if args.suite == "runtime":
+    if args.suite in ("runtime", "worker"):
         tests.append("tests/integration/test_service_runtime_journey.py")
         measured_sources.extend([root / "tests/qualification_runtime.py", root / tests[-1]])
+    if args.suite == "worker":
+        tests.append("tests/integration/test_worker_process_journey.py")
+        measured_sources.extend([root / "tests/qualification_worker.py", root / tests[-1]])
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}
@@ -192,9 +201,9 @@ def main():
                        'exec docker-entrypoint.sh "$@"')
             container_attempted = True
             docker("run", "--detach", "--name", container, "--label", "sova.qualification=" + run,
-                   "--network", network, "--publish", "127.0.0.1::5432", "--memory", "512m", "--cpus", "1",
+                   "--network", network, "--publish", "127.0.0.1::5432", "--memory", f"{memory_mib}m", "--cpus", "1",
                    "--pids-limit", "128", "--security-opt", "no-new-privileges",
-                   "--tmpfs", "/var/lib/postgresql/data:rw,nosuid,size=384m",
+                   "--tmpfs", f"/var/lib/postgresql/data:rw,nosuid,size={data_mib}m",
                    "--tmpfs", "/run/sova-tls:rw,noexec,nosuid,size=1m",
                    "--mount", f"type=bind,src={tls / 'server'},dst=/sova-input,readonly",
                    "--env", "POSTGRES_DB=sova_test", "--env", "POSTGRES_HOST_AUTH_METHOD=trust",
@@ -246,6 +255,12 @@ def main():
                                        "--junitxml=" + str(args.artifacts.resolve() / "results.xml")],
                                       cwd=root, env=env, check=False).returncode
                 report["pytest_exit_code"] = code
+                report["database_filesystem_usage"] = docker(
+                    "exec", container, "df", "-k", "/var/lib/postgresql/data").splitlines()
+                if code:
+                    logs = subprocess.run(["docker", "logs", "--tail", "200", container],
+                                          capture_output=True, text=True)
+                    (args.artifacts / "postgres-test-failure.log").write_text(logs.stdout + logs.stderr)
             finally:
                 report["clock_checks"] = clocks.stop()
             if not report["clock_checks"]["passed"]:
