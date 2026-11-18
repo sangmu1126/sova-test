@@ -10,7 +10,7 @@ from contextlib import contextmanager
 
 from psycopg.types.json import Jsonb
 
-from sova.domain.contracts import ContractError, digest, identifier
+from sova.domain.contracts import ContractError, canonical_json, digest, identifier
 from sova.adapters.postgres_handoff_claims import require_no_security_hold
 from sova.domain.handoff_authority import (
     TERMINAL,
@@ -56,12 +56,22 @@ class PostgresHandoffAuthority:
                 yield conn
 
     def _current(self, conn, application_id, unit_digest, *, lock):
+        # The external append precedes SQL commit. A row snapshot taken during
+        # that window must not be compared with the already advanced witness.
+        # Transaction locks cover missing rows too; row locks alone cannot.
+        self._lock_unit(conn, application_id, unit_digest, exclusive=lock)
         record = self._stored(conn, application_id, unit_digest, lock=lock)
         witnessed = self.witness.latest(application_id, unit_digest)
         if (None if record is None else record.document) != witnessed:
             raise AuthorityRollbackDetected(
                 "Authority store does not hold the latest witnessed record")
         return record
+
+    def _lock_unit(self, conn, application_id, unit_digest, *, exclusive):
+        key = canonical_json(["sova.authority", self.tenant_id, application_id, unit_digest])
+        statement = ("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))" if exclusive else
+                     "SELECT pg_advisory_xact_lock_shared(hashtextextended(%s,0))")
+        conn.execute(statement, (key,))
 
     def _stored(self, conn, application_id, unit_digest, *, lock):
         row = conn.execute(
@@ -230,11 +240,12 @@ class PostgresHandoffAuthority:
         unfinished step is held until a fresh observation reconciles it.
         """
         identifier(actor_id, "actor_id")
-        witnessed = self.witness.latest(application_id, unit_digest)
-        if witnessed is None:
-            raise ContractError("Nothing witnessed for this unit")
-        witnessed = record_from_document(witnessed)
         with self.transaction() as conn:
+            self._lock_unit(conn, application_id, unit_digest, exclusive=True)
+            witnessed = self.witness.latest(application_id, unit_digest)
+            if witnessed is None:
+                raise ContractError("Nothing witnessed for this unit")
+            witnessed = record_from_document(witnessed)
             stored = self._stored(conn, application_id, unit_digest, lock=True)
             recovered = recover_incarnation(stored, witnessed, revision)
             values = (recovered.plan_digest, recovered.compiled_digest, recovered.revision,

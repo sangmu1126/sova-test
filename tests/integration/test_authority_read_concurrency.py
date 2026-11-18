@@ -9,9 +9,11 @@ import time
 from handoff_support import admitted_handoff
 import psycopg
 import pytest
+from psycopg.types.json import Jsonb
 from witness_support import MemoryAuthorityWitness
 
 from sova.adapters.postgres_handoff_authority import PostgresHandoffAuthority
+from sova.domain.handoff_authority import AuthorityRollbackDetected
 
 pytestmark = pytest.mark.postgres
 
@@ -74,3 +76,36 @@ def test_reader_waits_for_witnessed_but_uncommitted_authority(postgres_database,
             witness.release.set()
             after = writer.result(timeout=10)
         assert future.result(timeout=10) == after
+
+
+@pytest.mark.parametrize("sql_rollback", [False, True], ids=["restored-row", "failed-commit"])
+def test_actual_rollback_still_blocks_until_explicit_recovery(postgres_database, now, sql_rollback):
+    witness = MemoryAuthorityWitness()
+    h = admitted_handoff(postgres_database, now, witness_for=lambda tenant: witness)
+    before = h["coordinator"].open(h["revision"], h["plan"], actor_id="writer")
+    after = replace(before, revision=before.revision + 1, reason="CONCURRENCY_TEST")
+    if sql_rollback:
+        original = witness.append
+        def fail_after_append(*args):
+            original(*args)
+            raise RuntimeError("Deliberately roll SQL back after the durable witness append")
+        witness.append = fail_after_append
+        try:
+            with pytest.raises(RuntimeError, match="Deliberately"):
+                h["store"].transition(before, after, action="test-transition", actor_id="writer")
+        finally:
+            witness.append = original
+    else:
+        h["store"].transition(before, after, action="test-transition", actor_id="writer")
+        # Isolated test administrator simulates an actual authority row restore.
+        with psycopg.connect(postgres_database[0]) as admin:
+            admin.execute("UPDATE sova_control.handoff_authority SET revision=%s,document=%s "
+                          "WHERE tenant_id=%s AND application_id=%s AND unit_digest=%s",
+                          (before.revision, Jsonb(before.document), h["tenant"], h["app"], before.unit_digest))
+    with pytest.raises(AuthorityRollbackDetected):
+        h["store"].current(h["app"], before.unit_digest)
+    with pytest.raises(AuthorityRollbackDetected):
+        h["store"].transition(before, after, action="test-transition", actor_id="writer")
+    recovered = h["store"].recover(h["app"], before.unit_digest, h["revision"], actor_id="recovery-operator")
+    assert recovered.epoch == after.epoch + 1 and recovered.revision == after.revision + 1
+    assert h["store"].current(h["app"], before.unit_digest) == recovered
