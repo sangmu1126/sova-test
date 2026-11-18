@@ -34,9 +34,11 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
   if (overflow) throw new Error("Mobile viewport overflow");
+  const rowHeights = await page.locator(".native-table tbody tr").evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height));
+  if (rowHeights.some(height => height > 120)) throw new Error("Effect row wraps excessively on mobile");
   await page.screenshot({ path: join(config.directory, "mobile.png"), fullPage: true });
   if (page_errors || mutation_requests || !native_gets) throw new Error("Browser boundary failed");
-  console.log(JSON.stringify({ executed: true, driver: metadata.version, browser: browser.version(), page_errors, mutation_requests, native_gets, viewport_overflow: overflow, observed_state: config.expected.state, observed_hold: config.expected.required, synthetic_operator_identity: true }));
+  console.log(JSON.stringify({ executed: true, driver: metadata.version, browser: browser.version(), page_errors, mutation_requests, native_gets, viewport_overflow: overflow, mobile_effect_row_heights: rowHeights, observed_state: config.expected.state, observed_hold: config.expected.required, synthetic_operator_identity: true }));
 } finally {
   await browser.close();
 }
