@@ -128,8 +128,8 @@ def main():
     parser.add_argument("--image", required=True, help="Full cached sha256 image ID; no tag or automatic pull")
     parser.add_argument("--security-source", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
-    parser.add_argument("--suite", choices=("requests", "service"), default="requests",
-                        help="MQ-02 only, or MQ-03 plus MQ-02 and existing service regression tests")
+    parser.add_argument("--suite", choices=("requests", "service", "runtime"), default="requests",
+                        help="MQ-02, MQ-03 service, or runtime API subprocess and HTTPS JWKS checks")
     args = parser.parse_args()
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", args.image):
         parser.error("An exact cached image ID is required")
@@ -137,7 +137,7 @@ def main():
         parser.error("The pinned security source's src directory is required")
     root = Path(__file__).resolve().parents[1]
     args.artifacts.mkdir(parents=True, mode=0o700, exist_ok=False)
-    run = ("mq03-" if args.suite == "service" else "mq02-") + uuid4().hex
+    run = {"requests": "mq02-", "service": "mq03-", "runtime": "mq03-runtime-"}[args.suite] + uuid4().hex
     container, network = "sova-" + run, "sova-network-" + run
     report = {"run_id": run, "image_id": args.image, "shared_environment_used": False,
               "qualification_issued": False, "network_created": False, "container_created": False,
@@ -153,14 +153,18 @@ def main():
                         root / "tests/qualification_orders.py", Path(__file__).resolve(),
                         root / "examples/qualification/orders-http-postgres-v1.json"]
     tests = ["tests/unit/test_request_qualification.py", "tests/integration/test_order_http_handoff.py"]
-    if args.suite == "service":
+    if args.suite in ("service", "runtime"):
         tests.extend(("tests/integration/test_service_api.py",
                       "tests/integration/test_service_control_plane.py",
                       "tests/integration/test_order_service_journey.py",
                       "tests/integration/test_service_worker.py"))
         measured_sources.extend([*sorted((root / "src/sova/service").glob("*.py")),
                                  root / "tests/qualification_service.py",
+                                 root / "tests/contract_world.py", root / "tests/control_plane_support.py",
                                  *(root / test for test in tests[2:])])
+    if args.suite == "runtime":
+        tests.append("tests/integration/test_service_runtime_journey.py")
+        measured_sources.extend([root / "tests/qualification_runtime.py", root / tests[-1]])
     report["test_files"] = tests
     report["working_tree_sources_sha256"] = {
         str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in measured_sources}

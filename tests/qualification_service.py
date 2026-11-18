@@ -51,6 +51,14 @@ class ServiceJourney:
         local_budgets(data)  # generous test budgets; never a production SLO
         self.world = build_world(self.clock() - timedelta(seconds=1),
                                  contract=ServiceContract.from_document(data))
+        # Directional test profiles must at least name the actual engine
+        # versions, even though inventory/qualification remain synthetic.
+        self.database_versions = {}
+        for side, database in (("source", "src"), ("target", "tgt")):
+            with business["connect"](business["names"][database]) as conn:
+                version = conn.execute("SHOW server_version").fetchone()[0].split()[0]
+            self.database_versions[self.world[side].profile_id] = version
+        self.bind_database_versions(self.world)
         self.app = self.world["contract"].service_id
         witness = FileAuthorityWitness(directory / "authority.log", tenant_id=self.tenant)
         self.settings = Settings("registry-attestor-1", "handoff-verifier-1",
@@ -72,6 +80,16 @@ class ServiceJourney:
         self.app_base = f"{self.base}/applications/{self.app}"
         self.trace = []
         self.client = None
+
+    def bind_database_versions(self, world):
+        for side in ("source", "target"):
+            p = world[side]
+            world[side] = replace(p, versions=tuple(
+                (engine, self.database_versions[p.profile_id] if engine == "postgresql" else version)
+                for engine, version in p.versions))
+        world["qualification"] = replace(
+            world["qualification"], source_profile_digest=world["source"].fingerprint,
+            target_profile_digest=world["target"].fingerprint)
 
     def publish_trust(self, trust, *, version):
         at = self.clock() - timedelta(seconds=1)
@@ -112,6 +130,7 @@ class ServiceJourney:
         w = build_world(self.clock() - timedelta(seconds=1), contract=self.world["contract"],
                         strategy=FAILBACK_STRATEGY, reverse=True,
                         environment="synthetic-target", uid_prefix="target-uid-")
+        self.bind_database_versions(w)
         # New subject IDs preserve the forward registration heads. The original
         # trusted registry signer attests them; build_world's new key is unused.
         w["snapshot"] = replace(w["snapshot"], snapshot_id=w["snapshot"].snapshot_id + "-return")
