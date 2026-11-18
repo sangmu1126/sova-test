@@ -83,6 +83,46 @@ def test_fresh_connection_query_also_requires_an_operation_deadline(postgres_dat
     network_observation(postgres_database, True, 'fresh-query')
 
 
+def test_process_guard_stops_stalled_checkout_and_confirms_backend_quiescence(postgres_database):
+    dsn, role = postgres_database
+    facts = {'complete': False, 'business_effect_executed': False,
+             'inflight_write_recovery_qualified': False, 'product_watchdog_deployed': False}
+    child = None
+    try:
+        with Relay(dsn) as relay:
+            child = Child(relay.dsn, role, 'checkout')
+            ready = child.receive(5)
+            assert ready['event']=='ready'
+            pid = ready['pid']
+            relay.pause.set()
+            child.send('go')
+            assert child.receive(2)=={'event':'started'}
+            assert relay.blocked.wait(timeout=2)
+            started = time.monotonic()
+            assert child.receive(1) is None and child.process.poll() is None
+            child.close()  # Deliberate parent guard, not successful DB cancellation.
+            assert child.process.returncode is not None and child.forced_stop
+            facts.update(guard_forced_stop=True, child_exit=child.process.returncode,
+                         held_tls_bytes=relay.held_bytes, messages=child.messages)
+        # Process death alone does not assert the remote session is gone.
+        until = time.monotonic()+2
+        while True:
+            with psycopg.connect(dsn) as admin:
+                count = admin.execute('SELECT count(*) FROM pg_stat_activity WHERE pid=%s', (pid,)).fetchone()[0]
+            if count==0:
+                break
+            if time.monotonic()>=until:
+                raise AssertionError('Terminated child backend still visible')
+            time.sleep(.01)
+        facts['guard_and_remote_quiescence_ms'] = round((time.monotonic()-started)*1000,3)
+        assert facts['guard_and_remote_quiescence_ms'] < 5000
+        facts.update(complete=True, actual_backend_gone=True, effect_retry_added=False)
+    finally:
+        if child is not None:
+            child.close()
+        record('pool-stall-process-guard', **facts)
+
+
 def test_stalled_real_reset_does_not_lend_the_unclean_backend(postgres_database):
     dsn, role = postgres_database
     facts = {'complete': False, 'business_effect_executed': False}
