@@ -2,6 +2,9 @@
 FROM python:3.12.16-alpine3.24@sha256:218ad6ba54faeb7f1089f391c597a80c9d69ca88e561f71ebd77fb452d39249b
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1 AWS_EC2_METADATA_DISABLED=true
 WORKDIR /app
+# Exact vendor-fixed version; apk verifies repository signatures. A missing
+# patch fails the build rather than suppressing the scanner's findings.
+RUN apk add --no-cache 'krb5-libs=1.22.3-r0'
 COPY requirements.lock /app/requirements.lock
 RUN python -m pip install --no-cache-dir --only-binary=:all: --require-hashes -r requirements.lock \
     && addgroup -g 10001 canary \
