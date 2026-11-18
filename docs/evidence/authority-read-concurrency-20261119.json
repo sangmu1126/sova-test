@@ -1,0 +1,2001 @@
+{
+  "kind": "AuthorityReadAndWitnessConcurrencyVerification",
+  "version": 1,
+  "date_kst": "2026-11-19",
+  "scope": "Personal isolated PostgreSQL/POSIX-file concurrency and actual Pod/HTTPS recovery verification; not operational continuity qualification",
+  "base_commit": "2e12fecd8c7bc25b2bb6b074e03caca34e9ee2d8",
+  "product_source": "0abcadcb4b8ab9426c747dbee39305c90d8916c7",
+  "security_producer": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+  "image_id": "sha256:bf94bd18080210a11900913116adf4de144e84a538fbbc25d9b101640574633a",
+  "image_audit": {
+    "architecture": "arm64",
+    "authorizes_execution": false,
+    "deployment_observed": false,
+    "entrypoint": [
+      "sova-service"
+    ],
+    "image_id": "sha256:bf94bd18080210a11900913116adf4de144e84a538fbbc25d9b101640574633a",
+    "observed_at": "2026-11-18T16:29:13.049078+00:00",
+    "os": "linux",
+    "packages": {
+      "sova": {
+        "changed": [],
+        "expected_files": 318,
+        "extra": [],
+        "installed_files": 318,
+        "missing": [],
+        "version_matches": true
+      },
+      "sova_security": {
+        "changed": [],
+        "expected_files": 122,
+        "extra": [],
+        "installed_files": 122,
+        "missing": [],
+        "version_matches": true
+      }
+    },
+    "qualification_issued": false,
+    "schema_version": "service-image-source.v1",
+    "security_revision": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+    "service_entrypoint_matches": true,
+    "source_revision": "0abcadcb4b8ab9426c747dbee39305c90d8916c7",
+    "status": "MATCH",
+    "user": "10001:10001"
+  },
+  "unit_and_sql_runs": [
+    {
+      "name": "before",
+      "source_commit": "96f4ada125f0d0163ed340ab2c2d280959ec4e62",
+      "results": {
+        "tests": 13,
+        "failures": 2,
+        "errors": 0,
+        "skipped": 0
+      },
+      "clock_passed": true,
+      "clock_samples": 24,
+      "resources_removed": true,
+      "source_hashes_match_recorded_commit": true
+    },
+    {
+      "name": "after",
+      "source_commit": "4cf9422106b746dd7006ed1528b83e94b931d029",
+      "results": {
+        "tests": 15,
+        "failures": 11,
+        "errors": 0,
+        "skipped": 0
+      },
+      "clock_passed": true,
+      "clock_samples": 29,
+      "resources_removed": true,
+      "source_hashes_match_recorded_commit": true
+    },
+    {
+      "name": "after-canonical",
+      "source_commit": "53ddfba844f40b93dc940b1201029c2b6a86622f",
+      "results": {
+        "tests": 15,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "clock_passed": true,
+      "clock_samples": 21,
+      "resources_removed": true,
+      "source_hashes_match_recorded_commit": true
+    },
+    {
+      "name": "diagnostics",
+      "source_commit": "0abcadcb4b8ab9426c747dbee39305c90d8916c7",
+      "results": {
+        "tests": 23,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "clock_passed": true,
+      "clock_samples": 41,
+      "resources_removed": true,
+      "source_hashes_match_recorded_commit": true
+    },
+    {
+      "name": "expanded",
+      "source_commit": "b388bdfe9ebf7bd8f955458d10e97bda533290cd",
+      "results": {
+        "tests": 36,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "clock_passed": true,
+      "clock_samples": 115,
+      "resources_removed": true,
+      "source_hashes_match_recorded_commit": true
+    },
+    {
+      "name": "file-before",
+      "results": {
+        "tests": 6,
+        "failures": 5,
+        "errors": 0,
+        "skipped": 0
+      },
+      "overlaps_other_runs": true
+    },
+    {
+      "name": "file-after",
+      "results": {
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "overlaps_other_runs": true
+    },
+    {
+      "name": "file-red-frozen",
+      "source": {
+        "source_revision": "a7e3ff83d245186b2ede496be3c1503583bcfd3d",
+        "source_sha256": {
+          "src/sova/adapters/file_authority_witness.py": "06c87dc8496b526cffbecd04aa3949e16a34f58ed6af398eb2b60e6d28fb1a73",
+          "tests/unit/test_file_witness_concurrency.py": "6ff46a103db17834fa2de297cda98f28b51e571e7c56572756e7cef8a7647e13"
+        },
+        "qualification_issued": false
+      },
+      "results": {
+        "tests": 6,
+        "failures": 5,
+        "errors": 0,
+        "skipped": 0
+      },
+      "expected_pre_fix_failures": 5
+    }
+  ],
+  "pod_trials": [
+    {
+      "name": "accepted-cold",
+      "mode": "cold_deferred",
+      "source_commit": "04eeac02acdf66cdc97837b8b792be371d94741c",
+      "results": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_hashes_match_recorded_commit": true,
+      "run_id": "worker-http-fe2e2e765ec1479c8e81e4088870cf1c",
+      "cluster_uid": "7e4a117c-9dd3-4fc4-ad0a-c0cbaefdb1c8",
+      "clock_passed": false,
+      "clock_sampling_errors": 1,
+      "resources_removed": true,
+      "installed_source_match": null,
+      "final_sql_diagnostics": null,
+      "final_sql_diagnostics_error": null,
+      "control_plane_status_counts": {},
+      "qualification_issued": false,
+      "authorizes_execution": false,
+      "initial_orders_observed": 0,
+      "initial_errors_observed": 0,
+      "phase_counts": {},
+      "status": "FAILED",
+      "failure_class": "DB_CONNECTION_TIMEOUT",
+      "final_data_reconciliation": "NOT_COMPLETED"
+    },
+    {
+      "name": "accepted-prepared",
+      "mode": "prepared_deferred",
+      "source_commit": "04eeac02acdf66cdc97837b8b792be371d94741c",
+      "results": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_hashes_match_recorded_commit": true,
+      "run_id": "worker-http-c5e8e9ea45da4b4da54b49db46c1784b",
+      "cluster_uid": "03fb0f66-02e4-4d3d-a9b2-6bdd30e3dbdf",
+      "clock_passed": true,
+      "clock_sampling_errors": 0,
+      "resources_removed": true,
+      "installed_source_match": {
+        "status": "MATCH",
+        "packages": {
+          "sova": {
+            "expected_files": 318,
+            "installed_files": 318,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          },
+          "sova_security": {
+            "expected_files": 122,
+            "installed_files": 122,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          }
+        },
+        "service_entrypoint_matches": true
+      },
+      "final_sql_diagnostics": {
+        "authority": [
+          [
+            "HANDOFF_COMPLETE",
+            10,
+            null,
+            "9"
+          ]
+        ],
+        "effects": [
+          [
+            "stage_target",
+            "confirmed_applied"
+          ],
+          [
+            "pause_admission",
+            "confirmed_applied"
+          ],
+          [
+            "fence_source_writes",
+            "confirmed_applied"
+          ],
+          [
+            "copy_content",
+            "confirmed_applied"
+          ],
+          [
+            "verify_final_state",
+            "confirmed_applied"
+          ],
+          [
+            "activate_target",
+            "confirmed_applied"
+          ],
+          [
+            "commit_route",
+            "confirmed_applied"
+          ]
+        ],
+        "evidence_results": [
+          [
+            "sova.registry.dependency-snapshot.v1",
+            "pass"
+          ],
+          [
+            "availability.write_admission_pause",
+            "pass"
+          ],
+          [
+            "residency.business_data",
+            "pass"
+          ],
+          [
+            "authority.single_writer_after_activation",
+            "pass"
+          ],
+          [
+            "residency.backups",
+            "pass"
+          ],
+          [
+            "fence.source_writes_denied",
+            "pass"
+          ],
+          [
+            "security.tested_restore",
+            "pass"
+          ],
+          [
+            "data.work_items",
+            "pass"
+          ],
+          [
+            "operations.restore_test",
+            "pass"
+          ],
+          [
+            "route.stale_writes_rejected",
+            "pass"
+          ],
+          [
+            "availability.client_completion_wait",
+            "pass"
+          ],
+          [
+            "data.orders",
+            "pass"
+          ],
+          [
+            "data.idempotency_results",
+            "pass"
+          ],
+          [
+            "residency.audit",
+            "pass"
+          ],
+          [
+            "security.verified_transport_encryption",
+            "pass"
+          ],
+          [
+            "security.deny_cross_tenant_data_access",
+            "pass"
+          ],
+          [
+            "business.ORDER-01",
+            "pass"
+          ],
+          [
+            "sova.registry.service-contract.v1",
+            "pass"
+          ],
+          [
+            "sova.registry.strategy-qualification.v1",
+            "pass"
+          ]
+        ]
+      },
+      "final_sql_diagnostics_error": null,
+      "control_plane_status_counts": {
+        "200": 7,
+        "201": 6
+      },
+      "qualification_issued": false,
+      "authorizes_execution": false,
+      "initial_orders_observed": 100,
+      "initial_errors_observed": 23,
+      "phase_counts": {
+        "load": 100,
+        "recovery": 46,
+        "post_handoff_probe": 3
+      },
+      "status": "COMPLETED",
+      "handoff": {
+        "state": "HANDOFF_COMPLETE",
+        "original_owner": "worker-b.17938763-7a73-48b6-bcf7-52ebb2fb1831.2b20427576b0",
+        "recovery_owner": "worker-a.55175227-7c20-4484-bdd7-f6110e095bff.f69dd45f4c81",
+        "recovery_at": "2026-11-18T16:42:06.220360+00:00",
+        "route_patch_requests": 1,
+        "pod_absence_audit_observations": 0,
+        "stopped_pod_observation_http_statuses": [
+          200
+        ],
+        "effect_status": "confirmed_applied",
+        "historical_orders_preserved": 50,
+        "target_write_confirmed": true,
+        "client_continuity_qualified": false
+      },
+      "target_prepared": {
+        "pod_uid": "0fe71f0f-330b-44b7-8551-3a3dfdd5c671",
+        "health_ready": true,
+        "selected_by_route": false,
+        "business_writes_enabled_early": false,
+        "target_write_denial_sqlstate": "42501",
+        "source_positive_control": true
+      },
+      "counts": {
+        "logical_requests": 103,
+        "submission_attempts": 126,
+        "successful_submission_responses": 103,
+        "http_error_attempts": 20,
+        "transport_error_attempts": 3,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 103,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "data_integrity": "SATISFIED",
+      "tls_controls": {
+        "verified_https": true,
+        "wrong_ca_denied": true,
+        "wrong_hostname_denied": true
+      },
+      "maximum_load_completion_ms": 20382.511843,
+      "bounded_results": {},
+      "maximum_inline_elapsed_ms": null,
+      "live_owner": {
+        "owner_id": "worker-b.17938763-7a73-48b6-bcf7-52ebb2fb1831.2b20427576b0",
+        "lease_until": "2026-11-18T16:42:02.230276+00:00",
+        "database_observed_at": "2026-11-18T16:42:03.195665+00:00",
+        "recovery_events": 0,
+        "effect": "in_flight",
+        "authenticated_alive_observations": 1
+      },
+      "runtime_stop": {
+        "container_id": "e5b94c8889dd91c968823cf449496615a1634aba680a2eb2752323e1113d23cd",
+        "observed_at": "2026-11-18T16:42:07.089261+00:00",
+        "state": "CONTAINER_EXITED",
+        "force_api_deletion": false,
+        "terminal_pod_watch": [
+          {
+            "type": "MODIFIED",
+            "uid": "17938763-7a73-48b6-bcf7-52ebb2fb1831",
+            "phase": "Failed",
+            "resource_version": "730",
+            "observed_at": "2026-11-18T16:42:06.153428+00:00"
+          },
+          {
+            "type": "MODIFIED",
+            "uid": "17938763-7a73-48b6-bcf7-52ebb2fb1831",
+            "phase": "Failed",
+            "resource_version": "733",
+            "observed_at": "2026-11-18T16:42:07.075002+00:00"
+          },
+          {
+            "type": "DELETED",
+            "uid": "17938763-7a73-48b6-bcf7-52ebb2fb1831",
+            "phase": "Failed",
+            "resource_version": "734",
+            "observed_at": "2026-11-18T16:42:07.080781+00:00"
+          }
+        ]
+      },
+      "actual_secret_get_status": 403,
+      "unauthorized_pod_get_status": 403,
+      "initial_status_counts": {
+        "200": 77,
+        "503": 20,
+        "transport_error": 3
+      },
+      "all_status_counts": {
+        "200": 103,
+        "503": 20,
+        "transport_error": 3,
+        "404": 23
+      }
+    },
+    {
+      "name": "accepted-bounded",
+      "mode": "prepared_bounded",
+      "source_commit": "04eeac02acdf66cdc97837b8b792be371d94741c",
+      "results": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_hashes_match_recorded_commit": true,
+      "run_id": "worker-http-4ae8bdc098df4f1083ee3c1d79152076",
+      "cluster_uid": "08c3fc52-ee50-497e-94dc-6807a26696f0",
+      "clock_passed": true,
+      "clock_sampling_errors": 0,
+      "resources_removed": true,
+      "installed_source_match": {
+        "status": "MATCH",
+        "packages": {
+          "sova": {
+            "expected_files": 318,
+            "installed_files": 318,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          },
+          "sova_security": {
+            "expected_files": 122,
+            "installed_files": 122,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          }
+        },
+        "service_entrypoint_matches": true
+      },
+      "final_sql_diagnostics": {
+        "authority": [
+          [
+            "HANDOFF_COMPLETE",
+            10,
+            null,
+            "9"
+          ]
+        ],
+        "effects": [
+          [
+            "stage_target",
+            "confirmed_applied"
+          ],
+          [
+            "pause_admission",
+            "confirmed_applied"
+          ],
+          [
+            "fence_source_writes",
+            "confirmed_applied"
+          ],
+          [
+            "copy_content",
+            "confirmed_applied"
+          ],
+          [
+            "verify_final_state",
+            "confirmed_applied"
+          ],
+          [
+            "activate_target",
+            "confirmed_applied"
+          ],
+          [
+            "commit_route",
+            "confirmed_applied"
+          ]
+        ],
+        "evidence_results": [
+          [
+            "sova.registry.dependency-snapshot.v1",
+            "pass"
+          ],
+          [
+            "residency.backups",
+            "pass"
+          ],
+          [
+            "data.orders",
+            "pass"
+          ],
+          [
+            "data.work_items",
+            "pass"
+          ],
+          [
+            "security.tested_restore",
+            "pass"
+          ],
+          [
+            "security.deny_cross_tenant_data_access",
+            "pass"
+          ],
+          [
+            "authority.single_writer_after_activation",
+            "pass"
+          ],
+          [
+            "residency.business_data",
+            "pass"
+          ],
+          [
+            "residency.audit",
+            "pass"
+          ],
+          [
+            "operations.restore_test",
+            "pass"
+          ],
+          [
+            "data.idempotency_results",
+            "pass"
+          ],
+          [
+            "availability.write_admission_pause",
+            "pass"
+          ],
+          [
+            "security.verified_transport_encryption",
+            "pass"
+          ],
+          [
+            "fence.source_writes_denied",
+            "pass"
+          ],
+          [
+            "business.ORDER-01",
+            "pass"
+          ],
+          [
+            "availability.client_completion_wait",
+            "pass"
+          ],
+          [
+            "route.stale_writes_rejected",
+            "pass"
+          ],
+          [
+            "sova.registry.service-contract.v1",
+            "pass"
+          ],
+          [
+            "sova.registry.strategy-qualification.v1",
+            "pass"
+          ]
+        ]
+      },
+      "final_sql_diagnostics_error": null,
+      "control_plane_status_counts": {
+        "200": 9,
+        "201": 6
+      },
+      "qualification_issued": false,
+      "authorizes_execution": false,
+      "initial_orders_observed": 100,
+      "initial_errors_observed": 2,
+      "phase_counts": {
+        "load": 100,
+        "inline_retry": 14,
+        "recovery": 4,
+        "post_handoff_probe": 3
+      },
+      "status": "COMPLETED",
+      "handoff": {
+        "state": "HANDOFF_COMPLETE",
+        "original_owner": "worker-b.1c594c24-8b94-48c0-9dcb-a8639bab9b2a.764598ee7df8",
+        "recovery_owner": "worker-a.0c4136c6-e64c-4b9c-9beb-ba855e7b3d6f.a63d89120ad1",
+        "recovery_at": "2026-11-18T16:44:22.903471+00:00",
+        "route_patch_requests": 1,
+        "pod_absence_audit_observations": 0,
+        "stopped_pod_observation_http_statuses": [
+          200
+        ],
+        "effect_status": "confirmed_applied",
+        "historical_orders_preserved": 50,
+        "target_write_confirmed": true,
+        "client_continuity_qualified": false
+      },
+      "target_prepared": {
+        "pod_uid": "f2ddbb55-f7a7-44df-bb7b-a9929d36605c",
+        "health_ready": true,
+        "selected_by_route": false,
+        "business_writes_enabled_early": false,
+        "target_write_denial_sqlstate": "42501",
+        "source_positive_control": true
+      },
+      "counts": {
+        "logical_requests": 103,
+        "submission_attempts": 105,
+        "successful_submission_responses": 103,
+        "http_error_attempts": 2,
+        "transport_error_attempts": 0,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 103,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "data_integrity": "SATISFIED",
+      "tls_controls": {
+        "verified_https": true,
+        "wrong_ca_denied": true,
+        "wrong_hostname_denied": true
+      },
+      "maximum_load_completion_ms": 28425.734346,
+      "bounded_results": {
+        "CONFIRMED": 98,
+        "EXHAUSTED": 2
+      },
+      "maximum_inline_elapsed_ms": 3159.966,
+      "live_owner": {
+        "owner_id": "worker-b.1c594c24-8b94-48c0-9dcb-a8639bab9b2a.764598ee7df8",
+        "lease_until": "2026-11-18T16:44:18.297639+00:00",
+        "database_observed_at": "2026-11-18T16:44:18.874327+00:00",
+        "recovery_events": 0,
+        "effect": "in_flight",
+        "authenticated_alive_observations": 1
+      },
+      "runtime_stop": {
+        "container_id": "212bc63978e9dce1e40f11c00dcdbe0e0403e62f4373f4738d25391ffe7b4b49",
+        "observed_at": "2026-11-18T16:44:23.169284+00:00",
+        "state": "absent from CRI inventory",
+        "force_api_deletion": false,
+        "terminal_pod_watch": [
+          {
+            "type": "MODIFIED",
+            "uid": "1c594c24-8b94-48c0-9dcb-a8639bab9b2a",
+            "phase": "Failed",
+            "resource_version": "673",
+            "observed_at": "2026-11-18T16:44:22.796753+00:00"
+          },
+          {
+            "type": "MODIFIED",
+            "uid": "1c594c24-8b94-48c0-9dcb-a8639bab9b2a",
+            "phase": "Failed",
+            "resource_version": "675",
+            "observed_at": "2026-11-18T16:44:23.089931+00:00"
+          },
+          {
+            "type": "DELETED",
+            "uid": "1c594c24-8b94-48c0-9dcb-a8639bab9b2a",
+            "phase": "Failed",
+            "resource_version": "676",
+            "observed_at": "2026-11-18T16:44:23.147308+00:00"
+          }
+        ]
+      },
+      "actual_secret_get_status": 403,
+      "unauthorized_pod_get_status": 403,
+      "bounded_exhaustion_reasons": {
+        "attempt_limit": 2
+      },
+      "completion_budget_satisfied": false,
+      "initial_status_counts": {
+        "200": 98,
+        "503": 2
+      },
+      "all_status_counts": {
+        "200": 103,
+        "503": 12,
+        "transport_error": 3,
+        "404": 3
+      }
+    }
+  ],
+  "prior_pod_trials": [
+    {
+      "name": "pods-cold",
+      "mode": "cold_deferred",
+      "source_commit": "9c7918ac9acdff9179f0e3128c451c018d6b1332",
+      "results": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_hashes_match_recorded_commit": true,
+      "run_id": "worker-http-2a049321449c4995a1f542344eceba4c",
+      "cluster_uid": "a483b68b-ae32-4636-ab1f-fb35d86f474e",
+      "clock_passed": true,
+      "clock_sampling_errors": 0,
+      "resources_removed": true,
+      "installed_source_match": {
+        "status": "MATCH",
+        "packages": {
+          "sova": {
+            "expected_files": 318,
+            "installed_files": 318,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          },
+          "sova_security": {
+            "expected_files": 122,
+            "installed_files": 122,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          }
+        },
+        "service_entrypoint_matches": true
+      },
+      "final_sql_diagnostics": {
+        "authority": [
+          [
+            "TARGET_ACTIVE_OBSERVED",
+            8,
+            null,
+            "7"
+          ]
+        ],
+        "effects": [
+          [
+            "stage_target",
+            "confirmed_applied"
+          ],
+          [
+            "pause_admission",
+            "confirmed_applied"
+          ],
+          [
+            "fence_source_writes",
+            "confirmed_applied"
+          ],
+          [
+            "copy_content",
+            "confirmed_applied"
+          ],
+          [
+            "verify_final_state",
+            "confirmed_applied"
+          ],
+          [
+            "activate_target",
+            "confirmed_applied"
+          ],
+          [
+            "commit_route",
+            "in_flight"
+          ]
+        ],
+        "evidence_results": [
+          [
+            "sova.registry.dependency-snapshot.v1",
+            "pass"
+          ],
+          [
+            "security.verified_transport_encryption",
+            "pass"
+          ],
+          [
+            "data.orders",
+            "pass"
+          ],
+          [
+            "data.work_items",
+            "pass"
+          ],
+          [
+            "fence.source_writes_denied",
+            "pass"
+          ],
+          [
+            "residency.business_data",
+            "pass"
+          ],
+          [
+            "residency.backups",
+            "pass"
+          ],
+          [
+            "authority.single_writer_after_activation",
+            "pass"
+          ],
+          [
+            "business.ORDER-01",
+            "pass"
+          ],
+          [
+            "residency.audit",
+            "pass"
+          ],
+          [
+            "security.deny_cross_tenant_data_access",
+            "pass"
+          ],
+          [
+            "data.idempotency_results",
+            "pass"
+          ],
+          [
+            "security.tested_restore",
+            "pass"
+          ],
+          [
+            "sova.registry.service-contract.v1",
+            "pass"
+          ],
+          [
+            "sova.registry.strategy-qualification.v1",
+            "pass"
+          ]
+        ]
+      },
+      "final_sql_diagnostics_error": null,
+      "control_plane_status_counts": {
+        "200": 6,
+        "201": 6
+      },
+      "qualification_issued": false,
+      "authorizes_execution": false,
+      "initial_orders_observed": 60,
+      "initial_errors_observed": 32,
+      "phase_counts": {
+        "load": 60
+      },
+      "status": "FAILED",
+      "failure_class": "LIVE_POD_AUDIT_EVIDENCE_NOT_OBSERVED",
+      "final_data_reconciliation": "NOT_COMPLETED",
+      "initial_status_counts": {
+        "200": 28,
+        "503": 16,
+        "transport_error": 16
+      },
+      "all_status_counts": {
+        "200": 28,
+        "503": 16,
+        "transport_error": 16
+      }
+    },
+    {
+      "name": "pods-prepared",
+      "mode": "prepared_deferred",
+      "source_commit": "9c7918ac9acdff9179f0e3128c451c018d6b1332",
+      "results": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_hashes_match_recorded_commit": true,
+      "run_id": "worker-http-06674a21ef7446939f476622e8e48bae",
+      "cluster_uid": "49f56fe8-a02d-40e6-b8d9-187dfa38e634",
+      "clock_passed": true,
+      "clock_sampling_errors": 0,
+      "resources_removed": true,
+      "installed_source_match": {
+        "status": "MATCH",
+        "packages": {
+          "sova": {
+            "expected_files": 318,
+            "installed_files": 318,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          },
+          "sova_security": {
+            "expected_files": 122,
+            "installed_files": 122,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          }
+        },
+        "service_entrypoint_matches": true
+      },
+      "final_sql_diagnostics": {
+        "authority": [
+          [
+            "HANDOFF_COMPLETE",
+            10,
+            null,
+            "9"
+          ]
+        ],
+        "effects": [
+          [
+            "stage_target",
+            "confirmed_applied"
+          ],
+          [
+            "pause_admission",
+            "confirmed_applied"
+          ],
+          [
+            "fence_source_writes",
+            "confirmed_applied"
+          ],
+          [
+            "copy_content",
+            "confirmed_applied"
+          ],
+          [
+            "verify_final_state",
+            "confirmed_applied"
+          ],
+          [
+            "activate_target",
+            "confirmed_applied"
+          ],
+          [
+            "commit_route",
+            "confirmed_applied"
+          ]
+        ],
+        "evidence_results": [
+          [
+            "sova.registry.dependency-snapshot.v1",
+            "pass"
+          ],
+          [
+            "route.stale_writes_rejected",
+            "pass"
+          ],
+          [
+            "data.idempotency_results",
+            "pass"
+          ],
+          [
+            "security.verified_transport_encryption",
+            "pass"
+          ],
+          [
+            "authority.single_writer_after_activation",
+            "pass"
+          ],
+          [
+            "data.work_items",
+            "pass"
+          ],
+          [
+            "availability.client_completion_wait",
+            "pass"
+          ],
+          [
+            "security.deny_cross_tenant_data_access",
+            "pass"
+          ],
+          [
+            "business.ORDER-01",
+            "pass"
+          ],
+          [
+            "residency.backups",
+            "pass"
+          ],
+          [
+            "residency.business_data",
+            "pass"
+          ],
+          [
+            "fence.source_writes_denied",
+            "pass"
+          ],
+          [
+            "operations.restore_test",
+            "pass"
+          ],
+          [
+            "data.orders",
+            "pass"
+          ],
+          [
+            "availability.write_admission_pause",
+            "pass"
+          ],
+          [
+            "security.tested_restore",
+            "pass"
+          ],
+          [
+            "residency.audit",
+            "pass"
+          ],
+          [
+            "sova.registry.service-contract.v1",
+            "pass"
+          ],
+          [
+            "sova.registry.strategy-qualification.v1",
+            "pass"
+          ]
+        ]
+      },
+      "final_sql_diagnostics_error": null,
+      "control_plane_status_counts": {
+        "200": 8,
+        "201": 6
+      },
+      "qualification_issued": false,
+      "authorizes_execution": false,
+      "initial_orders_observed": 100,
+      "initial_errors_observed": 23,
+      "phase_counts": {
+        "load": 100,
+        "recovery": 46,
+        "post_handoff_probe": 3
+      },
+      "status": "COMPLETED",
+      "handoff": {
+        "state": "HANDOFF_COMPLETE",
+        "original_owner": "worker-b.adcad087-fc97-4521-93c8-757550ddd57e.1fda3f368adc",
+        "recovery_owner": "worker-a.63bc7c9a-901c-4e27-b1c2-b43dae13b120.b45c769b3b2a",
+        "recovery_at": "2026-11-18T16:34:11.390865+00:00",
+        "route_patch_requests": 1,
+        "pod_absence_audit_observations": 0,
+        "stopped_pod_observation_http_statuses": [
+          200
+        ],
+        "effect_status": "confirmed_applied",
+        "historical_orders_preserved": 50,
+        "target_write_confirmed": true,
+        "client_continuity_qualified": false
+      },
+      "target_prepared": {
+        "pod_uid": "109333d0-a2db-4f93-917a-9f05db37db40",
+        "health_ready": true,
+        "selected_by_route": false,
+        "business_writes_enabled_early": false,
+        "target_write_denial_sqlstate": "42501",
+        "source_positive_control": true
+      },
+      "counts": {
+        "logical_requests": 103,
+        "submission_attempts": 126,
+        "successful_submission_responses": 103,
+        "http_error_attempts": 18,
+        "transport_error_attempts": 5,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 103,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "data_integrity": "SATISFIED",
+      "tls_controls": {
+        "verified_https": true,
+        "wrong_ca_denied": true,
+        "wrong_hostname_denied": true
+      },
+      "maximum_load_completion_ms": 24788.390553,
+      "bounded_results": {},
+      "maximum_inline_elapsed_ms": null,
+      "live_owner": {
+        "owner_id": "worker-b.adcad087-fc97-4521-93c8-757550ddd57e.1fda3f368adc",
+        "lease_until": "2026-11-18T16:34:04.360805+00:00",
+        "database_observed_at": "2026-11-18T16:34:07.149865+00:00",
+        "recovery_events": 0,
+        "effect": "in_flight",
+        "authenticated_alive_observations": 3
+      },
+      "runtime_stop": {
+        "container_id": "3df6237fb7935ae163cdeebd4f99e570f2676b54c2ae3ac7dd911b083497c856",
+        "observed_at": "2026-11-18T16:34:12.009120+00:00",
+        "state": "absent from CRI inventory",
+        "force_api_deletion": false,
+        "terminal_pod_watch": [
+          {
+            "type": "MODIFIED",
+            "uid": "adcad087-fc97-4521-93c8-757550ddd57e",
+            "phase": "Failed",
+            "resource_version": "688",
+            "observed_at": "2026-11-18T16:34:11.189521+00:00"
+          },
+          {
+            "type": "MODIFIED",
+            "uid": "adcad087-fc97-4521-93c8-757550ddd57e",
+            "phase": "Failed",
+            "resource_version": "692",
+            "observed_at": "2026-11-18T16:34:11.996414+00:00"
+          },
+          {
+            "type": "DELETED",
+            "uid": "adcad087-fc97-4521-93c8-757550ddd57e",
+            "phase": "Failed",
+            "resource_version": "693",
+            "observed_at": "2026-11-18T16:34:12.000729+00:00"
+          }
+        ]
+      },
+      "actual_secret_get_status": 403,
+      "unauthorized_pod_get_status": 403,
+      "initial_status_counts": {
+        "200": 77,
+        "503": 18,
+        "transport_error": 5
+      },
+      "all_status_counts": {
+        "200": 103,
+        "503": 18,
+        "transport_error": 5,
+        "404": 23
+      }
+    },
+    {
+      "name": "pods-bounded",
+      "mode": "prepared_bounded",
+      "source_commit": "9c7918ac9acdff9179f0e3128c451c018d6b1332",
+      "results": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_hashes_match_recorded_commit": true,
+      "run_id": "worker-http-6636ae0eb8af4e17a5d0f94b3b486eca",
+      "cluster_uid": "db0d753b-505c-455f-8c4b-bbf4aabe9b3f",
+      "clock_passed": true,
+      "clock_sampling_errors": 0,
+      "resources_removed": true,
+      "installed_source_match": {
+        "status": "MATCH",
+        "packages": {
+          "sova": {
+            "expected_files": 318,
+            "installed_files": 318,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          },
+          "sova_security": {
+            "expected_files": 122,
+            "installed_files": 122,
+            "missing": [],
+            "extra": [],
+            "changed": [],
+            "version_matches": true
+          }
+        },
+        "service_entrypoint_matches": true
+      },
+      "final_sql_diagnostics": {
+        "authority": [
+          [
+            "HANDOFF_COMPLETE",
+            10,
+            null,
+            "9"
+          ]
+        ],
+        "effects": [
+          [
+            "stage_target",
+            "confirmed_applied"
+          ],
+          [
+            "pause_admission",
+            "confirmed_applied"
+          ],
+          [
+            "fence_source_writes",
+            "confirmed_applied"
+          ],
+          [
+            "copy_content",
+            "confirmed_applied"
+          ],
+          [
+            "verify_final_state",
+            "confirmed_applied"
+          ],
+          [
+            "activate_target",
+            "confirmed_applied"
+          ],
+          [
+            "commit_route",
+            "confirmed_applied"
+          ]
+        ],
+        "evidence_results": [
+          [
+            "sova.registry.dependency-snapshot.v1",
+            "pass"
+          ],
+          [
+            "route.stale_writes_rejected",
+            "pass"
+          ],
+          [
+            "operations.restore_test",
+            "pass"
+          ],
+          [
+            "residency.business_data",
+            "pass"
+          ],
+          [
+            "fence.source_writes_denied",
+            "pass"
+          ],
+          [
+            "residency.audit",
+            "pass"
+          ],
+          [
+            "authority.single_writer_after_activation",
+            "pass"
+          ],
+          [
+            "availability.write_admission_pause",
+            "pass"
+          ],
+          [
+            "data.orders",
+            "pass"
+          ],
+          [
+            "security.verified_transport_encryption",
+            "pass"
+          ],
+          [
+            "security.deny_cross_tenant_data_access",
+            "pass"
+          ],
+          [
+            "data.idempotency_results",
+            "pass"
+          ],
+          [
+            "residency.backups",
+            "pass"
+          ],
+          [
+            "security.tested_restore",
+            "pass"
+          ],
+          [
+            "data.work_items",
+            "pass"
+          ],
+          [
+            "business.ORDER-01",
+            "pass"
+          ],
+          [
+            "availability.client_completion_wait",
+            "pass"
+          ],
+          [
+            "sova.registry.service-contract.v1",
+            "pass"
+          ],
+          [
+            "sova.registry.strategy-qualification.v1",
+            "pass"
+          ]
+        ]
+      },
+      "final_sql_diagnostics_error": null,
+      "control_plane_status_counts": {
+        "200": 9,
+        "201": 6
+      },
+      "qualification_issued": false,
+      "authorizes_execution": false,
+      "initial_orders_observed": 100,
+      "initial_errors_observed": 3,
+      "phase_counts": {
+        "load": 100,
+        "inline_retry": 17,
+        "recovery": 4,
+        "post_handoff_probe": 3
+      },
+      "status": "COMPLETED",
+      "handoff": {
+        "state": "HANDOFF_COMPLETE",
+        "original_owner": "worker-a.e7864692-4abd-4f39-b048-c783f05392af.ebf7e5273dff",
+        "recovery_owner": "worker-b.9323b242-47bb-4281-9a96-5283e982bc23.eac675670f83",
+        "recovery_at": "2026-11-18T16:36:25.969364+00:00",
+        "route_patch_requests": 1,
+        "pod_absence_audit_observations": 0,
+        "stopped_pod_observation_http_statuses": [
+          200
+        ],
+        "effect_status": "confirmed_applied",
+        "historical_orders_preserved": 50,
+        "target_write_confirmed": true,
+        "client_continuity_qualified": false
+      },
+      "target_prepared": {
+        "pod_uid": "3a2b51c5-e42e-4145-a6b4-d04f48890895",
+        "health_ready": true,
+        "selected_by_route": false,
+        "business_writes_enabled_early": false,
+        "target_write_denial_sqlstate": "42501",
+        "source_positive_control": true
+      },
+      "counts": {
+        "logical_requests": 103,
+        "submission_attempts": 106,
+        "successful_submission_responses": 103,
+        "http_error_attempts": 2,
+        "transport_error_attempts": 1,
+        "unfinished_attempts": 0,
+        "confirmed_requests": 103,
+        "unresolved_commits": 0,
+        "not_committed_requests": 0
+      },
+      "data_integrity": "SATISFIED",
+      "tls_controls": {
+        "verified_https": true,
+        "wrong_ca_denied": true,
+        "wrong_hostname_denied": true
+      },
+      "maximum_load_completion_ms": 29481.53943,
+      "bounded_results": {
+        "CONFIRMED": 98,
+        "EXHAUSTED": 2
+      },
+      "maximum_inline_elapsed_ms": 3340.6,
+      "live_owner": {
+        "owner_id": "worker-a.e7864692-4abd-4f39-b048-c783f05392af.ebf7e5273dff",
+        "lease_until": "2026-11-18T16:36:20.121447+00:00",
+        "database_observed_at": "2026-11-18T16:36:22.265992+00:00",
+        "recovery_events": 0,
+        "effect": "in_flight",
+        "authenticated_alive_observations": 3
+      },
+      "runtime_stop": {
+        "container_id": "da8f1493aa4550a2efde705e1f6f2ac1affc19f4883989626ca37e3c60b016c6",
+        "observed_at": "2026-11-18T16:36:26.227427+00:00",
+        "state": "absent from CRI inventory",
+        "force_api_deletion": false,
+        "terminal_pod_watch": [
+          {
+            "type": "MODIFIED",
+            "uid": "e7864692-4abd-4f39-b048-c783f05392af",
+            "phase": "Failed",
+            "resource_version": "658",
+            "observed_at": "2026-11-18T16:36:25.118746+00:00"
+          },
+          {
+            "type": "MODIFIED",
+            "uid": "e7864692-4abd-4f39-b048-c783f05392af",
+            "phase": "Failed",
+            "resource_version": "662",
+            "observed_at": "2026-11-18T16:36:26.199653+00:00"
+          },
+          {
+            "type": "DELETED",
+            "uid": "e7864692-4abd-4f39-b048-c783f05392af",
+            "phase": "Failed",
+            "resource_version": "663",
+            "observed_at": "2026-11-18T16:36:26.215700+00:00"
+          }
+        ]
+      },
+      "actual_secret_get_status": 403,
+      "unauthorized_pod_get_status": 403,
+      "bounded_exhaustion_reasons": {
+        "attempt_limit": 2
+      },
+      "completion_budget_satisfied": false,
+      "initial_status_counts": {
+        "200": 97,
+        "503": 2,
+        "transport_error": 1
+      },
+      "all_status_counts": {
+        "200": 103,
+        "503": 14,
+        "transport_error": 4,
+        "404": 3
+      }
+    }
+  ],
+  "raw_artifacts": [
+    {
+      "path": "before/run.json",
+      "sha256": "852c4c05ed35e85ea1466f6257ea7b00cbc7461547356020ef894d4b6c40ad47",
+      "bytes": 8983
+    },
+    {
+      "path": "before/results.xml",
+      "sha256": "93970e91dc8e8c8522509915f6146c07b85fc829c7c7dafec8ec8746a72216bf",
+      "bytes": 7930
+    },
+    {
+      "path": "before/postgres-test-failure.log",
+      "sha256": "b6f2dc7b363aa4c3d6401e931e89b0328ac1928d7494a734d84ce7caf8c50d24",
+      "bytes": 4077
+    },
+    {
+      "path": "after/run.json",
+      "sha256": "5f2fc6134e3f95e570b8ae98309514ff7c5868c65518d1c948696e14beaa3150",
+      "bytes": 10119
+    },
+    {
+      "path": "after/results.xml",
+      "sha256": "614c4b8109abc2992a8a78736fbbe296d1b9e3e950a2f71e26d4d72d1d78570b",
+      "bytes": 38291
+    },
+    {
+      "path": "after/postgres-test-failure.log",
+      "sha256": "44bab443b6b1a51fdd5c8ea9f8b177a5a95edea6ef676e50dab1567aa796c9b8",
+      "bytes": 4077
+    },
+    {
+      "path": "after-canonical/run.json",
+      "sha256": "de4f43b825f407e2df00a7ec42e66d77c1a053d4f3abb6a1f521b1e10c0eddce",
+      "bytes": 8279
+    },
+    {
+      "path": "after-canonical/results.xml",
+      "sha256": "addb5467a6db8c27babad4fcab596550739c14821efefcb2888c6ddc440528b2",
+      "bytes": 2519
+    },
+    {
+      "path": "diagnostics/run.json",
+      "sha256": "886c9872ef0b742a826ca76fbc4be05080afcd1d5cd5c856941fb843609cbc5b",
+      "bytes": 13380
+    },
+    {
+      "path": "diagnostics/results.xml",
+      "sha256": "f70788e429024ff9f0a8159fee3a1da88c7fe647a7dc111741671b62947b33b7",
+      "bytes": 3718
+    },
+    {
+      "path": "expanded/run.json",
+      "sha256": "41edf11d97d5380256e6ee0eaa8542bd38a9493224b6116368e4577d370cbf6d",
+      "bytes": 30925
+    },
+    {
+      "path": "expanded/results.xml",
+      "sha256": "91ad34bf362ae2587ad55672a975ec964c4bb9beb8162920d6a87155c56582d2",
+      "bytes": 5880
+    },
+    {
+      "path": "file-before.xml",
+      "sha256": "37434ad80b7fd867d7480bf94314f7c86ff822168e7ea87439d2b9847386983b",
+      "bytes": 9990
+    },
+    {
+      "path": "file-before.log",
+      "sha256": "46b7901c6f909ba6555fe4c76954635e871ca4e9b923c829aae8b29103999629",
+      "bytes": 9253
+    },
+    {
+      "path": "file-after.xml",
+      "sha256": "8a783cf15be08104f7d1c8e344e798a68883aece70714613fc2f908d546c6753",
+      "bytes": 1565
+    },
+    {
+      "path": "file-after.log",
+      "sha256": "f4a62bceaa8fb3cff227351052b8c6e744b52305a2225194567bb44f0b4fe70a",
+      "bytes": 98
+    },
+    {
+      "path": "file-red-frozen/input.json",
+      "sha256": "538bc7f0bd776205ac00cdaa84275b62ab4ccb03fe43b754238906a544ca117f",
+      "bytes": 364
+    },
+    {
+      "path": "file-red-frozen/results.xml",
+      "sha256": "5edde08e79e9dfe9a20dc55b7c081340d4b2c9a665c88d212e7bde24653dd2c8",
+      "bytes": 10914
+    },
+    {
+      "path": "file-red-frozen/runner.log",
+      "sha256": "92aa0e5653ea8736c3204e5d34d7bf35d48c4b55f2c6f8cf8a67e9c86fa739f8",
+      "bytes": 10597
+    },
+    {
+      "path": "file-red-frozen/source.tar",
+      "sha256": "c2d64cb790cf3381a86faeef1f698c07379e6b2e921e0170c1712f2fb67fd121",
+      "bytes": 4403200
+    },
+    {
+      "path": "pods-cold/run.json",
+      "sha256": "94811fb32e6b156fc84586f1a3c02bb9237337057cd971472b64da4a3b4b8da0",
+      "bytes": 66457
+    },
+    {
+      "path": "pods-cold/results.xml",
+      "sha256": "a80ac2c5e492cf012ed90dc9fb2284e159bbbc8eb1c3dea896898bd7142d0a4c",
+      "bytes": 11014
+    },
+    {
+      "path": "pods-cold/pods/environment.json",
+      "sha256": "292218c9bab8bae8ca63509e866ad9a81b6e3df2f2d36fc707719612aae9e5dd",
+      "bytes": 8238
+    },
+    {
+      "path": "pods-cold/pods/audit/audit.log",
+      "sha256": "ef720bec1a8a17cf5f8c81b44613ea3226def8981a5c69de8ee7b64ea0f4e977",
+      "bytes": 22292
+    },
+    {
+      "path": "pods-cold/pods/worker-a.log",
+      "sha256": "1eb71a079a0dc355ddf8bffc34c72092a2ff8fba084c45980f4790c9c3f8deb7",
+      "bytes": 210
+    },
+    {
+      "path": "pods-cold/pods/worker-b.log",
+      "sha256": "3bb11bbb7e237d647e6bf48277fe4ce4d33c374d123e1b26ab56304797b8afa1",
+      "bytes": 1910
+    },
+    {
+      "path": "pods-cold/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "pods-cold/pods/http/results/traffic.jsonl",
+      "sha256": "aaaa3e2d64fa70f00ce4381fdec022a52a2b192bfdeae87ac30db11ebcc316b8",
+      "bytes": 13363
+    },
+    {
+      "path": "pods-cold/pods/http/results/client.sqlite",
+      "sha256": "7bd58e72168fd28fdb4caa69f146a27045d7a71dbc9c1a3c7f8d3b53b810d72f",
+      "bytes": 61440
+    },
+    {
+      "path": "pods-prepared/run.json",
+      "sha256": "8c6d4ebac422dc2e6a27b74b790477df8d896a569319dea8426e64a04c8a7567",
+      "bytes": 59568
+    },
+    {
+      "path": "pods-prepared/results.xml",
+      "sha256": "62388e88cdf9e8d546fc0fd35e45849fcdfb19cd51bc397c5fca04194251427d",
+      "bytes": 433
+    },
+    {
+      "path": "pods-prepared/pods/environment.json",
+      "sha256": "5ed9b8d6937dacf563a5e294f233bc3c98a3f7071f1b358e9a37932e57fd5ac3",
+      "bytes": 31502
+    },
+    {
+      "path": "pods-prepared/pods/audit/audit.log",
+      "sha256": "67ce6fb27b217ca09b99c216a4cfaf0f545cbccfa2cc035df3e9baa8dc088815",
+      "bytes": 37280
+    },
+    {
+      "path": "pods-prepared/pods/owner-terminal-watch.jsonl",
+      "sha256": "31e9858b8f983079776fa7ba518bfd8b22263ec54c527872ecf5248752f549c7",
+      "bytes": 826
+    },
+    {
+      "path": "pods-prepared/pods/owner-terminal-watch.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "pods-prepared/pods/worker-a.log",
+      "sha256": "8764439da5c204ade7e7adc825d136b9cd104d035b98995ef2b39b60f88c8083",
+      "bytes": 2109
+    },
+    {
+      "path": "pods-prepared/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "pods-prepared/pods/http/results/traffic.jsonl",
+      "sha256": "6f5f7a70af7bf2deb3c315207409b50e6ffb235c49fe392603b88517c86b97c3",
+      "bytes": 33452
+    },
+    {
+      "path": "pods-prepared/pods/http/results/client.json",
+      "sha256": "e49e61e4c1be4979baf9373b984ea67a96234c79fbd0d3454f0a3f58141edd76",
+      "bytes": 723
+    },
+    {
+      "path": "pods-prepared/pods/http/results/client.sqlite",
+      "sha256": "8034802d387dbb579b75b227fd4ab2f7e845881e2ecb734f3e12e9c75928f4e5",
+      "bytes": 118784
+    },
+    {
+      "path": "pods-prepared/pods/http/results/journal.json",
+      "sha256": "696de7c8cbd99bd80a748da1b032a7207545c5d385fa25fbf94306247cc2b677",
+      "bytes": 106161
+    },
+    {
+      "path": "pods-prepared/pods/http/results/independent-observation.json",
+      "sha256": "a5c1ab080586d925094caab7328ed2cad9fe1a73092980a4bf64e198f9e66c81",
+      "bytes": 24973
+    },
+    {
+      "path": "pods-prepared/pods/http/results/reconciliation.json",
+      "sha256": "4906b43025281276899b5132e91679d50bc523e63636ed56e0aba88e5c19f1d8",
+      "bytes": 15828
+    },
+    {
+      "path": "pods-prepared/live-lock-diagnostics.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "pods-prepared/live-file-lock-diagnostics.txt",
+      "sha256": "d674f6debb0e758befe3bcf43ebc37d6bcdc233539b07e7e79d759210e956e99",
+      "bytes": 436
+    },
+    {
+      "path": "pods-bounded/run.json",
+      "sha256": "cda5b4a4e6b9e5358216155c1a283b6a5c74aebb188d98a7939b744fe5ce6360",
+      "bytes": 61586
+    },
+    {
+      "path": "pods-bounded/results.xml",
+      "sha256": "0b4491d40549453ab6edbe7d2f6aa810ab59ef9c5d1deadb00d425d29b6cb4af",
+      "bytes": 433
+    },
+    {
+      "path": "pods-bounded/pods/environment.json",
+      "sha256": "26f5630a0c1449ef01a2ee1bed7f21ebb738af2a46d2add1c0fafe8a9b23fd4b",
+      "bytes": 62496
+    },
+    {
+      "path": "pods-bounded/pods/audit/audit.log",
+      "sha256": "639c45d426496432cc6fe25726555bd0c2d47959a07a0441a42a0a5868e9074f",
+      "bytes": 42182
+    },
+    {
+      "path": "pods-bounded/pods/owner-terminal-watch.jsonl",
+      "sha256": "566a11f90056d061e8c9c0fb695dd78c8cff358ac75ec6c17bef31142d3a38df",
+      "bytes": 826
+    },
+    {
+      "path": "pods-bounded/pods/owner-terminal-watch.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "pods-bounded/pods/worker-b.log",
+      "sha256": "69c4e1b67f349a6857dcffda51df975c0b284a6b688958edf891ef474eed4bc2",
+      "bytes": 2320
+    },
+    {
+      "path": "pods-bounded/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "pods-bounded/pods/http/results/traffic.jsonl",
+      "sha256": "ff81357d6a7e2c789a89365978abb8fe857e87823551d4be3c1ec4ee3feccf49",
+      "bytes": 34557
+    },
+    {
+      "path": "pods-bounded/pods/http/results/client.json",
+      "sha256": "01bb3a1f2e48387f810e9fd26616905df55585488ebcac7b1b46dbaf1fc6f70f",
+      "bytes": 27351
+    },
+    {
+      "path": "pods-bounded/pods/http/results/client.sqlite",
+      "sha256": "a7c7cc1cdcd30a6cb47981a47e777e6990f516025005d87ad7b3d1ad7de9c2ed",
+      "bytes": 118784
+    },
+    {
+      "path": "pods-bounded/pods/http/results/journal.json",
+      "sha256": "f0fa252c25cd1f77b0ec4c73fe5df019e3ca1f08fc0ac91e872cb34a46b54e08",
+      "bytes": 96447
+    },
+    {
+      "path": "pods-bounded/pods/http/results/independent-observation.json",
+      "sha256": "f0bca401e3bd531f485dd615dd4208121d258a2ef2ac559bc7e96575313be0e4",
+      "bytes": 24973
+    },
+    {
+      "path": "pods-bounded/pods/http/results/reconciliation.json",
+      "sha256": "1ecb41963efbed51c8e742688e7231914cd4bdc6e924bc370dd0ddbc0e42a1ec",
+      "bytes": 15763
+    },
+    {
+      "path": "accepted-cold/run.json",
+      "sha256": "98ef86bb810da1f3ecc5dd6164959280714d47568afe2f1d400c3eb74b174d13",
+      "bytes": 44449
+    },
+    {
+      "path": "accepted-cold/results.xml",
+      "sha256": "9e758a3bf0fee1aaed6f8e54936ddada75801dbc18416e01273f952daed0ef96",
+      "bytes": 5083
+    },
+    {
+      "path": "accepted-cold/pods/environment.json",
+      "sha256": "6705f3f6d225595f5680d3ffd5a925dc9e9c94c4fb02e4a210779f529d7c0cf2",
+      "bytes": 1614
+    },
+    {
+      "path": "accepted-cold/pods/audit/audit.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "accepted-prepared/run.json",
+      "sha256": "bda6bea53f12196e0d16aa57ba3f61c7e37cef9110219904a26593350a23a856",
+      "bytes": 72121
+    },
+    {
+      "path": "accepted-prepared/results.xml",
+      "sha256": "ffce0819c92367db8d6da223a49adf57e6cd01d37204f7d5e94b2e095130931c",
+      "bytes": 433
+    },
+    {
+      "path": "accepted-prepared/pods/environment.json",
+      "sha256": "dc584968cf89330c9233fea4b9838ccf535ea05c356113af7654e1ac41288109",
+      "bytes": 31126
+    },
+    {
+      "path": "accepted-prepared/pods/audit/audit.log",
+      "sha256": "198b7c31d630240f1241a86a00b70c7f3af31debac0f88ec19cef271cb2bfc6c",
+      "bytes": 32318
+    },
+    {
+      "path": "accepted-prepared/pods/owner-terminal-watch.jsonl",
+      "sha256": "3612ed9728bdbf57c2a8dc571d5b6abea2311fe745af7e64f57d84a7ea50cbc9",
+      "bytes": 826
+    },
+    {
+      "path": "accepted-prepared/pods/owner-terminal-watch.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "accepted-prepared/pods/worker-a.log",
+      "sha256": "a3583f0609e51cbf7548db08348bc32ee0ed008e125b6b2ae3a83d760fd92bbd",
+      "bytes": 1687
+    },
+    {
+      "path": "accepted-prepared/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "accepted-prepared/pods/http/results/traffic.jsonl",
+      "sha256": "ac4c0f939ff2a46663d63d44e7dad5b31d384d6727f2efc41c4ff6bfef962480",
+      "bytes": 33449
+    },
+    {
+      "path": "accepted-prepared/pods/http/results/client.json",
+      "sha256": "43cc8d8ac36fa8e3a9c6857c4b6a47bc1ab293baa8b4d8ffe87552cef417611c",
+      "bytes": 721
+    },
+    {
+      "path": "accepted-prepared/pods/http/results/client.sqlite",
+      "sha256": "932c82c360f8f9f8626a31908f0416fa520d77760acfeb6d9131dcbf83b6bed9",
+      "bytes": 118784
+    },
+    {
+      "path": "accepted-prepared/pods/http/results/journal.json",
+      "sha256": "26e2aa15a6d42c8902038140e2c76d4ca84b8a16604348770dd0eaf5a7a7eee3",
+      "bytes": 106133
+    },
+    {
+      "path": "accepted-prepared/pods/http/results/independent-observation.json",
+      "sha256": "6d746000883370c6345a15a87be699c0463579c8fea1506ac27f3dc763537356",
+      "bytes": 24973
+    },
+    {
+      "path": "accepted-prepared/pods/http/results/reconciliation.json",
+      "sha256": "f4506e511d8dc18207de2d3ac67983dde65020741c58b5fdcc5503f54884f1a3",
+      "bytes": 15836
+    },
+    {
+      "path": "accepted-bounded/run.json",
+      "sha256": "e210e76c43f57e89f296e39c033e2742750cf80e0e43e2ec94c681abc961916c",
+      "bytes": 65206
+    },
+    {
+      "path": "accepted-bounded/results.xml",
+      "sha256": "2379ceabb17132f7cb4eb7ce52e22826cc80bbb05ef31248c2b9b59d49382bd8",
+      "bytes": 433
+    },
+    {
+      "path": "accepted-bounded/pods/environment.json",
+      "sha256": "f0b2cab24d5a213f85de8df0c7fb3e6d46f7032cb5c6c7886e68435de845b4a6",
+      "bytes": 62482
+    },
+    {
+      "path": "accepted-bounded/pods/audit/audit.log",
+      "sha256": "54293c817c8359595767857bd813aa445e16d3e81c1102abd361b048884cbcbc",
+      "bytes": 32318
+    },
+    {
+      "path": "accepted-bounded/pods/owner-terminal-watch.jsonl",
+      "sha256": "f782fea7ca1522106dded321d6a4648dbfdf1dcd52bd844dd5cea1561a3c8fbc",
+      "bytes": 826
+    },
+    {
+      "path": "accepted-bounded/pods/owner-terminal-watch.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "accepted-bounded/pods/worker-a.log",
+      "sha256": "979a643dc9117463bcbcd37a63f7781a9d9a9123175e48bfb52a0888f4189c8e",
+      "bytes": 1687
+    },
+    {
+      "path": "accepted-bounded/pods/http/client.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "accepted-bounded/pods/http/results/traffic.jsonl",
+      "sha256": "456f99056aa25ade642c3352a4e1cc79f78384452e9a71d87de2df678f6ae09b",
+      "bytes": 33674
+    },
+    {
+      "path": "accepted-bounded/pods/http/results/client.json",
+      "sha256": "5cb2471ae76e4d2ab79466c0a3da2312d81ba27beb3a16388c5756137ea291b1",
+      "bytes": 27337
+    },
+    {
+      "path": "accepted-bounded/pods/http/results/client.sqlite",
+      "sha256": "b34eea5bf60c1d482312a57f3e03c3baea2d17c3e99451447867a4639a533771",
+      "bytes": 118784
+    },
+    {
+      "path": "accepted-bounded/pods/http/results/journal.json",
+      "sha256": "fee080fdad68f4f0bf9ea696b4ce59d603ae3f848578061bc6f81a74f7761ec8",
+      "bytes": 95269
+    },
+    {
+      "path": "accepted-bounded/pods/http/results/independent-observation.json",
+      "sha256": "86694a84cd7c945b87387bcd9a79856b4088de355f086e7c4c5d149c6e3accc9",
+      "bytes": 24973
+    },
+    {
+      "path": "accepted-bounded/pods/http/results/reconciliation.json",
+      "sha256": "17332d6059c9fc4b2147a8f0febf8dc257771e2e57d2ee44447a8b6934586b01",
+      "bytes": 15763
+    },
+    {
+      "path": "image-audit.json",
+      "sha256": "d8f354e73d087daba370cee593419d6c634d963face9962114309afa22bb5c84",
+      "bytes": 99023
+    },
+    {
+      "path": "build-01/input.json",
+      "sha256": "b58982e15f583de9b92ca35f45b2684d4c83f0d763420a712a6247fe0acdefd9",
+      "bytes": 298
+    },
+    {
+      "path": "build-01/image-id",
+      "sha256": "28b65c328d42118f8a7ed54a08a7b04f5e95c37dcec6796347d2590610f3c823",
+      "bytes": 71
+    },
+    {
+      "path": "build-01/build.log",
+      "sha256": "83f879a0911ed9f8883db6ec4ae5947a2471a8ce3f2a1ea78064818eb2b02522",
+      "bytes": 20539
+    },
+    {
+      "path": "pods-bounded/runner.log",
+      "sha256": "b9a9dbabaa9352dc40cb3b8da6fd9e32df68c53be364c47a6b9629c6c2405157",
+      "bytes": 51494
+    },
+    {
+      "path": "accepted-cold/runner.log",
+      "sha256": "20bfb130824248e1349bda48e6716da1ae6d18b0776cafbf0f48c6598e4fc858",
+      "bytes": 42188
+    },
+    {
+      "path": "expanded/runner.log",
+      "sha256": "0c05f40be1f41d7db368dfddfdca861eeabdc2726c456f54837b11c7e153fb6c",
+      "bytes": 25525
+    },
+    {
+      "path": "pods-prepared/runner.log",
+      "sha256": "0ffd0d8144e984a5dda708d6f2a19672d8417f37b89857c96e830acd7961e5b7",
+      "bytes": 49890
+    },
+    {
+      "path": "accepted-prepared/runner.log",
+      "sha256": "5b8ead664c834b8770859d096badd52ab50108d381d91d8ddd2ad9521786d11d",
+      "bytes": 59913
+    },
+    {
+      "path": "pods-cold/runner.log",
+      "sha256": "ef5a6ab1ff45beb4a5065f81325475f21378a12d737b3aaa10b06740ae77bd50",
+      "bytes": 65945
+    },
+    {
+      "path": "after-canonical/runner.log",
+      "sha256": "bd8060956fd0d94ca2b5ce329af32524e8a3e011c44f0b140555f8f8077bbf79",
+      "bytes": 7236
+    },
+    {
+      "path": "diagnostics/runner.log",
+      "sha256": "c3a7206d178385f774be431c6ce3e66804e80163a9f2f85b579730d6167da99d",
+      "bytes": 11398
+    },
+    {
+      "path": "before/runner.log",
+      "sha256": "ed99132147b4e300519535d7daa7a591552d2e4e64815cc181069b4781cfc4e2",
+      "bytes": 13865
+    },
+    {
+      "path": "accepted-bounded/runner.log",
+      "sha256": "33c86335ca9031b9db8ff5eb4282be32f2a2e072b55061e757055ce652b7fc1e",
+      "bytes": 54378
+    },
+    {
+      "path": "after/runner.log",
+      "sha256": "bcd8b8c956f892e8b6471e0f54eec76242392d740347d107094e08d583e63a24",
+      "bytes": 45448
+    }
+  ],
+  "qualification_issued": false,
+  "authorizes_execution": false,
+  "service_continuity": "NOT_QUALIFIED",
+  "signed_operational_evidence": false,
+  "raw_evidence_root": "/Users/Sooming_/dev/softbank_2026/local-dev-records/authority-read-concurrency-20261119",
+  "limitations": [
+    "Original 500/422/timeout incidents are retained; deterministic reproduction of a mechanism is not retrospective proof that every earlier incident had that cause",
+    "Each runtime case is one closed-loop local realization; retry changes offered arrival timing; no causal/statistical improvement estimate",
+    "POSIX local-file locks do not provide WORM retention, tail truncation detection, malicious inode replacement protection or multi-host consensus",
+    "SQL and external witness commits are not atomic; a genuine rollback remains blocked pending explicit recovery",
+    "Snapshot/IdP/bootstrap keys/file witness/shared DB client certificate and single node/server are qualification fixtures, not enterprise identity or cloud deployment",
+    "The 2-second fixture DB connect timeout and 15-second evidence collection wait are not production SLOs; no limits were relaxed to erase failures"
+  ],
+  "feature_commits": [
+    "96f4ada125f0d0163ed340ab2c2d280959ec4e62",
+    "a7e3ff83d245186b2ede496be3c1503583bcfd3d",
+    "ce51341bcfaeb0f662d2453eb27ed9e94bee6178",
+    "4cf9422106b746dd7006ed1528b83e94b931d029",
+    "53ddfba844f40b93dc940b1201029c2b6a86622f",
+    "0abcadcb4b8ab9426c747dbee39305c90d8916c7",
+    "b388bdfe9ebf7bd8f955458d10e97bda533290cd",
+    "9c7918ac9acdff9179f0e3128c451c018d6b1332",
+    "04eeac02acdf66cdc97837b8b792be371d94741c"
+  ],
+  "cleanup_verification": {
+    "path": "cleanup-verification.json",
+    "sha256": "6ef56f90d72d624946b2b9a731a21c9c93394795a09cec0fe4ec1767054e53a2",
+    "resource_names_checked": 34,
+    "all_absent": true,
+    "cached_images_retained": true
+  },
+  "primary_component_tests": 36,
+  "post_measurement_changes": [
+    {
+      "commit": "3b988cdf70314676eb6fcda2199cd926ed08e8f6",
+      "change": "Remove the unused time import only; no test predicate, timeout or runtime logic change",
+      "three_case_runtime_snapshot": "04eeac02acdf66cdc97837b8b792be371d94741c"
+    }
+  ]
+}
