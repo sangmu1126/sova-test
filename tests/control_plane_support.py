@@ -44,7 +44,12 @@ def board_contract():
 def prepared(postgres_database, now, tmp_path, data, *, engine, strategy="offline-copy"):
     dsn, role = postgres_database  # the control plane's own database
     tenant = data["metadata"]["tenant_id"]
+    # The plan's evidence is dated when the fixtures are up, not when the test
+    # began (a managed cluster takes minutes to set up a board and a game), and
+    # holds for the whole handoff there (minutes more than on kind).
+    now = max(now, datetime.now(UTC) - timedelta(seconds=1))
     world = build_world(now, contract=ServiceContract.from_document(data), engine=engine,
+                        valid_for=timedelta(minutes=20),
                         strategy=strategy)
 
     def connect():

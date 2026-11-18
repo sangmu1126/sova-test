@@ -88,7 +88,7 @@ def feeds_complete(s, compiled):
     feed = PostgresChangeFeed(s["connect"], tenant_id=s["tenant"])
     for environment in sorted(ImpactIndex.from_plan(revision, plan).required_feeds):
         feed.advance(environment, collector_id=COLLECTOR,
-                     observed_through=datetime.now(UTC) - timedelta(milliseconds=5))
+                     observed_through=datetime.now(UTC) - timedelta(seconds=1))
 
 
 def test_a_handoff_goes_from_registration_to_admission_through_the_service(service):

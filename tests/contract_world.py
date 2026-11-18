@@ -72,7 +72,8 @@ def profiles(engine="postgresql"):
 
 def build_world(now, *, contract=None, strategy="offline-copy", operations=None,
                 reverse=False, environment="synthetic-source", uid_prefix="synthetic-uid-",
-                properties=(), identity_provider=None, engine="postgresql"):
+                properties=(), identity_provider=None, engine="postgresql",
+                valid_for=timedelta(minutes=4)):
     """``reverse`` swaps the profiles and observes the unit where the forward
     target runs it, as a failback (§19.3) would."""
     contract = contract or example_service_contract()
@@ -121,7 +122,7 @@ def build_world(now, *, contract=None, strategy="offline-copy", operations=None,
             subject,
             verifier_version=VERSION,
             observed_at=now - timedelta(seconds=30),
-            valid_until=until or now + timedelta(minutes=4),
+            valid_until=until or now + valid_for,
         )
         if record_changes:
             record = replace(record, **record_changes)
