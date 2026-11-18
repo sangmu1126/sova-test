@@ -47,6 +47,8 @@ SOVA_GATEWAY_CONTEXT=$SOVA_TEST_KUBE_EKS_CONTEXT infra/test-env/test-env.sh gate
 # GKE: 클러스터가 Gateway API CRD를 관리하므로 SOVA_GATEWAY_PROVIDED_CRDS=1을 더한다
 ```
 
+GKE(Dataplane V2)에서는 세션 시험에 `SOVA_TEST_ROUTE_FLOWS=dropped`를 준다. 이 데이터플레인은 Service selector가 옮겨지면 열린 연결을 버린다(실측, #37). 그래서 Service 경로 세션의 준비 단계가 거부되는지를 시험하고, Service 경로로 세션을 넘기는 시험은 건너뛴다. 세션 인계는 Gateway 세션 시험이 맡는다.
+
 kubeconfig는 상태 디렉터리의 0600 파일에만 쓴다. `~/.kube/config`와 현재 context는 건드리지 않는다. 시험은 `SOVA_TEST_KUBECONFIG`에 그 파일을, `SOVA_TEST_KUBE_CONTEXT`에 `sova-test-k8s-<run>-eks`나 `-gke`를 주면 같은 Kubernetes 시험이 그 클러스터에서 돈다. 시험 도우미는 kind(루프백)와 이 실행의 관리형 클러스터만 받는다.
 
 나머지 자원(버킷, 비밀, user pool, compute, DNS 존 등)은 각 시험이 만들고 지운다. 시험이 중간에 멈춰 남긴 것도 `down`이 찾아 지운다.

@@ -21,6 +21,9 @@ from sova.domain.contracts import ContractError, EffectStatus
 pytestmark = pytest.mark.kubernetes
 HANDOFF = ("stage_target", "pause_admission", "fence_source_writes", "copy_content",
            "verify_final_state", "activate_target", "commit_route")
+# The cluster's Service dataplane drops a flow once the selector moves (GKE
+# Dataplane V2, measured): staging refuses a Service route there.
+FLOWS_DROPPED = os.environ.get("SOVA_TEST_ROUTE_FLOWS") == "dropped"
 
 
 def adapter(business, **options):
@@ -38,6 +41,9 @@ def observe(a, action):
 
 
 def test_open_sessions_finish_on_the_source_and_new_ones_reach_the_target(session_business):
+    if FLOWS_DROPPED:
+        pytest.skip("staging refuses a Service route on this dataplane (the staging test); "
+                    "sessions move through a Gateway here (test_kubernetes_gateway_session)")
     b = session_business
     a = adapter(b, drain_seconds=120)
     for action in ("stage_target",):
@@ -95,6 +101,8 @@ def test_a_drain_past_its_bound_holds_or_reports_what_the_fence_will_cut(session
 
 
 def test_a_source_started_again_reads_back_as_not_fenced(session_business):
+    if FLOWS_DROPPED:
+        pytest.skip("staging refuses a Service route on this dataplane (the staging test)")
     b = session_business
     a = adapter(b, drain_seconds=30)
     for action in ("stage_target", "pause_admission", "fence_source_writes"):
@@ -112,7 +120,7 @@ def test_staging_behind_a_service_measures_whether_open_connections_survive(sess
     cut a session. Nothing of the check stays behind."""
     b = session_business
     a = adapter(b)
-    if os.environ.get("SOVA_TEST_ROUTE_FLOWS") == "dropped":
+    if FLOWS_DROPPED:
         with pytest.raises(ContractError, match="Route it through a Gateway"):
             apply(a, "stage_target")
         seen = observe(a, "stage_target")

@@ -42,7 +42,7 @@ Server(("", int(sys.argv[1])), Echo).serve_forever()
 _CLIENT = r'''
 import json, socket, sys, time
 host, port, seconds = sys.argv[1], int(sys.argv[2]), float(sys.argv[3])
-start = time.monotonic()
+start, exchanged = time.monotonic(), 0
 try:
     while True:  # a new Service is answered once the dataplane has its rules
         try:
@@ -55,7 +55,6 @@ try:
     start = time.monotonic()
     connection.settimeout(3)
     stream = connection.makefile("rwb")
-    exchanged = 0
     while time.monotonic() - start < seconds:
         stream.write(b"ping\n")
         stream.flush()
@@ -66,7 +65,7 @@ try:
         time.sleep(0.5)
     print(json.dumps({"exchanged": exchanged, "done": True}), flush=True)
 except Exception as error:
-    print(json.dumps({"error": type(error).__name__}), flush=True)
+    print(json.dumps({"exchanged": exchanged, "error": type(error).__name__}), flush=True)
 time.sleep(seconds)  # the last line stays readable until the Pod is removed
 '''
 
@@ -161,7 +160,7 @@ class ServiceFlowCheck:
                 raise ContractError("The check Service kept its endpoints after the move")
             time.sleep(self.observe_seconds)
             after = self._last(names["client"], "client")
-            exchanged = after.get("exchanged", 0) - before["exchanged"]
+            exchanged = max(after.get("exchanged", 0) - before["exchanged"], 0)
             # At one exchange every half second, most of them must have happened.
             survive = "error" not in after and exchanged >= int(self.observe_seconds)
             return survive, {"measured": "service_selector_moved_with_open_connection",

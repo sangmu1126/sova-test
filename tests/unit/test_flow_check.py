@@ -70,12 +70,17 @@ def test_an_exchange_that_goes_on_survives():
     assert survive and detail["exchanges_after_move"] == 16 and gone(fake)
 
 
-@pytest.mark.parametrize("after", [{"error": "TimeoutError"}, {"exchanged": 4}])
-def test_an_exchange_that_stops_does_not(after):
+@pytest.mark.parametrize("after, counted", [
+    ({"exchanged": 3, "error": "TimeoutError"}, 0),  # cut at the move (GKE, measured)
+    ({"error": "TimeoutError"}, 0),                  # a line without its count
+    ({"exchanged": 4}, 1),
+])
+def test_an_exchange_that_stops_does_not(after, counted):
     fake = Fake(after)
     survive, detail = check(fake).measure()
     assert not survive and gone(fake)
     assert detail["client_error"] == after.get("error")
+    assert detail["exchanges_after_move"] == counted
 
 
 def test_a_check_that_cannot_run_is_an_error_and_still_cleans_up():
