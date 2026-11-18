@@ -223,6 +223,7 @@ def main():
         tests.extend(("tests/integration/test_service_api.py",
                       "tests/integration/test_workspace_api.py",
                       "tests/unit/test_workspace_boundaries.py",
+                      "tests/unit/test_database_writer_credentials.py",
                       "tests/integration/test_service_control_plane.py",
                       "tests/integration/test_order_service_journey.py",
                       "tests/integration/test_service_worker.py"))

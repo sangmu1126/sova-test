@@ -1,0 +1,22 @@
+{
+  "source_commit": "a22c59b5f11027b6c53beea38c50174c8b0195f0",
+  "suite": "service",
+  "test_count": 124,
+  "failures": 0,
+  "errors": 0,
+  "seconds": 189.277,
+  "source_hashes_verified": 49,
+  "source_hash_mismatches": [],
+  "postgres_version": "17.12 (Debian 17.12-1.pgdg13+1)",
+  "clock_passed": true,
+  "container_removed": true,
+  "network_removed": true,
+  "qualification_issued": false,
+  "scope": "Actual local PostgreSQL/HTTP service regression; NOT an AWS/VM migration or remote canary TLS qualification",
+  "new_coverage": [
+    "Database-specific writer credential isolation and rotation-file reread",
+    "Shared order HTTP implementation",
+    "Fixed-database mounted-config rejection tests (not real TLS handshake)"
+  ],
+  "raw_evidence": "local-dev-records/sova-user-journey-20261119/canary-service-regression"
+}
