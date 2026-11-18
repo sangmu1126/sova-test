@@ -126,3 +126,14 @@ def test_expired_budget_after_durable_recording_never_invokes_transport(journal,
 def test_invalid_budget_refused(change):
     with pytest.raises(ValueError):
         CompletionBudget(**change)
+
+
+@pytest.mark.parametrize("status", [401, 403, 409, 429, 500, 302])
+def test_refusal_headers_are_final_without_consuming_error_body(journal, status):
+    class UnreadableBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            raise AssertionError("Refusal body must not be consumed or turn into a retry")
+            yield b""
+    result = execute(journal, lambda req: httpx.Response(status, stream=UnreadableBody()))
+    assert result["result"] == "REJECTED" and result["transport_calls"] == 1
+    assert journal.snapshot()["outcomes"][0]["status"] == status

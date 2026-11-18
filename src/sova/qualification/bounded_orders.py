@@ -83,12 +83,12 @@ class BoundedOrderClient:
                     raw = response.headers.get("retry-after")
                     if raw is not None:
                         retry_after = int(raw) if len(raw) <= 5 and raw.isascii() and raw.isdecimal() else "unsupported"
-                    data = bytearray()
-                    async for chunk in response.aiter_bytes():
-                        data.extend(chunk)
-                        if len(data) > 16384:
-                            break
                     if 200 <= status < 300:
+                        data = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            data.extend(chunk)
+                            if len(data) > 16384:
+                                break
                         try:
                             parsed = json.loads(data) if len(data) <= 16384 else None
                         except (ValueError, UnicodeError):
