@@ -1,0 +1,30 @@
+{
+  "built": true,
+  "deployed": false,
+  "upstream_version": "0.165.0",
+  "toolchain": "go1.27.4",
+  "unsafe_openpgp_linked": false,
+  "binaries": {
+    "sova-otelcol-linux-arm64": "72a3d25472677ed8ae9c977ab2b6e78884a89002fafd6da4a7ea2b57c7f50f48",
+    "sova-otelcol-darwin-arm64": "d12ff0efa4fde0c0900152d92131efa7cddef94d265034360b030260ca2a30d7"
+  },
+  "go_mod_sha256": "011745479d181323680608a93b53266a19b2ee852bd142cc199e82f675930793",
+  "go_sum_sha256": "01689615781d31ee05b22cc4bb8dd09ab7be95ee56743d0bad0d9f81d01820d0",
+  "candidate_image": "sha256:6d43d8d990107d5f240292e1cbd403dad02d59f39681f88c940880da7c3c2e1d",
+  "vulnerability_findings_all_severities": 0,
+  "vulnerability_database": {
+    "Version": 2,
+    "NextUpdate": "2026-11-20T19:04:59.970326708Z",
+    "UpdatedAt": "2026-11-19T19:04:59.970326968Z",
+    "DownloadedAt": "2026-11-19T20:18:52.325682Z"
+  },
+  "protocol_test": "actual isolated Docker Collector, synthetic OTLP, mTLS, token refusal, scope overwrite, sensitive fields removed; 1 passed",
+  "actual_application_telemetry_connected": false,
+  "original_otel_0164_and_full_0165_candidates_still_blocked": true,
+  "evidence_sha256": {
+    "build-receipt.json": "7022bc19554ad565596ac415ee58b05704201cbfa5c22a38417af4271f43b0ee",
+    "trivy-image-02.json": "fa72aa8977e9034f15750571feab9481078b68ce6a94825b8d1c4e7cb7fae7a4",
+    "protocol-test-01.xml": "0ded876d810ce5c6903862705b65740c15ac23d902b4251823840c73ca1a33b6",
+    "linked-packages.txt": "4aae0c709254b69b382b837a40f492edad9ae79c7cce5ae42bfc2e936468570a"
+  }
+}
