@@ -5,6 +5,7 @@ trust bootstrap, admission, route mutation, database role change or data copy.
 """
 
 import argparse
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 import hashlib
 import json
@@ -47,7 +48,7 @@ def main():
         location="registered-personal-vm", endpoint="https://127.0.0.1:19753", approved_addresses=("127.0.0.1",),
         ca_digest=hashlib.sha256(ca).hexdigest(), namespace=namespace, namespace_uid=found["metadata"]["uid"],
         revision=1, registered_at=now, valid_until=min(expires, now + timedelta(minutes=10)))
-    document = {"schema_version": 1, **vars(registration), "approved_addresses": list(registration.approved_addresses),
+    document = {"schema_version": 1, **asdict(registration), "approved_addresses": list(registration.approved_addresses),
                 "registered_at": registration.registered_at.isoformat(), "valid_until": registration.valid_until.isoformat()}
     (args.output / "kubernetes-registration.json").write_text(json.dumps(document))
     databases, passwords = {}, {}
