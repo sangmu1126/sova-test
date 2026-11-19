@@ -1,0 +1,184 @@
+{
+  "version": 1,
+  "recorded_at": "2026-11-19T23:38:10.283576+00:00",
+  "personal_account_only": true,
+  "migration_complete": false,
+  "operational_qualification": false,
+  "actual_directional_strategy": {
+    "passed": true,
+    "implementation_digest": "38bdd57c354d92c0ea16314bbc735356912642449dd21ccc9040e2107273099b",
+    "step_count": 15,
+    "actual_original_application_migrated": false,
+    "scope": "Separate trial databases and routing Service; repeated apply and fresh readback, forward and reverse; original apps untouched"
+  },
+  "registry_ui": {
+    "pkce_logins": 2,
+    "registration_heads": 9,
+    "native_plans": 0,
+    "measured_qualifications": 2,
+    "implementation_digest": "38bdd57c354d92c0ea16314bbc735356912642449dd21ccc9040e2107273099b",
+    "api_stopped": true,
+    "test_identity_removed": true,
+    "inventory_evaluated": false,
+    "inventory_note": "Historical fixture default false in partial_inventory did not evaluate completeness; no snapshot was submitted"
+  },
+  "actual_health": {
+    "started_at": "2026-11-19T23:31:34.894129+00:00",
+    "completed_at": "2026-11-19T23:31:36.941880+00:00",
+    "valid_until": "2026-11-19T23:36:34.894129+00:00",
+    "tenant_id": "personal-qualification",
+    "application_id": "orders-b0be270e62",
+    "passed": true,
+    "gateway_source_sha256": "3363b1fcd008e18c9744b8cd78616ca10a954fe13ee3962ad4e7e1793616a186",
+    "collector_sha256": "d12ff0efa4fde0c0900152d92131efa7cddef94d265034360b030260ca2a30d7",
+    "actual_http_receipts": [
+      {
+        "side": "source",
+        "verified_application_https": true,
+        "status": 200,
+        "duration_ms": 124.599,
+        "deployment_digest": "sha256:f80bc08328b0f962151b949706589bd5db3a12803dfa3096fb700bd3fad5e208"
+      },
+      {
+        "side": "source",
+        "verified_application_https": true,
+        "status": 200,
+        "duration_ms": 80.11,
+        "deployment_digest": "sha256:f80bc08328b0f962151b949706589bd5db3a12803dfa3096fb700bd3fad5e208"
+      },
+      {
+        "side": "source",
+        "verified_application_https": true,
+        "status": 200,
+        "duration_ms": 82.341,
+        "deployment_digest": "sha256:f80bc08328b0f962151b949706589bd5db3a12803dfa3096fb700bd3fad5e208"
+      },
+      {
+        "side": "target",
+        "verified_application_https": true,
+        "status": 200,
+        "duration_ms": 51.657,
+        "deployment_digest": "sha256:f80bc08328b0f962151b949706589bd5db3a12803dfa3096fb700bd3fad5e208"
+      },
+      {
+        "side": "target",
+        "verified_application_https": true,
+        "status": 200,
+        "duration_ms": 43.767,
+        "deployment_digest": "sha256:f80bc08328b0f962151b949706589bd5db3a12803dfa3096fb700bd3fad5e208"
+      },
+      {
+        "side": "target",
+        "verified_application_https": true,
+        "status": 200,
+        "duration_ms": 36.849,
+        "deployment_digest": "sha256:f80bc08328b0f962151b949706589bd5db3a12803dfa3096fb700bd3fad5e208"
+      }
+    ],
+    "application_server_instrumented": false,
+    "slo_qualified": false,
+    "collector_stopped": true
+  },
+  "harbor_auxiliary": {
+    "observed_at": "2026-11-19T23:34:19.945326+00:00",
+    "actual_image_id": "sha256:6a329b1e45e4deed04d5459f4b6ef176823b90fb290847b1276d69ab4c5a7419",
+    "architecture": "arm64",
+    "configured_user": null,
+    "counts": {
+      "UNKNOWN": 2,
+      "LOW": 33,
+      "MEDIUM": 44,
+      "HIGH": 44,
+      "CRITICAL": 0
+    },
+    "vulnerability_db": {
+      "Version": 2,
+      "NextUpdate": "2026-11-20T19:04:59.970326708Z",
+      "UpdatedAt": "2026-11-19T19:04:59.970326968Z",
+      "DownloadedAt": "2026-11-19T20:18:52.325682Z"
+    },
+    "scan_sha256": "3ca29405fbc295153483bfed2592afa88ddda25793614eaadcafa782757b453a",
+    "suppression_used": false,
+    "provider_isolation_qualified": false
+  },
+  "billing": {
+    "kind": "attributed_billing_observation",
+    "account_id": "265233844540",
+    "run_id": "b0be270e62",
+    "period": {
+      "start": "2026-11-19",
+      "end_exclusive": "2026-11-20"
+    },
+    "amount": null,
+    "currency": null,
+    "complete_tco": false,
+    "comparison_authorized": false,
+    "execution_authorized": false,
+    "available": false,
+    "reason": "estimated_zero_not_verified",
+    "estimated": true,
+    "provider_reported_amount": "0",
+    "provider_reported_currency": "USD",
+    "daily_intervals": 1,
+    "observed_at": "2026-11-19T23:41:13.845714+00:00",
+    "activation_is_not_billing_delivery": true,
+    "billing_day_in_progress": true
+  },
+  "tls_protocol_tests": {
+    "passed": 17,
+    "real_loopback_tls": true,
+    "actual_kubernetes_cluster": false,
+    "includes_get_patch_expiry_after_tls_before_bearer": true
+  },
+  "raw_sha256": {
+    "strategy-trial-08/trial.json": "1aac57b36cde622fe711f828c100940a90460d0c8a7c30edb8e43debd59fc562",
+    "measured-registry-ui-05/result.json": "d3dbcc81d08bf9d901cfab038ec7f9ccf562826d63c373b2ad214cfd7c23fe50",
+    "actual-health-otel-02/result.json": "5199459c2eec267bfe3c5db01fb8143630d635fb8bc1e08712cb94bb94fe79e4",
+    "harbor-auxiliary-scan-01/result.json": "698ff66895320cd5ff7346f8da2ecac533db5f7b7f6fee7c3a4e39388ce37719",
+    "aws-cost-observation-03.json": "38c9d958154ece2a38e9628a5846bef221d37b49483438a4a493489067e37214",
+    "kubernetes-registration-expiry-03.xml": "077a42d83b42d532c13a71f2b27f8cf960c02fe8559fffb53f17f7d18c1ca9f0",
+    "operational-ui-01/result.json": "19568323460b21be26c59175e0ea1ee0601d0c51aa7e9e800c6e552260dd54b5",
+    "operational-ui-01/browser.json": "bcf5d993d5f35cfa36a4944eb7f8d3a42a711643f155948812f82d65314b730f",
+    "native-host-worker-startup-04/result.json": "b3a96de9e212034722073d58458f83c59ae4ea29d8fd7c88a92b1171bf892f14",
+    "aws-cost-observation-04.json": "9ef968240b761abb92fccb9b92f9fc3308d6cff8e996156559aba6933aed991f"
+  },
+  "remaining": [
+    "Complete authenticated change-feed coverage",
+    "Complete writer/controller inventory",
+    "Category-specific placement observers",
+    "Trusted native execution verifier",
+    "Same original app approval/execution/new writes/failback and continuity",
+    "Real AI invocation current approval pending",
+    "Harbor network helper vulnerability remediation and provider qualification",
+    "App-server OTel, deployed monitoring backend, complete TCO"
+  ],
+  "operational_console": {
+    "pkce": 1,
+    "actual_native_api": true,
+    "actual_vm_ledger": true,
+    "health_state": "historical",
+    "billing_available": false,
+    "cross_tenant_status": 403,
+    "unregistered_application_status": 404,
+    "native_mutations": 0,
+    "api_stopped": true,
+    "identity_removed": true,
+    "scope": "Historical observations through authenticated API; first run did not freeze API source; strengthened rerun tracked separately"
+  },
+  "frozen_worker_startup": {
+    "checks": {
+      "history_delete_denied": true,
+      "migration_insert_denied": true,
+      "create_schema_denied": true,
+      "runtime_business_data_read_denied": true,
+      "actual_native_host_health": true,
+      "graceful_exit": true,
+      "no_admission_or_external_effects": true
+    },
+    "admitted": false,
+    "migration_complete": false,
+    "implementation_digest": "38bdd57c354d92c0ea16314bbc735356912642449dd21ccc9040e2107273099b",
+    "current_api_same_source": false
+  },
+  "billing_prior_03_note": "The previous rolling-day query omitted the run creation day. Preserve it as a failed scope selection, use observation-04 for the actual run interval."
+}

@@ -130,3 +130,25 @@
 - 개인 AWS의 RunId 비용 키를 실제로 활성화했다. 키의 모든 값에 적용되지만 조회는 b0be270e62/개인 계정에 제한한다. 예산·청구 한도를 바꾼 것이 아니다. 실제 첫 응답은 estimated=true, 0 USD였으므로 귀속 반영 전의 불확실한 0으로 처리하도록 수정했다. amount=null/UNKNOWN을 유지하며 무료 또는 절감으로 주장하지 않는다. [AWS 공식 비용 태그 설명](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/activating-tags.html)은 태그 표시와 활성화가 각각 지연될 수 있다고 명시한다.
 - 공개 코드 전용 Harbor의 agent와 별도 verifier 이미지는 최신 DB의 전 심각도 발견 0건, 개인 불변 ECR의 실제 manifest 및 로컬 runtime digest를 확인했다. 임시 registry 인증 파일은 제거했다. 실제 모델 호출·제품 승격은 아직 없다. Oracle 첫 실행은 분리한 HOME에서 공식 Docker Buildx 플러그인을 찾지 못해 시작 전에 실패했다. CLI exit=0만으로 통과시키지 않고 TrialResult의 예외와 verifier reward를 별도로 확인한다.
 - VM 제어기 우선순위를 3분 바꾸려던 시험은 자동 승인 검토가 구체적 승인 부족과 안정성 영향을 이유로 거부했다. 실제 변경은 실행하지 않았고 별도 승인 응답 전에는 보류한다. 다른 세션의 kind 컨테이너도 계속 보존한다.
+
+
+### 08:17–08:45 KST · 실측 관측·비용의 인증 콘솔 연결
+
+[실제 측정 근거](../evidence/personal-directional-observability-20261120.json) / [첫 실제 화면](../evidence/screenshots/personal-operational-20261120.png)
+
+- 실제 AWS/VM 앱 상태 HTTPS 6회 → 공식 OTel SDK → 검사한 upstream Collector → 별도 mTLS/토큰 수신 → native projection 6건을 확인했다. 게이트웨이 SERVER span이며 앱 내부 계측·전체 트래픽·SLO를 주장하지 않는다. 수집기와 게이트웨이는 시험 뒤 정상 종료했다.
+- 앱별 private 0600 파일과 고정 코드 SHA·개인 AWS 계정/RunId를 운영자가 등록하는 읽기 모델을 추가했다. 요청자가 파일·URL·계정·collector를 선택할 수 없다. 감사 조회 권한과 등록된 앱을 먼저 확인하며, 원문 경로·자격은 응답에 없다. 관측은 실행 게이트 증거로 사용하지 않는다.
+- 실제 PKCE 로그인 → 실제 VM 제어 DB의 앱 조회 → 관측 화면을 확인했다. 표본 유효기간이 지난 경우 과거 기록을 표시했다. 다른 tenant 403·미등록 앱 404, native mutation 0·계획 0·토큰 영속 저장 없음. API/테스트 IdP와 네트워크 정리를 확인했다. 이 첫 시험은 당시 Git commit만 기록했으므로 작업 중인 전체 API와 콘솔 소스의 완전한 버전 증거로 사용하지 않는다. 후속 시험은 API 소스 복사본과 콘솔 bundle SHA를 별도로 고정한다.
+- 개인 RunId 비용은 활성 태그에서도 estimated zero다. 0원·절감·TCO로 해석하지 않았다. 첫 rolling-day 조회는 생성일을 포함하지 않았으므로 원본을 남기고 실제 생성일을 포함하는 04 기록으로 바로잡았다.
+- 고정 worker `38bdd57c…`는 실제 기동·권한 거부·정상 종료 7개 통과, 접수·효과는 0개다. 현재 API 코드와 고정 worker의 소스는 다르며, 새 API 코드가 이전 전략 자격으로 검증됐다고 주장하지 않는다.
+- K8s HTTPS는 실제 TLS handshake 뒤에도 등록 기한을 다시 검사한다. GET/PATCH에서 만료 후 bearer가 전송되지 않는 실제 loopback TLS 회귀까지 17개 통과. 실제 클러스터 거부 시험과 구분한다.
+- 읽기 모델·권한 경계 25개, 콘솔 68개 및 타입/번들 빌드 통과. 단계별 별도 커밋으로 남긴다.
+
+### Harbor 공급자 추가 검사 · 전체 보안 판정은 보류
+
+- Harbor 0.26.0 기본 egress helper 실제 이미지에 UNKNOWN 2 / LOW 33 / MEDIUM 44 / HIGH 44 / CRITICAL 0이 확인됐다. agent/verifier 이미지의 0건 검사만으로 provider 전체가 통과했다고 하지 않는다.
+- 공식 GOST v3.3.3 arm64 이미지도 별도 digest로 고정해 검사했으나 UNKNOWN 1 / MEDIUM 8 / HIGH 3이 남았다. 단순 최신 태그 변경으로 해소됐다고 처리하지 않는다. 공식 소스와 보안 수정 의존성의 격리된 재빌드 후보를 준비한다. 운영 provider는 변경하지 않았다.
+- 공식 Harbor 기본 Dockerfile: https://github.com/harbor-framework/harbor/blob/main/src/harbor/environments/docker/harbor-docker-egress-control-sidecar/Dockerfile
+- 공식 GOST 후보: https://github.com/go-gost/gost/releases/tag/v3.3.3
+
+6단계 전체 완료는 아니다. 완전한 writer/controller 조사·외부 변경 수집 보증, 항목별 위치 관측, 실행 검증자 신뢰 인수, 원래 앱의 native 승인/이전/신규 쓰기/복귀/연속성, 실제 AI 실행과 전체 공급자 격리, 앱 내부 OTel/운영 backend/TCO는 별도로 남아 있다. 모델 호출은 이전 보류 때문에 자동 승인 검토가 거절했고, 현재 일회성 공개 소스 시험 승인 답변을 기다린다. 이를 우회하지 않는다.
