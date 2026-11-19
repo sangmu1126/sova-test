@@ -29,7 +29,7 @@ class PostgresTrustRequests:
         self.session = ScopedPostgresSession(connect, tenant_id=tenant_id)
 
     def _lock(self, conn, request_id):
-        key = canonical_json([self.tenant_id, self.application_id, request_id])
+        key = canonical_json({"tenant": self.tenant_id, "application": self.application_id, "request": request_id})
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (key,))
 
     def _request(self, conn, request_id):
@@ -144,7 +144,10 @@ class PostgresTrustRequests:
                 "request_id": request_id, "request_digest": request.fingerprint, "approval_id": approval_id,
                 "approved_by": actor, "approved_at": now.isoformat(), "approval_until": change.approval_until.isoformat(),
                 "publication_revision": change.revision, "publication_digest": change.fingerprint}
-            conn.execute("INSERT INTO sova_control.verifier_request_approvals "
-                "(tenant_id,application_id,request_id,approval_id,digest,document) VALUES(%s,%s,%s,%s,%s,%s)",
-                (self.tenant_id, self.application_id, request_id, approval_id, fingerprint(document), Jsonb(document)))
+            inserted = conn.execute("INSERT INTO sova_control.verifier_request_approvals "
+                "(tenant_id,application_id,request_id,approval_id,digest,document) VALUES(%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT DO NOTHING RETURNING 1",
+                (self.tenant_id, self.application_id, request_id, approval_id, fingerprint(document), Jsonb(document))).fetchone()
+            if inserted is None:
+                raise RepositoryConflict("Approval ID already belongs to another verifier request")
             return document
