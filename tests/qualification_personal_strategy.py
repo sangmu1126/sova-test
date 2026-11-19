@@ -45,6 +45,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("inputs", "connections", "artifacts"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--control-api-connection", type=Path)
     args = parser.parse_args()
     if sys.flags.optimize:
         raise ValueError("Qualification assertions must remain enabled")
@@ -54,6 +55,23 @@ def main():
     links = json.loads(args.connections.read_text())
     if inputs["run_id"] != "b0be270e62" or datetime.now(UTC) >= datetime.fromisoformat(inputs["expires_at"]) - timedelta(minutes=15):
         raise ValueError("Owned trial with at least 15 minutes left required")
+    api_endpoint = "https://127.0.0.1:19753"
+    api_until = datetime.fromisoformat(inputs["expires_at"])
+    if args.control_api_connection:
+        from urllib.parse import urlsplit
+        api_link = json.loads(args.control_api_connection.read_text())
+        endpoint = urlsplit(api_link["endpoint"])
+        api_until = datetime.fromisoformat(api_link["valid_until"])
+        if (api_link["run_id"] != inputs["run_id"] or api_link.get("ready") is not True
+                or api_link.get("cluster_uid") != "9de35591-57a3-4759-bd73-6340e2de0b61"
+                or api_link.get("namespace_uid") != "565b91c4-4f6e-4d06-94c6-9f8803afa6c9"
+                or api_link.get("transport") != "pinned VM SSH; verified API TLS"
+                or endpoint.scheme != "https" or endpoint.hostname != "127.0.0.1"
+                or endpoint.username or endpoint.password or endpoint.path or endpoint.query or endpoint.fragment
+                or not 1024 <= (endpoint.port or 0) <= 65535
+                or datetime.now(UTC) + timedelta(minutes=4) >= api_until):
+            raise ValueError("Fresh actual pinned VM control API receipt required")
+        api_endpoint = api_link["endpoint"]
     verify_vm()
     namespace = inputs["namespace"]
     ns = json.loads(guest(KUBECTL, "--kubeconfig", CONFIG, "get", "ns", namespace, "-o", "json"))
@@ -170,9 +188,9 @@ def main():
         ca = guest("cat", "/var/lib/rancher/rke2/server/tls/server-ca.crt")
         now = datetime.now(UTC)
         registration = KubernetesReadRegistration(tenant_id=inputs["tenant_id"], application_id=inputs["application_id"],
-            environment_id="local-vm-b0be270e62", location="registered-personal-vm", endpoint="https://127.0.0.1:19753",
+            environment_id="local-vm-b0be270e62", location="registered-personal-vm", endpoint=api_endpoint,
             approved_addresses=("127.0.0.1",), ca_digest=hashlib.sha256(ca).hexdigest(), namespace=namespace,
-            namespace_uid=ns["metadata"]["uid"], revision=1, registered_at=now, valid_until=now+timedelta(minutes=9))
+            namespace_uid=ns["metadata"]["uid"], revision=1, registered_at=now, valid_until=min(api_until,now+timedelta(minutes=9)))
         controls = KubernetesHandoffControls(registration, ca_pem=ca, token_provider=lambda: token)
         observer = http_side_observer(f"https://127.0.0.1:{port}/healthz", header="X-Sova-Side",
             sides={names["src"]: "source", names["tgt"]: "target"}, ca_file=str(args.inputs / "pki/ca.pem"))

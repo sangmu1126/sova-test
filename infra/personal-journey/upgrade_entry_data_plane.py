@@ -38,10 +38,11 @@ def main():
     if image["manifest_digest"]!="sha256:36cbd2f5e9db6d6a6a012baabf58dcf77a2aba30d31792e140951e693674b30e":
         raise ValueError("Only the freshly inspected fixed proxy is accepted")
     remote="/tmp/sova-b0be270e62-vpn-proxy.oci.tar"
-    subprocess.run(["limactl","copy",str(a.proxy_image/"canary.oci.tar"),VM+":"+remote],capture_output=True,check=True,timeout=90)
-    if guest("sha256sum",remote).decode().split()[0]!=image["archive_sha256"]:
-        raise ValueError("Transferred image differs")
-    guest(CTR,"--address",SOCKET,"-n","k8s.io","images","import","--base-name","local.sova.invalid/b0be270e62/proxy","--digests",remote)
+    if not a.resume:
+        subprocess.run(["limactl","copy",str(a.proxy_image/"canary.oci.tar"),VM+":"+remote],capture_output=True,check=True,timeout=90)
+        if guest("sha256sum",remote).decode().split()[0]!=image["archive_sha256"]:
+            raise ValueError("Transferred image differs")
+        guest(CTR,"--address",SOCKET,"-n","k8s.io","images","import","--base-name","local.sova.invalid/b0be270e62/proxy","--digests",remote)
     for key in ("manifest_digest","config_digest"):
         blob=guest(CTR,"--address",SOCKET,"-n","k8s.io","content","get",image[key])
         if "sha256:"+hashlib.sha256(blob).hexdigest()!=image[key]:
