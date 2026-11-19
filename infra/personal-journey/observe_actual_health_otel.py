@@ -103,6 +103,9 @@ def main():
     collector = None
     report = {
         "started_at": now.isoformat(),
+        "valid_until": end.isoformat(),
+        "tenant_id": identity["tenant_id"],
+        "application_id": identity["application_id"],
         "measurement_scope": "Actual controller gateway HTTP requests fetching registered AWS/VM health; not app-server processing",
         "collector_sha256": hashlib.sha256(a.collector.read_bytes()).hexdigest(),
         "gateway_source_sha256": code,
