@@ -168,6 +168,9 @@ class KubernetesHTTPS:
         connection._create_connection = connect_peer
         try:
             connection.connect()
+            # A slow TLS handshake must not transmit a bearer after the
+            # operator registration expires, even if TCP was opened in time.
+            reg.require_current(self.clock())
             left = deadline - time.monotonic()
             if left <= 0:
                 raise ContractError("Kubernetes read deadline exceeded")

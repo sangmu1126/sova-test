@@ -378,3 +378,26 @@ def test_response_received_after_registration_expiry_is_not_a_valid_observation(
     with pytest.raises(ContractError, match='Registration'):
         transport.get('/api/v1/namespaces/orders', {}, timeout=2)
     assert len(state['requests']) == 1
+
+
+@pytest.mark.parametrize("method", ["GET", "PATCH"])
+def test_expiry_during_actual_tls_handshake_sends_no_authorization(api, monkeypatch, method):
+    import http.client
+
+    reg, ca, state = api
+    current = [reg.registered_at]
+    original = http.client.HTTPSConnection.connect
+    connected = []
+
+    def connect(connection):
+        original(connection)
+        connected.append(connection.sock.version())
+        current[0] = reg.valid_until
+
+    monkeypatch.setattr(http.client.HTTPSConnection, "connect", connect)
+    transport = KubernetesHTTPS(reg, ca_pem=ca, token_provider=lambda: "test-token", clock=lambda: current[0])
+    with pytest.raises(ContractError, match="Registration"):
+        transport._request(method, "/api/v1/namespaces/orders", {}, timeout=2,
+                           body=b"[]" if method == "PATCH" else None)
+    assert connected and connected[0].startswith("TLS")
+    assert state["requests"] == []
