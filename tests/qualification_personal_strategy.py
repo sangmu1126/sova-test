@@ -30,6 +30,9 @@ from sova.adapters.kubernetes.gateway_route import http_side_observer
 from sova.adapters.postgres_digest import table_digest
 from sova.adapters.postgres_connections import ReusedConnections
 from sova.qualification.order_schema import TABLES, SCHEMA
+from sova.service.directional_catalog import source_identity, catalog_v2
+from sova.service.catalog import catalog_from
+from sova.domain.plan_compiler import PlanRevision
 from sova.domain.contracts import ContractError, EffectStatus
 from sova.domain.discovery import KubernetesReadRegistration
 
@@ -59,9 +62,10 @@ def main():
     suffix = uuid4().hex[:10]
     name = "qualification-" + suffix
     names = {"src": "q_source_" + suffix, "tgt": "q_target_" + suffix}
+    names.update({key: "q_" + key + "_" + suffix for key in ("src_scratch", "src_other", "tgt_scratch", "tgt_other")})
     app, batch = "q_app_" + suffix, "q_batch_" + suffix
     passwords = {app: secrets.token_urlsafe(32), batch: secrets.token_urlsafe(32)}
-    names_to_side = {names["src"]: "source", names["tgt"]: "target"}
+    names_to_side = {name: "source" if key.startswith("src") else "target" for key, name in names.items()}
 
     def connect(side, database=None, role="postgres", *, autocommit=False):
         entry = inputs["environments"][side]
@@ -89,7 +93,9 @@ def main():
         result["entry"]["selector"] = service["spec"]["selector"]
         return result
 
+    implementation = source_identity()
     report = {"version": 1, "trial_id": name, "started_at": datetime.now(UTC).isoformat(),
+        "implementation_identity": implementation,
         "code_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         "provider_path": "personal AWS EC2 PostgreSQL to local Lima/RKE2 PostgreSQL",
         "source_file_hashes": {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in (
@@ -102,6 +108,7 @@ def main():
     ssh = None
     business = None
     admin_pool = None
+    close_catalog = None
     created = []
     try:
         for side in ("source", "target"):
@@ -109,11 +116,13 @@ def main():
                 for role, password in passwords.items():
                     conn.execute(sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
                         "NOREPLICATION NOBYPASSRLS NOINHERIT PASSWORD {}").format(sql.Identifier(role), sql.Literal(password)))
-                db = names["src" if side == "source" else "tgt"]
-                conn.execute(sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(sql.Identifier(db)))
-                conn.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(sql.Identifier(db)))
+                for db, db_side in names_to_side.items():
+                    if db_side != side:
+                        continue
+                    conn.execute(sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(sql.Identifier(db)))
+                    conn.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(sql.Identifier(db)))
                 if side == "source":
-                    conn.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(sql.Identifier(db), sql.Identifier(app)))
+                    conn.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(sql.Identifier(names["src"]), sql.Identifier(app)))
         admin_pool = ReusedConnections(lambda db: connect(names_to_side[db], db))
         business = {"names": names, "app": app, "batch": batch,
             "connect": admin_pool,
@@ -173,6 +182,49 @@ def main():
             expected_service_uid=service["metadata"]["uid"])
         world = PostgresWorld(business)
         world._route = route
+        databases = {}
+        for database, side in names_to_side.items():
+            entry = inputs["environments"][side]
+            file = args.artifacts / (database + ".dsn")
+            file.write_text(make_conninfo(host=entry["database_host"], hostaddr="127.0.0.1",
+                port=links["ports"][side+"_db"], dbname=database, user="postgres",
+                password=(args.inputs/("client/"+side+"-admin.password")).read_text(),
+                sslmode="verify-full", sslrootcert=str(args.inputs/"pki/ca.pem"), connect_timeout=5))
+            databases[database] = {"dsn_file": str(file)}
+        credential_files = {}
+        for role, password in passwords.items():
+            file = args.artifacts / (role+".password")
+            file.write_text(password)
+            credential_files[role] = str(file)
+        schema_file = args.artifacts / "schema.sql"
+        schema_file.write_text(SCHEMA)
+        shared = {"tenant_id":inputs["tenant_id"],"application_id":inputs["application_id"],
+            "adapter_id":"postgres-offline-copy","engine":"postgresql","mode":"offline_copy",
+            "databases":databases,"database_role_password_files":{db:credential_files for db in databases},
+            "app_role":app,"writer_roles":[app,batch],"tables":[list(pair) for pair in TABLES],
+            "schema_sql_file":str(schema_file),"probe_insert":"INSERT INTO orders VALUES(-1,'sova-probe','sova-probe',0)",
+            "route":{"kind":"kubernetes_service"}}
+        profiles = {"source":"aws-ec2-b0be270e62","target":"local-rke2-b0be270e62"}
+        documents = {"forward":{"source":profiles["source"],"target":profiles["target"]},
+                     "reverse":{"source":profiles["target"],"target":profiles["source"]}}
+        apps = [{**shared,"environment_pair":documents[direction],"source_db":names[source],"target_db":names[target],
+                 "scratch_db":names[target+"_scratch"],"other_db":names[target+"_other"]}
+                for direction,source,target in (("forward","src","tgt"),("reverse","tgt","src"))]
+        configured = {"version":2,"implementation_digest":implementation["digest"],"applications":apps}
+        native_catalog, close_catalog = catalog_v2(configured,
+            catalog_builder=lambda doc:catalog_from(doc,route_for=lambda _:route))
+        # These minimal adapter-conformance documents are not compiled/admitted
+        # business plans. The real factories still check pair and code identity.
+        revisions = {direction:PlanRevision(json.dumps({"tenant_id":inputs["tenant_id"],
+            "service_id":inputs["application_id"],"environments":pair,"operations":[{
+                "adapter":{"adapter_id":"postgres-offline-copy","adapter_digest":implementation["digest"]}}]}))
+            for direction,pair in documents.items()}
+        world.adapter = lambda: native_catalog.build(inputs["tenant_id"],inputs["application_id"],
+            "postgres-offline-copy",revisions["forward"]).adapter
+        world.reverse_adapter = lambda: native_catalog.build(inputs["tenant_id"],inputs["application_id"],
+            "postgres-offline-copy",revisions["reverse"]).adapter
+        report["trial_scope"]["native_catalog_version"] = 2
+        report["trial_scope"]["conformance_documents_are_not_admitted_plans"] = True
         initial_route = None
         report["readiness_observations"] = []
         deadline = time.monotonic() + 60
@@ -248,6 +300,7 @@ def main():
         report["checks"]["new_target_write_preserved_on_failback"] = True
         report["checks"]["single_writer_after_failback"] = True
         report["checks"]["actual_route_returned_to_source"] = route.get() == names["src"]
+        report["checks"]["native_and_security_implementation_unchanged"] = source_identity() == implementation
         report["passed"] = all(report["checks"].values())
     finally:
         if ssh is not None:
@@ -255,6 +308,8 @@ def main():
             ssh.wait(timeout=10)
         if admin_pool is not None:
             admin_pool.close()
+        if close_catalog is not None:
+            close_catalog()
         report["created_objects"] = created
         # Trial writers are disabled even on failure, without touching original roles.
         for side in ("source", "target"):
