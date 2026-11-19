@@ -32,6 +32,7 @@ def main():
     p.add_argument("--artifacts", type=Path, required=True)
     p.add_argument("--proxy-image", type=Path)
     p.add_argument("--proxy-scan", type=Path)
+    p.add_argument("--resume", action="store_true", help="Recheck a staged key; never regenerate it")
     a = p.parse_args()
     os.umask(0o077)
     identity()
@@ -98,7 +99,7 @@ def main():
 
     base = {"expires_at": until.isoformat()}
     if a.mode == "prepare":
-        a.artifacts.mkdir(mode=0o700, exist_ok=False)
+        a.artifacts.mkdir(mode=0o700, exist_ok=a.resume)
         if not a.proxy_image or not a.proxy_scan:
             raise ValueError("Exact inspected proxy artifact and fresh scan required")
         proxy = artifact(a.proxy_image)
@@ -129,12 +130,24 @@ if pathlib.Path('/var/lib/sova-journey/run-id').read_text().strip()!='b0be270e62
 subprocess.run(['dnf','-y','--setopt=install_weak_deps=False','install','wireguard-tools-1.0.20210914-4.amzn2023.aarch64'],stdout=subprocess.DEVNULL,check=True,timeout=120)
 sys.stdin=__import__('io').StringIO(json.dumps(c))
 """ + endpoint
-        source_state = source("source-prepare", source_install, {**base, "side": "source", "action": "prepare"}, 150)
-        (a.artifacts / "source-prepared.json").write_text(json.dumps(source_state, indent=2)+"\n")
+        prepared = a.artifacts / "source-prepared.json"
+        if a.resume and prepared.exists():
+            source_state = json.loads(prepared.read_text())
+            inspect = """import json,pathlib,subprocess
+r=pathlib.Path('/run/sova-wireguard-b0be270e62');s=json.loads((r/'state.json').read_text())
+if s['applied'] or subprocess.check_output(['wg','pubkey'],input=(r/'private.key').read_bytes()).decode().strip()!=s['public_key']:raise ValueError('Staged key or phase changed')
+print(json.dumps(s))
+"""
+            if source("source-resume-readback", inspect, {}) != source_state:
+                raise ValueError("Staged source identity differs; do not recreate it")
+        else:
+            source_state = source("source-prepare", source_install, {**base, "side": "source", "action": "prepare"}, 150)
+            with prepared.open("x") as f:
+                f.write(json.dumps(source_state, indent=2)+"\n")
         target_install = """import json,pathlib,subprocess,sys
 c=json.load(sys.stdin)
 if pathlib.Path('/etc/machine-id').read_text().strip()!='a789f623bca040989f282881d9a21654':raise ValueError('Wrong VM')
-subprocess.run(['env','DEBIAN_FRONTEND=noninteractive','apt-get','install','--assume-yes','--no-install-recommends','wireguard-tools=1.0.20210914-1ubuntu4'],stdout=subprocess.DEVNULL,check=True,timeout=120)
+subprocess.run(['env','DEBIAN_FRONTEND=noninteractive','apt-get','-o','DPkg::Lock::Timeout=60','install','--assume-yes','--no-install-recommends','wireguard-tools=1.0.20210914-1ubuntu4'],stdout=subprocess.DEVNULL,check=True,timeout=120)
 sys.stdin=__import__('io').StringIO(json.dumps(c))
 """ + endpoint
         target_state = target(target_install, {**base, "side": "target", "action": "prepare"}, 150)
