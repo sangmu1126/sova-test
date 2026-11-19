@@ -94,7 +94,7 @@ class Marked(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        self.send_response(200)
+        self.send_response(getattr(self.server, "response_status", 200))
         self.send_header("X-Sova-Side", self.server.side)
         self.send_header("Content-Length", "0")
         self.end_headers()
@@ -109,6 +109,9 @@ def test_the_observer_reads_the_side_marker_and_never_guesses():
         observe = http_side_observer(url, header="X-Sova-Side",
                                      sides={"web_src": "source", "web_tgt": "target"})
         assert observe() == "web_tgt"
+        server.response_status = 503
+        assert observe() == "http-status:503"  # marker alone is not a healthy response
+        server.response_status = 200
         server.side = "staging"
         assert observe() == "unmarked:staging"
     finally:

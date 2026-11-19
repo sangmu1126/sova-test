@@ -158,7 +158,8 @@ class KubernetesHandoffControls(KubernetesHTTPS):
 class KubernetesServiceRoute:
     """Route store: which side's pods a Service sends traffic to."""
 
-    def __init__(self, controls, service, sides, *, converge_seconds=30.0):
+    def __init__(self, controls, service, sides, *, converge_seconds=30.0,
+                 observe=None, samples=3):
         if not isinstance(controls, KubernetesHandoffControls):
             raise ContractError("Registered Kubernetes controls required")
         if type(sides) is not dict or len(sides) < 2:
@@ -167,6 +168,10 @@ class KubernetesServiceRoute:
         self.sides = {ref: _selector(selector) for ref, selector in sides.items()}
         if len({json.dumps(s) for s in self.sides.values()}) != len(self.sides):
             raise ContractError("Sides must have distinct selectors")
+        if observe is not None and (not callable(observe) or type(samples) is not int
+                                    or not 1 <= samples <= 8):
+            raise ContractError("A callable HTTP observer and 1..8 samples required")
+        self.http_observe, self.samples = observe, samples
         self.converge_seconds = converge_seconds
 
     def observe(self):
@@ -178,8 +183,14 @@ class KubernetesServiceRoute:
         foreign = sorted({str(pod) for pod, _ in endpoints if pod not in backing})
         ready = sorted(pod for pod, ok in endpoints if ok and pod in backing)
         decided = side if side is not None and ready and not foreign else None
-        return {"selector_side": side, "ready_endpoints": len(ready),
-                "foreign_endpoints": foreign[:20], "route": decided}
+        observation = {"selector_side": side, "ready_endpoints": len(ready),
+                       "foreign_endpoints": foreign[:20], "route": decided}
+        if self.http_observe is not None and decided is not None:
+            answers = [self.http_observe() for _ in range(self.samples)]
+            observation["http_sides"] = answers
+            if any(answer != decided for answer in answers):
+                observation["route"] = None
+        return observation
 
     def get(self):
         return self.observe()["route"]

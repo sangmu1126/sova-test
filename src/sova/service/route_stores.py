@@ -38,7 +38,7 @@ from sova.domain.contracts import ContractError
 
 SERVICE_ACCOUNT = Path("/var/run/secrets/kubernetes.io/serviceaccount")
 _SERVICE_KEYS = {"kind", "registration_file", "token_file", "ca_file", "service", "sides",
-                 "converge_seconds"}
+                 "converge_seconds", "probe", "samples"}
 _GATEWAY_KEYS = {"kind", "registration_file", "token_file", "ca_file", "route", "rule",
                  "parents", "sides", "probe", "samples", "converge_seconds"}
 _PROBE_KEYS = {"url", "header", "values", "ca_file"}
@@ -61,6 +61,17 @@ def handoff_controls(spec, *, service_account=SERVICE_ACCOUNT):
         registration, ca_pem=ca, token_provider=lambda: token_file.read_text().strip())
 
 
+def _probe_observer(spec):
+    probe = spec["probe"]
+    if type(probe) is not dict or set(probe) - _PROBE_KEYS or not {
+            "url", "header", "values"} <= set(probe):
+        raise ContractError("Route probe: url, header and side values required")
+    if type(probe["values"]) is not dict or set(probe["values"]) != set(spec["sides"]):
+        raise ContractError("A marker value for every side required")
+    return http_side_observer(probe["url"], header=probe["header"],
+                              sides=probe["values"], ca_file=probe.get("ca_file"))
+
+
 def route_from(spec, *, controls_for=handoff_controls):
     if type(spec) is not dict:
         raise ContractError("A route store entry required")
@@ -68,8 +79,12 @@ def route_from(spec, *, controls_for=handoff_controls):
     if kind == "kubernetes_service":
         if set(spec) - _SERVICE_KEYS:
             raise ContractError("Unknown route keys")
+        observe = _probe_observer(spec) if "probe" in spec else None
+        if "samples" in spec and observe is None:
+            raise ContractError("HTTP samples require a route probe")
         return KubernetesServiceRoute(controls_for(spec), spec["service"], spec["sides"],
-                                      converge_seconds=float(spec.get("converge_seconds", 60)))
+                                      converge_seconds=float(spec.get("converge_seconds", 60)),
+                                      observe=observe, samples=spec.get("samples", 3))
     if kind == "gateway_httproute":
         if set(spec) - _GATEWAY_KEYS or not {"registration_file", "route", "parents", "sides",
                                              "probe"} <= set(spec):

@@ -183,10 +183,14 @@ def http_side_observer(url, *, header, sides, ca_file=None, timeout=5.0):
     parts = urlsplit(url)
     loopback = parts.hostname in ("127.0.0.1", "localhost", "::1")
     if parts.scheme not in ("https", "http") or (parts.scheme == "http" and not loopback) \
-            or not parts.hostname:
+            or not parts.hostname or parts.username is not None or parts.password is not None \
+            or parts.fragment:
         raise ContractError("An HTTPS probe URL required")
     if type(header) is not str or not header or type(sides) is not dict or not sides:
         raise ContractError("A marker header and the value of each side required")
+    if (any(type(value) is not str or not value or len(value) > 128 for value in sides.values())
+            or len(set(sides.values())) != len(sides)):
+        raise ContractError("Distinct bounded side marker values required")
     context = ssl.create_default_context(cafile=ca_file) if parts.scheme == "https" else None
     path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
 
@@ -203,6 +207,8 @@ def http_side_observer(url, *, header, sides, ca_file=None, timeout=5.0):
             response = connection.getresponse()
             response.read(65536)
             value = response.getheader(header)
+            if not 200 <= response.status < 300:
+                return f"http-status:{response.status}"
         finally:
             connection.close()
         return next((ref for ref, marker in sides.items() if marker == value),
