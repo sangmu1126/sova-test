@@ -27,6 +27,7 @@ from postgres_business import prepare
 from postgres_world import PostgresWorld
 from sova.adapters.kubernetes.handoff_controls import KubernetesHandoffControls, KubernetesServiceRoute
 from sova.adapters.kubernetes.gateway_route import http_side_observer
+from sova.adapters.postgres_digest import table_digest
 from sova.domain.contracts import ContractError, EffectStatus
 from sova.domain.discovery import KubernetesReadRegistration
 
@@ -40,6 +41,8 @@ def main():
     for name in ("inputs", "connections", "artifacts"):
         parser.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args()
+    if sys.flags.optimize:
+        raise ValueError("Qualification assertions must remain enabled")
     os.umask(0o077)
     args.artifacts.mkdir(mode=0o700, exist_ok=False)
     inputs = json.loads((args.inputs / "identity.json").read_text())
@@ -74,7 +77,11 @@ def main():
                 result[side] = {"counts": list(conn.execute("SELECT (SELECT count(*) FROM orders),"
                     "(SELECT count(*) FROM work_items),(SELECT count(*) FROM idempotency_results)").fetchone()),
                     "writers": conn.execute("SELECT rolname,rolcanlogin,has_database_privilege(rolname,current_database(),'CONNECT') "
-                        "FROM pg_roles WHERE rolname IN ('orders_app','orders_batch') ORDER BY rolname").fetchall()}
+                        "FROM pg_roles WHERE rolname IN ('orders_app','orders_batch') ORDER BY rolname").fetchall(),
+                    "content": {table: table_digest(conn, table) for table in ("orders", "work_items", "idempotency_results")},
+                    "sequences": conn.execute("SELECT sequencename,last_value FROM pg_sequences WHERE schemaname='public' ORDER BY 1").fetchall(),
+                    "grants": conn.execute("SELECT grantee,table_name,privilege_type FROM information_schema.role_table_grants "
+                        "WHERE grantee IN ('orders_app','orders_batch') ORDER BY 1,2,3").fetchall()}
         service = json.loads(guest(KUBECTL, "--kubeconfig", CONFIG, "-n", namespace, "get", "svc", "orders-entry", "-o", "json"))
         result["entry"] = {key: service["metadata"][key] for key in ("uid", "resourceVersion")}
         result["entry"]["selector"] = service["spec"]["selector"]
@@ -147,7 +154,7 @@ def main():
             namespace_uid=ns["metadata"]["uid"], revision=1, registered_at=now, valid_until=now+timedelta(minutes=9))
         controls = KubernetesHandoffControls(registration, ca_pem=ca, token_provider=lambda: token)
         observer = http_side_observer(f"https://127.0.0.1:{port}/healthz", header="X-Sova-Side",
-            sides={"source_orders": "source", "target_orders": "target"}, ca_file=str(args.inputs / "pki/ca.pem"))
+            sides={names["src"]: "source", names["tgt"]: "target"}, ca_file=str(args.inputs / "pki/ca.pem"))
         route = KubernetesServiceRoute(controls, name, {
             names[key]: {"sova.run": inputs["run_id"], "sova.role": "edge", "sova.side": side}
             for key, side in (("src", "source"), ("tgt", "target"))}, observe=observer, samples=3,
@@ -155,10 +162,13 @@ def main():
         world = PostgresWorld(business)
         world._route = route
         initial_route = None
+        report["readiness_observations"] = []
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             try:
-                initial_route = route.get()
+                observed = route.observe()
+                report["readiness_observations"] = [observed]
+                initial_route = observed["route"]
                 if initial_route == names["src"]:
                     break
             except (OSError, ContractError) as exc:
