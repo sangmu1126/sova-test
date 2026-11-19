@@ -27,7 +27,7 @@ from postgres_business import prepare
 from postgres_world import PostgresWorld
 from sova.adapters.kubernetes.handoff_controls import KubernetesHandoffControls, KubernetesServiceRoute
 from sova.adapters.kubernetes.gateway_route import http_side_observer
-from sova.domain.contracts import EffectStatus
+from sova.domain.contracts import ContractError, EffectStatus
 from sova.domain.discovery import KubernetesReadRegistration
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -155,13 +155,17 @@ def main():
         world = PostgresWorld(business)
         world._route = route
         initial_route = None
-        for _ in range(30):
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
             try:
                 initial_route = route.get()
                 if initial_route == names["src"]:
                     break
-            except OSError:
-                pass
+            except (OSError, ContractError) as exc:
+                # Startup reads may be retried within a fixed readiness window.
+                # Never turn an authorization refusal or invalid spec into PASS.
+                if isinstance(exc, ContractError) and not isinstance(exc.__cause__, OSError):
+                    raise
             time.sleep(0.2)
         if initial_route != names["src"]:
             raise ValueError("Separate actual trial entry is not source")
@@ -204,7 +208,7 @@ def main():
             conn.execute("INSERT INTO work_items VALUES (51,51,'done')")
             conn.execute("INSERT INTO idempotency_results VALUES ('after-target','after-target','confirmed')")
             conn.execute("SELECT nextval('order_number_seq')")
-        for action in ("verify_return_target", "pause_admission", "fence_source_writes", "copy_content", "verify_final_state", "activate_target", "commit_route"):
+        for action in ("verify_return_target", "start_sync", "pause_admission", "fence_source_writes", "apply_final_changes", "verify_final_state", "activate_target", "commit_route"):
             run_step(world.reverse_adapter(), action, "reverse")
         assert world.content("source") == world.content("target")
         assert world.can_write("source", "app") and not world.can_write("target", "app")
