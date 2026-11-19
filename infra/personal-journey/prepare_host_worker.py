@@ -27,6 +27,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("inputs", "connections", "entry-connection", "control-directory", "output"):
         p.add_argument("--" + name, type=Path, required=True)
+    p.add_argument("--witness-installation", type=Path)
     args = p.parse_args()
     os.umask(0o077)
     verify_vm()
@@ -120,6 +121,10 @@ def main():
         "SOVA_EVIDENCE_KEY_FILE": str(args.output / "evidence.key"), "SOVA_EVIDENCE_KEY_ID": "worker-b0be270e62",
         "SOVA_EXECUTION_FILE": str(args.output / "execution.json"),
         "PYTHONPATH": str(snapshot), "PYTHONDONTWRITEBYTECODE": "1"}
+    if args.witness_installation:
+        from witness_configuration import witness_environment
+
+        environment.update(witness_environment(args.witness_installation, inputs))
     (args.output / "environment.json").write_text(json.dumps(environment, indent=2))
     print(json.dumps({"database_connections_verified": len(databases), "route_token_seconds": 600,
         "identity": "actual host process", "catalog_version": 2, "directions": 2,

@@ -41,6 +41,7 @@ def main():
     p.add_argument("--case", choices=("registration", "verifier", "registry"), default="registration")
     p.add_argument("--registry-package", type=Path)
     p.add_argument("--identity-startup-seconds", type=int, default=300)
+    p.add_argument("--witness-installation", type=Path)
     args = p.parse_args()
     os.umask(0o077)
     args.artifacts.mkdir(mode=0o700, exist_ok=False)
@@ -77,6 +78,11 @@ def main():
         "SOVA_OIDC_AUDIENCE": "sova-control-plane", "SOVA_REGISTRY_VERIFIER_VERSION": "registry-attestor-1",
         "SOVA_EVIDENCE_VERIFIER": "handoff-verifier-1", "SOVA_EVIDENCE_ISSUER": "personal-handoff-producer",
         "SOVA_WITNESS": "file:" + str(args.artifacts / "witness")}
+    if args.witness_installation:
+        sys.path.insert(0, str(ROOT / "infra/personal-journey"))
+        from witness_configuration import witness_environment
+
+        env.update(witness_environment(args.witness_installation, identity))
     harness = SimpleNamespace(directory=args.artifacts, origin=origin, tenant=tenant,
                               environment=env, case_name="actual-personal-registration")
     report = {"source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
