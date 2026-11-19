@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "scope": "personal AWS EC2 and owned local ARM64 Linux VM only",
+  "observed_at": "2026-11-19T21:28:35.411047+00:00",
+  "actual_tls_paths": 4,
+  "denied_vpn_ports": {
+    "22": true,
+    "6443": true,
+    "5433": true
+  },
+  "preflight_checks": {
+    "source_verified_database_and_writer_scope": true,
+    "source_verified_https_identity": true,
+    "target_verified_database_and_writer_scope": true,
+    "target_verified_https_identity": true,
+    "independent_database_systems": true,
+    "source_unauthorized_denied": true,
+    "target_writer_still_fenced": true,
+    "source_actual_request_replay_and_lookup": true,
+    "source_business_effect_count": true,
+    "source_wrong_hostname_denied": true,
+    "source_plaintext_without_password_denied": true,
+    "target_business_effect_count": true,
+    "target_wrong_hostname_denied": true,
+    "target_plaintext_without_password_denied": true
+  },
+  "source_counts": [
+    1,
+    1,
+    1
+  ],
+  "target_counts": [
+    0,
+    0,
+    0
+  ],
+  "proxy_manifest": "sha256:36cbd2f5e9db6d6a6a012baabf58dcf77a2aba30d31792e140951e693674b30e",
+  "network_apply_first_result": "Proxy configuration validation refused duplicate frontend/backend names; interface state and rejected config retained; explicitly repaired before start",
+  "ssh_witness": {
+    "checks": {
+      "actual_append_and_fresh_readback": true,
+      "cross_tenant_refused": true
+    },
+    "implementation_digest": "4d6d85051f826b45d060f07248d34e6882e523e24572514678913b35ec0f3a9b",
+    "expires_at": "2026-11-20T01:20:00+00:00",
+    "private_key_written_to_file": false,
+    "worm_qualified": false
+  },
+  "application_migrated": false,
+  "operational_qualification": false,
+  "private_receipt_sha256": {
+    "wireguard-link-02/apply-result.json": "fa1c771b7203b6ae315bb4116eee434d6f9a93ae972ac1b1153e9cc025b77d81",
+    "wireguard-link-02/proxy-completion.json": "e280773b41326bf23a79b1c32434041ccbb2cab6c56d284ee86ffb0b507b72ae",
+    "wireguard-connections-01/connections.json": "9ff4a995c9a0785b577e93d522036fa4d266918a3c83f5eef6cf122fcd4831b7",
+    "wireguard-preflight-01/run.json": "c66bc4b99e61c2376858b94a6c3801bdc950d0c0e6715f260c827469e8563610",
+    "physical-vm-witness-03/result.json": "816d12b6fc2ed83f21011ecc0d6ce724cf68caf02f57156cd512c06d07abc465"
+  }
+}
