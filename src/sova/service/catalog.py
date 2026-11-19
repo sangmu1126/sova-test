@@ -284,16 +284,29 @@ def _unit_resolver(app, *, route_for, controls_for):
         lambda: None
 
 
-def catalog_from(document, *, route_for=kubernetes_route, controls_for=None):
-    """(AdapterCatalog, close) from a parsed execution file."""
+def _secret_access(spec):
+    from sova.service.secret_access import secret_access_probes
+
+    return secret_access_probes(spec)
+
+
+def catalog_from(document, *, route_for=kubernetes_route, controls_for=None,
+                 secret_access_for=_secret_access):
+    """(AdapterCatalog, close) from a parsed execution file. Any entry may add
+    ``secret_access`` (``sova.service.secret_access``): the application's
+    Secrets on its target, measured against other workloads."""
     if type(document) is not dict or document.get("version") != 1 or set(document) - {
             "version", "applications"}:
         raise ContractError("Execution file version 1 required")
     apps = document.get("applications")
     if type(apps) is not list or not apps:
         raise ContractError("At least one application is required")
-    by_adapter, kept = {}, []
+    by_adapter, kept, secret_probes = {}, [], {}
     for app in apps:
+        if type(app) is dict and "secret_access" in app:
+            app = dict(app)
+            secret_probes[(app.get("tenant_id"), app.get("application_id"))] = \
+                secret_access_for(app.pop("secret_access"))
         engine = app.get("engine") if type(app) is dict else None
         if engine in _UNIT_ENGINES:
             resolve, close = _unit_resolver(app, route_for=route_for,
@@ -333,7 +346,17 @@ def catalog_from(document, *, route_for=kubernetes_route, controls_for=None):
 
         return postgres_factory(adapter_id, resolve, cdc=MODES[mode])
 
-    catalog = AdapterCatalog({adapter_id: factory_of(adapter_id, entry)
+    def with_secrets(factory):
+        from sova.service.secret_access import with_secret_access
+
+        def build(tenant_id, application_id, revision):
+            probes = secret_probes.get((tenant_id, application_id))
+            if probes is None:
+                return factory(tenant_id, application_id, revision)
+            return with_secret_access(factory, probes)(tenant_id, application_id, revision)
+        return build
+
+    catalog = AdapterCatalog({adapter_id: with_secrets(factory_of(adapter_id, entry))
                               for adapter_id, entry in by_adapter.items()})
 
     def close():

@@ -3,7 +3,10 @@ registered, compiled, approved and admitted through the service, then run by
 a worker - the volume adapter through the effect ledger, every obligation
 measured by the volume probes and signed, the authority advanced only by the
 coordinator. The application is the SQLite-and-uploads board of
-``volume_business``; another tenant's volume lives in a namespace of its own."""
+``volume_business``; another tenant's volume lives in a namespace of its own.
+A contract may also require that no other workload reaches the unit's
+Secrets on the target (SEC-01.1): the worker measures it with tokens it
+issues for those workloads and the API server's own decision."""
 
 import json
 import threading
@@ -154,3 +157,104 @@ def test_a_board_written_throughout_the_sync_is_handed_off(volume_cdc_handoff):
     results = signed_results(h)
     assert results and set(results.values()) == {"pass"}, {
         k: v for k, v in results.items() if v != "pass"}
+
+
+def secret_access(request, volume_business, *, granted):
+    """The board's database password as a Secret beside it, another workload's
+    service account (``billing``), and what the worker is allowed for the
+    check: get that Secret, issue that account's tokens, review access.
+    ``granted`` gives ``billing`` a read of the Secret."""
+    import base64
+
+    from kind_support import kubectl
+
+    from sova.adapters.kubernetes_secret_probes import SecretAccessControls, ServiceAccount
+    from sova.service.secret_access import probes_from
+
+    context, namespace = volume_business["context"], volume_business["namespace"]
+
+    def role(name, rules, subject):
+        return [{"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "Role",
+                 "metadata": {"name": name}, "rules": rules},
+                {"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "RoleBinding",
+                 "metadata": {"name": name},
+                 "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role",
+                             "name": name},
+                 "subjects": [{"kind": "ServiceAccount", "name": subject}]}]
+
+    items = [{"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "board-db"},
+              "data": {"password": base64.b64encode(b"board-secret-test-value").decode()}},
+             {"apiVersion": "v1", "kind": "ServiceAccount", "metadata": {"name": "billing"}}]
+    items += role("sova-secret-check", [
+        {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["board-db"],
+         "verbs": ["get"]},
+        {"apiGroups": [""], "resources": ["serviceaccounts/token"],
+         "resourceNames": ["billing"], "verbs": ["create"]}], "sova-handoff")
+    if granted:
+        items += role("billing-reads-board-db", [
+            {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["board-db"],
+             "verbs": ["get"]}], "billing")
+    volume_business["run"]("apply", "-f", "-", stdin=json.dumps(
+        {"apiVersion": "v1", "kind": "List", "items": items}))
+    reviewer = f"sova-access-review-{namespace}"
+    kubectl(context, "apply", "-f", "-", stdin=json.dumps({
+        "apiVersion": "v1", "kind": "List", "items": [
+            {"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
+             "metadata": {"name": reviewer},
+             "rules": [{"apiGroups": ["authorization.k8s.io"],
+                        "resources": ["subjectaccessreviews"], "verbs": ["create"]}]},
+            {"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRoleBinding",
+             "metadata": {"name": reviewer},
+             "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole",
+                         "name": reviewer},
+             "subjects": [{"kind": "ServiceAccount", "name": "sova-handoff",
+                           "namespace": namespace}]}]}))
+    request.addfinalizer(lambda: kubectl(context, "delete", "clusterrolebinding,clusterrole",
+                                         reviewer, "--wait=false"))
+    ca = base64.b64decode(kubectl(
+        context, "config", "view", "--raw", "--minify", "-o",
+        "jsonpath={.clusters[0].cluster.certificate-authority-data}").strip())
+    token = volume_business["run"]("create", "token", "sova-handoff",
+                                   "--duration=3600s").strip()
+    platform = SecretAccessControls(volume_business["controls"]().registration, ca_pem=ca,
+                                    token_provider=lambda: token)
+    return probes_from(platform, secrets=["board-db"],
+                       others=[ServiceAccount(namespace, "billing")])
+
+
+def _secret_handoff(request, postgres_database, now, volume_business, other_tenant, tmp_path,
+                    *, granted):
+    from sova.service.secret_access import with_secret_access
+
+    data = board_contract()
+    data["spec"]["security"]["required_controls"].append("deny_cross_workload_secret_access")
+    h = prepared(postgres_database, now, tmp_path, data, engine="kubernetes-volume")
+    board = VolumeWorld(volume_business)
+    settings = board_settings(board, volume_business["controls"](), other_tenant)
+    probes = secret_access(request, volume_business, granted=granted)
+    h["worker"] = worker_for(h, with_secret_access(
+        volume_factory(h["adapter_id"], lambda t, a: settings), probes), owner="worker-volume")
+    return {**h, "board": board, "route": settings["route"]}
+
+
+def test_the_target_keeps_the_units_secrets_from_other_workloads(
+        request, postgres_database, now, volume_business, other_tenant, tmp_path):
+    h = _secret_handoff(request, postgres_database, now, volume_business, other_tenant,
+                        tmp_path, granted=False)
+    record = h["worker"].drive(h["tenant"], h["app"], h["unit"])
+    assert record.state == HandoffState.HANDOFF_COMPLETE, (record.reason, record.held_from)
+    assert signed_results(h)["security.deny_cross_workload_secret_access"] == "pass"
+    seen = h["observations"]["security.deny_cross_workload_secret_access"]
+    assert seen["outcome"] == "refused" and "board-secret-test-value" not in json.dumps(seen)
+
+
+def test_another_workload_able_to_read_the_units_secret_holds_the_handoff(
+        request, postgres_database, now, volume_business, other_tenant, tmp_path):
+    h = _secret_handoff(request, postgres_database, now, volume_business, other_tenant,
+                        tmp_path, granted=True)
+    board = h["board"]
+    record = h["worker"].drive(h["tenant"], h["app"], h["unit"])
+    assert record.state == HandoffState.SAFE_HOLD and record.reason == "CONTRACT_BREACH"
+    assert not record.activation_possible
+    assert signed_results(h)["security.deny_cross_workload_secret_access"] == "fail"
+    assert h["route"].get() == "board_src" and board.can_write("source", "app")

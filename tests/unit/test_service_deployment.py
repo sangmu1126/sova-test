@@ -702,3 +702,44 @@ def test_controls_a_units_probes_cannot_measure_fail_rather_than_pass():
     passed, observation = measure({"kind": "target_control_test",
                                    "id": "security.deny_anonymous_data_access"}, {})
     assert not passed and "cannot be measured" in observation["reason"]
+
+
+def test_any_entry_may_have_its_secrets_measured_against_other_workloads(tmp_path):
+    from sova.service.secret_access import CONTROL
+
+    class Probes:
+        def cross_workload_secret_denied(self):
+            return True, {"probe": "cross_workload_secret_denied"}
+
+    seen = []
+
+    def secret_access_for(spec):
+        seen.append(spec)
+        return Probes()
+
+    access = {"registration_file": "unused", "secrets": ["orders-db"],
+              "others": [["orders", "billing"]]}
+    catalog, close = catalog_from(
+        {"version": 1, "applications": [
+            application(tmp_path, secret_access=access),
+            application(tmp_path, application_id="billing")]},
+        route_for=lambda spec: FakeRoute(), secret_access_for=secret_access_for)
+    assert seen == [access]
+    measured = catalog.build("tenant-a", "orders", "postgres-offline-copy", None).measure(
+        {"kind": "target_control_test", "id": CONTROL}, {})
+    assert measured == (True, {"probe": "cross_workload_secret_denied"})
+    unregistered = catalog.build("tenant-a", "billing", "postgres-offline-copy", None).measure(
+        {"kind": "target_control_test", "id": CONTROL}, {})
+    assert unregistered[0] is False  # required but not registered: never a pass
+    close()
+
+
+@pytest.mark.parametrize("spec", [
+    {"registration_file": "x", "secrets": ["s"]},
+    {"registration_file": "x", "secrets": ["s"], "others": [["only-namespace"]]},
+    {"registration_file": "x", "secrets": ["s"], "others": [["a", "b"]], "verify": False}])
+def test_a_secret_access_entry_that_does_not_add_up_is_refused(spec):
+    from sova.service.secret_access import secret_access_probes
+
+    with pytest.raises(ContractError):
+        secret_access_probes(spec)

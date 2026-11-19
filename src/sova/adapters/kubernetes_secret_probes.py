@@ -65,6 +65,10 @@ class ServiceAccount:
 class SecretAccessControls(KubernetesHTTPS):
     """The exact calls the probe makes in the registered namespace."""
 
+    def __init__(self, registration, *, ca_pem, token_provider):
+        super().__init__(registration, ca_pem=ca_pem, token_provider=token_provider)
+        self.ca_pem = ca_pem  # the other accounts' clients pin the same CA
+
     def _path(self, plural, name=None):
         path = f"/api/v1/namespaces/{self.registration.namespace}/{plural}"
         if name is not None:
@@ -106,6 +110,23 @@ class SecretAccessControls(KubernetesHTTPS):
                         "volumes": [{"name": "s", "secret": {"secretName": secret}}]}}
         return self._status("POST", self._path("pods"), {"dryRun": "All"},
                             json.dumps(pod).encode())
+
+    def token_for(self, account, *, seconds=600):
+        """A short-lived token of ``account`` (TokenRequest), for its own
+        attempts: the platform needs ``create`` on ``serviceaccounts/token``
+        for exactly the registered accounts. The token stays in memory."""
+        if not isinstance(account, ServiceAccount) or type(seconds) is not int or not (
+                600 <= seconds <= 3600):
+            raise ContractError("A registered service account and 600 to 3600 seconds")
+        body = json.dumps({"apiVersion": "authentication.k8s.io/v1", "kind": "TokenRequest",
+                           "spec": {"expirationSeconds": seconds}}).encode()
+        answer = self._request(
+            "POST", f"/api/v1/namespaces/{account.namespace}/serviceaccounts/{account.name}/token",
+            {}, timeout=_TIMEOUT, body=body, content_type="application/json", accept=(200, 201))
+        token = (answer.get("status") or {}).get("token")
+        if type(token) is not str or not token:
+            raise ContractError("No token issued for the service account")
+        return token
 
     def access_review(self, account, verb, group, resource, name=None):
         """The API server's decision for ``account`` (with its groups)."""
