@@ -44,7 +44,7 @@ files=['qualification/order_app.py','qualification/order_runtime.py','qualificat
 print(json.dumps({'tenant':c.tenant,'application':c.application,'run':c.run,'side':c.side,'role':c.role,
 'database':c.database,'image_digest':c.image_digest,'expires_at':c.expires_at.isoformat(),
 'source_hashes':{f:hashlib.sha256((pathlib.Path('/app/sova')/f).read_bytes()).hexdigest() for f in files}}))"""
-app=json.loads(call(base+['exec','orders-app','python','-c',program]))
+app=json.loads(call(base+['exec','--user','10001:10001','orders-app','python','-c',program]))
 network=json.loads(call(base+['network','inspect','sova-b0be270e62']))[0]
 print(json.dumps({'containers':containers,'application_projection':app,
  'network':{'id':network.get('Id'),'name':network.get('Name'),'internal':network.get('Internal'),
