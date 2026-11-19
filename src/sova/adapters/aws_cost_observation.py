@@ -84,6 +84,12 @@ class AWSRunCostObservation:
         if len(periods)!=(end-start).days:
             return {**base,"available":False,"reason":"billing_interval_incomplete","estimated":None,
                 "observed_partial_amount":str(amount),"observed_partial_currency":"USD"}
+        if amount == 0 and any(r["Estimated"] for r in totals):
+            # A newly activated tag can return a synthetic estimated zero
+            # before AWS has attributed any usage. Do not call the run free.
+            return {**base,"available":False,"reason":"estimated_zero_not_verified",
+                "estimated":True,"provider_reported_amount":str(amount),
+                "provider_reported_currency":"USD","daily_intervals":len(periods)}
         return {**base,"available":True,"reason":None,"amount":str(amount),"currency":"USD",
             "estimated":any(r["Estimated"] for r in totals),"daily_intervals":len(periods),
             "unattributed_cost_is_not_zero":True,"coverage":"Costs carrying this active RunId only; excludes unallocated/shared/local-VM TCO"}

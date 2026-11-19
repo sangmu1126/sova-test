@@ -59,3 +59,18 @@ def test_billing_pagination_cannot_loop_or_duplicate_amounts():
     client.get_cost_and_usage.return_value={"ResultsByTime":[row()],"NextPageToken":"repeated"}
     with pytest.raises(ContractError,match="Repeated"):
         observer.observe(start=date(2026,11,18),end=date(2026,11,19))
+
+
+def test_estimated_zero_is_unknown_until_attribution_is_verified():
+    _,observer=setup([row(amount='0')])
+    result=observer.observe(start=date(2026,11,18),end=date(2026,11,19))
+    assert result['amount'] is None and result['available'] is False
+    assert result['reason']=='estimated_zero_not_verified'
+    assert result['provider_reported_amount']=='0' and result['estimated'] is True
+
+
+def test_final_zero_is_preserved_as_a_scoped_final_billing_result():
+    _,observer=setup([row(amount='0',Estimated=False)])
+    result=observer.observe(start=date(2026,11,18),end=date(2026,11,19))
+    assert result['amount']=='0' and result['available'] is True
+    assert result['estimated'] is False and result['complete_tco'] is False
