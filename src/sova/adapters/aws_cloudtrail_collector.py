@@ -93,6 +93,8 @@ class AwsCloudTrailCollector:
                         f"{self.collector_id}:cloudtrail:{event['EventId']}", self.tenant_id,
                         self.application_id, classify(event["EventName"]), environment, uid,
                         None, event["EventTime"], cause)
+                    if len(self.seen) >= 10000:
+                        raise ContractError("Partial observation history exceeds its bound; coverage remains unknown")
                     self.feed.record(change, collector_id=self.collector_id)
                     self.seen[event["EventId"]] = change.observed_at
                     recorded.append(change)

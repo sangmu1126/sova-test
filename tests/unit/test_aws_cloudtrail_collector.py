@@ -113,3 +113,13 @@ def test_an_unbounded_or_empty_registration_is_refused():
         AwsCloudTrailCollector(feed, cloudtrail=history, clock=lambda: T0, tenant_id="t",
                                application_id="a", collector_id="c",
                                resources={"b": ("env", "uid")}, delivery_lag=timedelta(0))
+
+
+def test_partial_history_is_bounded_without_advancing_or_dropping_events():
+    history, feed, now = History(), Feed(), [T0]
+    c = collector(history, feed, now)
+    c.seen = {str(i): T0 for i in range(10000)}
+    history.add("PutBucketPolicy", "orders-bucket", T0 - timedelta(minutes=1), event_id="new")
+    with pytest.raises(ContractError, match="bound"):
+        c.poll()
+    assert feed.advanced == [] and feed.recorded == []

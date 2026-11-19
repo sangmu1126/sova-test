@@ -136,6 +136,8 @@ class GcpAuditLogCollector:
                     f"{self.collector_id}:audit:{entry.get('insertId')}", self.tenant_id,
                     self.application_id, classify(payload.get("methodName")), environment,
                     uid, None, parse_time(entry.get("timestamp")), cause)
+                if len(self.seen) >= 10000:
+                    raise ContractError("Partial observation history exceeds its bound; coverage remains unknown")
                 self.feed.record(change, collector_id=self.collector_id)
                 self.seen[key] = change.observed_at
                 recorded.append(change)
