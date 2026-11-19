@@ -62,6 +62,11 @@ def counts(ledger):
             (application,)).fetchone()[0] for table in ("verifier_requests", "verifier_request_approvals", "verifier_trust_events")]
 
 
+def approve(store, request_id, *, approval_id, actor):
+    return store.approve(request_id, approval_id=approval_id, actor=actor,
+                         expected_digest=store.get(request_id)["request_digest"])
+
+
 def test_no_publication_before_approval_and_receipt_retry_never_republishes(ledger):
     _, _, _, store, registry = ledger
     value = request(ledger)
@@ -69,9 +74,9 @@ def test_no_publication_before_approval_and_receipt_retry_never_republishes(ledg
     with pytest.raises(RecordNotFound):
         registry.resolve("test-verifier", "key-1")
     with pytest.raises(ContractError, match="Independent"):
-        store.approve(value.request_id, approval_id="approval-1", actor=value.requested_by)
-    first = store.approve(value.request_id, approval_id="approval-1", actor="test-approver")
-    assert first == store.approve(value.request_id, approval_id="approval-1", actor="test-approver")
+        approve(store, value.request_id, approval_id="approval-1", actor=value.requested_by)
+    first = approve(store, value.request_id, approval_id="approval-1", actor="test-approver")
+    assert first == approve(store, value.request_id, approval_id="approval-1", actor="test-approver")
     assert store.get(value.request_id)["approval"] == first
     assert registry.resolve("test-verifier", "key-1") == value.trust
     assert counts(ledger) == [1, 1, 1]
@@ -95,7 +100,7 @@ def test_expired_request_blocks_even_when_proposed_trust_is_still_current(ledger
     store.create(value)
     time.sleep(2.1)
     with pytest.raises(ContractError, match="expired"):
-        store.approve(value.request_id, approval_id="approval-1", actor="test-approver")
+        approve(store, value.request_id, approval_id="approval-1", actor="test-approver")
     assert counts(ledger) == [1, 0, 0]
 
 
@@ -112,11 +117,11 @@ def test_failure_after_registry_publish_rolls_back_publication_and_receipt(ledge
     with monkeypatch.context() as patch:
         patch.setattr(PostgresVerifierRegistry, "publish", lose_response)
         with pytest.raises(RuntimeError, match="Injected"):
-            store.approve(value.request_id, approval_id="approval-1", actor="test-approver")
+            approve(store, value.request_id, approval_id="approval-1", actor="test-approver")
     with pytest.raises(RecordNotFound):
         registry.resolve("test-verifier", "key-1")
     assert counts(ledger) == [1, 0, 0]
-    store.approve(value.request_id, approval_id="approval-1", actor="test-approver")
+    approve(store, value.request_id, approval_id="approval-1", actor="test-approver")
     assert counts(ledger) == [1, 1, 1]
 
 
@@ -126,16 +131,16 @@ def test_two_competing_requests_cannot_both_advance_the_same_revision(ledger):
         store.create(request(ledger, request_id=name))
     barrier = threading.Barrier(2)
 
-    def approve(name):
+    def concurrent_approve(name):
         barrier.wait(timeout=5)
         try:
-            store.approve(name, approval_id="approve-" + name, actor="test-approver")
+            approve(store, name, approval_id="approve-" + name, actor="test-approver")
             return "recorded"
         except RepositoryConflict:
             return "revision-conflict"
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        values = list(executor.map(approve, ("request-a", "request-b")))
+        values = list(executor.map(concurrent_approve, ("request-a", "request-b")))
     assert sorted(values) == ["recorded", "revision-conflict"]
     assert counts(ledger) == [2, 1, 1]
 
@@ -144,9 +149,9 @@ def test_reused_approval_id_rolls_back_the_second_key_publication(ledger):
     _, _, _, store, registry = ledger
     for name in ("a", "b"):
         store.create(request(ledger, request_id="request-" + name, key="key-" + name))
-    store.approve("request-a", approval_id="single-approval-id", actor="test-approver")
+    approve(store, "request-a", approval_id="single-approval-id", actor="test-approver")
     with pytest.raises(RepositoryConflict):
-        store.approve("request-b", approval_id="single-approval-id", actor="test-approver")
+        approve(store, "request-b", approval_id="single-approval-id", actor="test-approver")
     with pytest.raises(RecordNotFound):
         registry.resolve("test-verifier", "key-b")
     assert counts(ledger) == [2, 1, 1]
@@ -160,7 +165,7 @@ def test_other_tenant_and_other_application_cannot_read_or_approve(ledger):
         with pytest.raises(RecordNotFound):
             other.get("request-1")
         with pytest.raises(RecordNotFound):
-            other.approve("request-1", approval_id="approval-1", actor="test-approver")
+            approve(other, "request-1", approval_id="approval-1", actor="test-approver")
     with connect() as conn:
         conn.execute("SELECT set_config('sova.tenant_id',%s,true)", ("other-tenant",))
         assert conn.execute("SELECT count(*) FROM sova_control.verifier_requests").fetchone()[0] == 0
@@ -177,3 +182,11 @@ def test_runtime_cannot_delete_or_rewrite_request_history(ledger):
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
                     with conn.transaction(force_rollback=True):
                         conn.execute(statement)
+
+
+def test_approval_cannot_publish_a_key_other_than_the_reviewed_request_digest(ledger):
+    _, _, _, store, _ = ledger
+    store.create(request(ledger))
+    with pytest.raises(RepositoryConflict, match="review"):
+        store.approve("request-1", approval_id="approval-1", actor="test-approver", expected_digest="0" * 64)
+    assert counts(ledger) == [1, 0, 0]

@@ -82,7 +82,7 @@ def test_existing_business_roles_are_not_automatically_trust_administrators(role
     with pytest.raises(Forbidden):
         plane.request_verifier_trust(principal, "orders", "request-1", body())
     with pytest.raises(Forbidden):
-        plane.approve_verifier_trust(principal, "orders", "request-1", {"approval_id": "approval-1"})
+        plane.approve_verifier_trust(principal, "orders", "request-1", {"approval_id": "approval-1", "request_digest": "a" * 64})
 
 
 def test_self_approval_is_forbidden_even_if_both_security_roles_were_assigned(monkeypatch):
@@ -98,7 +98,7 @@ def test_self_approval_is_forbidden_even_if_both_security_roles_were_assigned(mo
     monkeypatch.setattr(plane, "_trust_requests", lambda tenant, application: Store())
     principal = Principal("requester", "tenant-a", frozenset({Role.TRUST_REQUESTER, Role.TRUST_APPROVER}))
     with pytest.raises(Forbidden):
-        plane.approve_verifier_trust(principal, "orders", "request-1", {"approval_id": "approval-1"})
+        plane.approve_verifier_trust(principal, "orders", "request-1", {"approval_id": "approval-1", "request_digest": "a" * 64})
 
 
 def test_service_approver_identity_is_passed_from_the_principal(monkeypatch):
@@ -115,8 +115,8 @@ def test_service_approver_identity_is_passed_from_the_principal(monkeypatch):
 
     monkeypatch.setattr(plane, "_trust_requests", lambda tenant, application: Store())
     principal = Principal("verified-security-approver", "tenant-a", frozenset({Role.TRUST_APPROVER}))
-    plane.approve_verifier_trust(principal, "orders", "request-1", {"approval_id": "approval-1"})
-    assert calls == [{"approval_id": "approval-1", "actor": principal.subject}]
+    plane.approve_verifier_trust(principal, "orders", "request-1", {"approval_id": "approval-1", "request_digest": "a" * 64})
+    assert calls == [{"approval_id": "approval-1", "actor": principal.subject, "expected_digest": "a" * 64}]
     with pytest.raises(ContractError):
         plane.approve_verifier_trust(principal, "orders", "request-1",
                                      {"approval_id": "approval-1", "approved_by": "injected"})

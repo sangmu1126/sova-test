@@ -11,7 +11,7 @@ import hashlib
 from psycopg.types.json import Jsonb
 
 from sova.adapters.postgres_verifier_registry import PostgresVerifierRegistry
-from sova.domain.contracts import ContractError, canonical_json, identifier, utc
+from sova.domain.contracts import ContractError, canonical_json, digest, identifier, utc
 from sova.domain.trust_requests import VerifierTrustRequest
 from sova.domain.verifier_registry import VerifierTrustChange
 from sova.ports.plans import RepositoryConflict, RecordNotFound
@@ -126,12 +126,15 @@ class PostgresTrustRequests:
         return VerifierTrustChange(request.tenant_id, request.application_id, request.expected_revision + 1,
             request.trust, request.requested_by, actor, request.reason, now, until)
 
-    def approve(self, request_id, *, approval_id, actor):
+    def approve(self, request_id, *, approval_id, actor, expected_digest):
+        digest(expected_digest)
         for value in (request_id, approval_id, actor):
             identifier(value)
         with self.session.transaction() as conn:
             self._lock(conn, request_id)
             request = self._request(conn, request_id)
+            if request.fingerprint != expected_digest:
+                raise RepositoryConflict("Verifier request changed; review the current public key")
             existing = self._approval(conn, request)
             if existing is not None:
                 if (existing["approval_id"], existing["approved_by"]) != (approval_id, actor):

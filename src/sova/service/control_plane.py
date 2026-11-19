@@ -233,12 +233,13 @@ class ControlPlane:
 
     def approve_verifier_trust(self, principal, application, request_id, document):
         tenant = self._require(principal, Role.TRUST_APPROVER)
-        if type(document) is not dict or set(document) != {"approval_id"}:
-            raise ContractError("Body is {approval_id}; approver and publication time are server-derived")
+        if type(document) is not dict or set(document) != {"approval_id", "request_digest"}:
+            raise ContractError("Body is {approval_id, request_digest}; approver and time are server-derived")
         store = self._trust_requests(tenant, application)
         if store.get(request_id)["request"]["requested_by"] == principal.subject:
             raise Forbidden("The verifier requester cannot approve this key")
-        return store.approve(request_id, approval_id=document["approval_id"], actor=principal.subject)
+        return store.approve(request_id, approval_id=document["approval_id"], actor=principal.subject,
+                             expected_digest=document["request_digest"])
 
     def attest(self, principal, envelope_document):
         """Ingest a signed registry attestation; its signature and the signer's
