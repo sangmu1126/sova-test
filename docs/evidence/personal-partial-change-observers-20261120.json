@@ -1,0 +1,55 @@
+{
+  "started_at": "2026-11-19T22:49:04.084580+00:00",
+  "scratch_database": "q_catalog_c0210dce9098",
+  "checks": {
+    "baseline_is_not_coverage": true,
+    "actual_schema_change_observed": true,
+    "actual_acl_change_observed": true,
+    "reverted_change_does_not_become_false_coverage": true,
+    "actual_registered_aws_write_history_observed": true,
+    "repeated_audit_lookup_does_not_duplicate_observations": true,
+    "no_partial_collector_advanced_coverage": true
+  },
+  "migration_complete": false,
+  "coverage_complete": false,
+  "watermark_advanced": false,
+  "scratch_retained": true,
+  "catalog_observations": [
+    {
+      "id": "personal-catalog-observer:q_catalog_c0210dce9098:schema:d01aa349293c68c7:2026-11-19T22:49:05.294516+00:00",
+      "kind": "schema",
+      "environment": "aws-ec2-b0be270e62",
+      "subject": "scratch-catalog-only",
+      "observed_at": "2026-11-19T22:49:05.294516+00:00"
+    },
+    {
+      "id": "personal-catalog-observer:q_catalog_c0210dce9098:policy:d91f0c9c8e98fcd9:2026-11-19T22:49:05.851989+00:00",
+      "kind": "policy",
+      "environment": "aws-ec2-b0be270e62",
+      "subject": "scratch-catalog-only",
+      "observed_at": "2026-11-19T22:49:05.851989+00:00"
+    }
+  ],
+  "cloud_observations": [
+    {
+      "id": "personal-cloudtrail-observer:cloudtrail:efdaa13a-239e-44d4-a4fd-399318892ff0",
+      "kind": "unclassified",
+      "environment": "aws-ec2-b0be270e62",
+      "subject": "i-04946f0e0c0548c3b",
+      "observed_at": "2026-11-19T18:24:35+00:00"
+    },
+    {
+      "id": "personal-cloudtrail-observer:cloudtrail:a7e77769-51f3-496c-9da9-d85a85cf05a8",
+      "kind": "unclassified",
+      "environment": "aws-ec2-b0be270e62",
+      "subject": "i-04946f0e0c0548c3b",
+      "observed_at": "2026-11-19T18:24:15+00:00"
+    }
+  ],
+  "passed": true,
+  "original_unchanged": true,
+  "completed_at": "2026-11-19T22:49:09.495496+00:00",
+  "driver_sha256": "97bcb48e7a6e4a3d5d4b3f2179efb9af185920cf488250c757e40355d39cbcd9",
+  "scope": "Actual new AWS scratch DB and registered owned EC2 CloudTrail history; partial observations, not an exhaustive change barrier",
+  "raw_receipt_sha256": "838d4403e93164c77e247c2c52056e95683c629bfd6360213861b549d3885098"
+}
