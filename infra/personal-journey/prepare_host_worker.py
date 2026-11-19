@@ -53,7 +53,8 @@ def main():
     (args.output / "kubernetes-registration.json").write_text(json.dumps(document))
     databases, passwords = {}, {}
     for name, side in (("source_orders", "source"), ("target_orders", "target"),
-                       ("scratch_orders", "target"), ("other_target", "target")):
+                       ("scratch_orders", "target"), ("other_target", "target"),
+                       ("scratch_source", "source"), ("other_source", "source")):
         current = inputs["environments"][side]
         dsn = make_conninfo(host=current["database_host"], hostaddr="127.0.0.1", port=links["ports"][side + "_db"],
             dbname=name, user="postgres", password=(args.inputs / ("client/" + side + "-admin.password")).read_text(),
@@ -75,16 +76,23 @@ def main():
             for side in ("source", "target")}, "samples": 3,
         "probe": {"url": f"https://127.0.0.1:{entry['port']}/healthz", "header": "X-Sova-Side",
             "values": {"source_orders": "source", "target_orders": "target"}, "ca_file": str(args.inputs / "pki/ca.pem")}}
-    catalog = {"version": 1, "applications": [{"tenant_id": inputs["tenant_id"], "application_id": inputs["application_id"],
+    common = {"tenant_id": inputs["tenant_id"], "application_id": inputs["application_id"],
         "adapter_id": "pg-personal-offline-v1", "engine": "postgresql", "mode": "offline_copy", "databases": databases,
-        "database_role_password_files": passwords, "source_db": "source_orders", "target_db": "target_orders",
-        "scratch_db": "scratch_orders", "other_db": "other_target", "app_role": "orders_app",
+        "database_role_password_files": passwords, "app_role": "orders_app",
         "writer_roles": ["orders_app", "orders_batch"], "tables": [list(row) for row in TABLES],
-        "schema_sql_file": str(args.output / "schema.sql"), "probe_insert": PROBE_INSERT, "route": route}]}
-    from sova.service.catalog import catalog_from
+        "schema_sql_file": str(args.output / "schema.sql"), "probe_insert": PROBE_INSERT, "route": route}
+    from sova.service.directional_catalog import catalog_v2, source_identity
+
+    forward = {**common, "environment_pair": {"source": "aws-ec2-b0be270e62", "target": "local-rke2-b0be270e62"},
+        "source_db": "source_orders", "target_db": "target_orders", "scratch_db": "scratch_orders", "other_db": "other_target"}
+    reverse = {**common, "environment_pair": {"source": "local-rke2-b0be270e62", "target": "aws-ec2-b0be270e62"},
+        "source_db": "target_orders", "target_db": "source_orders", "scratch_db": "scratch_source", "other_db": "other_source"}
+    implementation = source_identity()
+    (args.output / "implementation-identity.json").write_text(json.dumps(implementation, indent=2))
+    catalog = {"version": 2, "implementation_digest": implementation["digest"], "applications": [forward, reverse]}
 
     # Validate using the same parser the real worker uses, before publishing env.
-    _, close = catalog_from(catalog)
+    _, close = catalog_v2(catalog)
     close()
     (args.output / "execution.json").write_text(json.dumps(catalog))
     (args.output / "evidence.key").write_text(secrets.token_hex(32))
@@ -96,7 +104,8 @@ def main():
         "SOVA_EXECUTION_FILE": str(args.output / "execution.json")}
     (args.output / "environment.json").write_text(json.dumps(environment, indent=2))
     print(json.dumps({"database_connections_verified": len(databases), "route_token_seconds": 600,
-        "identity": "actual host process", "automatic_remote_quiescence": False, "admitted": False}))
+        "identity": "actual host process", "catalog_version": 2, "directions": 2,
+        "automatic_remote_quiescence": False, "admitted": False}))
 
 
 if __name__ == "__main__":
