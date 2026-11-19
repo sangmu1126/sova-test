@@ -28,6 +28,8 @@ from postgres_world import PostgresWorld
 from sova.adapters.kubernetes.handoff_controls import KubernetesHandoffControls, KubernetesServiceRoute
 from sova.adapters.kubernetes.gateway_route import http_side_observer
 from sova.adapters.postgres_digest import table_digest
+from sova.adapters.postgres_connections import ReusedConnections
+from sova.qualification.order_schema import TABLES, SCHEMA
 from sova.domain.contracts import ContractError, EffectStatus
 from sova.domain.discovery import KubernetesReadRegistration
 
@@ -99,6 +101,7 @@ def main():
     report["original_before"] = before
     ssh = None
     business = None
+    admin_pool = None
     created = []
     try:
         for side in ("source", "target"):
@@ -111,10 +114,19 @@ def main():
                 conn.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(sql.Identifier(db)))
                 if side == "source":
                     conn.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(sql.Identifier(db), sql.Identifier(app)))
+        admin_pool = ReusedConnections(lambda db: connect(names_to_side[db], db))
         business = {"names": names, "app": app, "batch": batch,
-            "connect": lambda db: connect(names_to_side[db], db),
+            "connect": admin_pool,
             "connect_as": lambda db, role: connect(names_to_side[db], db, role)}
         prepare(names, app, batch, business["connect"], business["connect_as"], schema_on=tuple(names.values()))
+        report["trial_scope"] = {"tables": [list(pair) for pair in TABLES],
+            "schema_sha256": hashlib.sha256(SCHEMA.encode()).hexdigest(), "writer_paths": 2,
+            "admin_connection_reuse": True, "source_rows": {}, "target_rows_after_new_write": {}}
+        with business["connect"](names["src"]) as conn:
+            report["trial_scope"]["source_rows"] = {
+                table: conn.execute(sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))).fetchone()[0]
+                for table, _ in TABLES}
+            report["trial_scope"]["max_prepared_transactions"] = int(conn.execute("SHOW max_prepared_transactions").fetchone()[0])
         labels = {"sova.run": inputs["run_id"], "sova.qualification": name}
         objects = [
             {"apiVersion": "v1", "kind": "Service", "metadata": {"name": name, "namespace": namespace, "labels": labels},
@@ -194,8 +206,13 @@ def main():
             # A new instance cannot rely on an in-memory success flag.
             fresh = world.adapter() if direction == "forward" else world.reverse_adapter()
             assert readback(fresh, action) == EffectStatus.APPLIED
+            once = world.state()
+            apply(fresh, action)
+            assert world.state() == once
+            assert readback(fresh, action) == EffectStatus.APPLIED
             report["steps"].append({"direction": direction, "action": action, "status": str(status),
-                "elapsed_ms": round((time.monotonic()-started)*1000, 3), "fresh_instance_readback": True})
+                "elapsed_ms": round((time.monotonic()-started)*1000, 3), "fresh_instance_readback": True,
+                "repeated_apply_same_observed_state": True})
 
         for action in SEQUENCES["offline-copy"]:
             run_step(world.adapter(), action, "forward")
@@ -218,6 +235,10 @@ def main():
             conn.execute("INSERT INTO work_items VALUES (51,51,'done')")
             conn.execute("INSERT INTO idempotency_results VALUES ('after-target','after-target','confirmed')")
             conn.execute("SELECT nextval('order_number_seq')")
+        with business["connect"](names["tgt"]) as conn:
+            report["trial_scope"]["target_rows_after_new_write"] = {
+                table: conn.execute(sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))).fetchone()[0]
+                for table, _ in TABLES}
         for action in ("verify_return_target", "start_sync", "pause_admission", "fence_source_writes", "apply_final_changes", "verify_final_state", "activate_target", "commit_route"):
             run_step(world.reverse_adapter(), action, "reverse")
         assert world.content("source") == world.content("target")
@@ -232,6 +253,8 @@ def main():
         if ssh is not None:
             ssh.terminate()
             ssh.wait(timeout=10)
+        if admin_pool is not None:
+            admin_pool.close()
         report["created_objects"] = created
         # Trial writers are disabled even on failure, without touching original roles.
         for side in ("source", "target"):
