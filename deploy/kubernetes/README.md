@@ -116,7 +116,7 @@ rules:
   - root 파일 시스템은 읽기 전용이다.
   - 서비스 계정 token을 마운트하지 않는다.
   - 인증된 요청이 10분 동안 없거나, 한 시간이 지나면 스스로 끝난다. 끝난 Pod는 같은 단위의 다음 agent가 지운다.
-- **agent의 수명.** 워커는 한 실행에서 이어지는 단계 동안 adapter와 probe의 읽기 agent를 각각 남겨 두고 다음 단계에서 다시 쓴다. 관리형 클러스터에서는 agent 하나를 띄우는 데 몇 초가 걸리기 때문이다. 쓰기 agent와 ReadWriteOncePod claim의 agent는 매번 지운다. 실행이 끝나면 남긴 agent를 모두 지운다. 활성화 직전에는 목적지 claim을 마운트한 agent를 모두 지운다. 단일 노드 볼륨을 다른 노드의 agent가 잡고 있으면 앱이 볼륨을 붙이지 못하기 때문이다. 새 권한은 필요 없다(Pod 생성·삭제·조회는 이미 있음).
+- **agent의 수명.** 워커는 한 실행에서 이어지는 단계 동안 adapter와 probe의 읽기 agent를 각각 남겨 두고 다음 단계에서 다시 쓴다. 관리형 클러스터에서는 agent 하나를 띄우는 데 몇 초가 걸리기 때문이다. 쓰기 agent와 ReadWriteOncePod claim의 agent는 매번 지운다. 실행이 끝나면 남긴 agent를 모두 지운다. 활성화 직전에는 목적지 claim을 마운트한 agent를 모두 지운다. 단일 노드 볼륨을 다른 노드의 agent가 잡고 있으면 앱이 볼륨을 붙이지 못하기 때문이다. 남긴 agent도 Pod 자리(노드의 Pod 한도, namespace의 Pod quota)를 차지한다. 새 agent가 자리가 없어 스케줄되지 못하거나 quota로 거부되면, 워커는 남긴 쉬는 agent를 모두 지운다. 활성화 직전에도 앱 Pod를 위해 그렇게 한다. Pod quota를 둔 namespace에서는 앱 Pod 수에 agent 두세 개분의 여유를 더해 두는 것이 좋다. 새 권한은 필요 없다(Pod 생성·삭제·조회는 이미 있음).
 - **이미지 가져오기.** 이미지가 노드에 없으면 받아 와야 한다. 사설 레지스트리를 쓰는 곳에서는 같은 digest를 미러링해 `agent_image`로 지정한다.
 - **agent 키.** 워커의 Secret에 hex로 넣고 `agent_key_file`로 가리킨다. 어느 워커 replica든 같은 키로 agent와 통신한다.
 - **NetworkPolicy.** API 서버의 Pod 프록시는 agent Pod의 8080 포트로 들어온다. 애플리케이션 namespace에 기본 거부 정책이 있다면, `app.kubernetes.io/managed-by: sova` Pod의 8080 수신을 허용해야 한다.
