@@ -42,15 +42,27 @@ def main():
     p.add_argument("--app-image-directory", required=True, type=Path)
     p.add_argument("--postgres-image-directory", required=True, type=Path)
     p.add_argument("--artifacts", required=True, type=Path)
+    p.add_argument("--proxy-image-directory", type=Path)
+    p.add_argument("--existing-namespace-uid")
     args = p.parse_args()
     if not re.fullmatch("[a-z0-9]{8,12}", args.run_id):
         raise ValueError("Fresh run ID required")
     args.artifacts.mkdir(mode=0o700, exist_ok=False)
     identity()
-    if guest(KUBECTL, "--kubeconfig", CONFIG, "get", "ns", "sj-" + args.run_id, "--ignore-not-found").strip():
-        raise ValueError("Workload namespace already exists; do not silently alter an earlier run")
+    found = guest(KUBECTL, "--kubeconfig", CONFIG, "get", "ns", "sj-" + args.run_id,
+                  "--ignore-not-found", "-o", "json")
+    if found.strip():
+        existing = json.loads(found)["metadata"]
+        if (existing["uid"] != args.existing_namespace_uid
+                or existing.get("labels", {}).get("sova.run") != args.run_id):
+            raise ValueError("Namespace exists without an explicit matching UID/owner; refuse reuse")
+    elif args.existing_namespace_uid:
+        raise ValueError("Expected existing namespace disappeared")
     images = {}
-    for kind, directory in (("app", args.app_image_directory), ("db", args.postgres_image_directory)):
+    inputs = [("app", args.app_image_directory), ("db", args.postgres_image_directory)]
+    if args.proxy_image_directory:
+        inputs.append(("proxy", args.proxy_image_directory))
+    for kind, directory in inputs:
         proof = artifact(directory)
         remote = "/tmp/sova-" + args.run_id + "-" + kind + ".oci.tar"
         subprocess.run(["limactl", "copy", str(directory / "canary.oci.tar"), VM + ":" + remote],
@@ -73,7 +85,7 @@ def main():
         images[kind] = {"reference": reference, "manifest_digest": proof["manifest_digest"],
                         "config_digest": proof["config_digest"], "archive_sha256": proof["archive_sha256"]}
     result = {"run_id": args.run_id, "cluster_uid": CLUSTER, "images": images,
-              "workload_deployed": False, "operational_qualification": False}
+              "workload_deployment_performed": False, "operational_qualification": False}
     (args.artifacts / "target-images.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps({"run_id": args.run_id, "exact_images_imported": len(images), "workload_deployed": False}))
 
