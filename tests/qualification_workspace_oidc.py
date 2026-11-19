@@ -32,7 +32,7 @@ def docker(*args):
 
 
 @contextmanager
-def identity_provider(h, *, startup_seconds=100):
+def identity_provider(h, *, startup_seconds=100, security_roles=False):
     if type(startup_seconds) is not int or not 30 <= startup_seconds <= 300:
         raise ValueError("Explicit bounded local IdP cold-start budget required")
     image = os.environ.get("SOVA_TEST_JOURNEY_KEYCLOAK_IMAGE")
@@ -101,15 +101,18 @@ def identity_provider(h, *, startup_seconds=100):
             "redirectUris": [h.origin + "/workspace/callback"], "webOrigins": [h.origin],
             "attributes": {"pkce.code.challenge.method": "S256"}, "protocolMappers": mappers})
         roles = ("registrar", "attestor", "planner", "operator", "approver", "auditor")
-        for role in roles:
+        security = ("trust_requester", "trust_approver") if security_roles else ()
+        for role in (*roles, *security):
             server.call("POST", f"/{realm}/roles", {"name": "sova:" + role})
         users = {}
-        for name, granted in (("planner", roles), ("approver", ("approver", "auditor"))):
+        for name, granted in (("planner", (*roles, *(("trust_requester",) if security_roles else ()))),
+                              ("approver", ("approver", "auditor", *(("trust_approver",) if security_roles else ())))):
             secret = secrets.token_urlsafe(24)
             uid = server.user(realm, name, secret)
             mapped = [server.call("GET", f"/{realm}/roles/sova:{r}") for r in granted]
             server.call("POST", f"/{realm}/users/{uid}/role-mappings/realm", mapped)
             users[name] = {"username": name, "password": secret, "subject": uid}
+        report["dedicated_security_roles"] = security_roles
         issuer = origin + "/realms/" + realm
         h.environment.update(SOVA_OIDC_ISSUER=issuer,
             SOVA_OIDC_JWKS_URL=issuer + "/protocol/openid-connect/certs",
