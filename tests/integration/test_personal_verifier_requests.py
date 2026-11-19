@@ -32,7 +32,8 @@ def ledger():
     file = Path(os.environ["SOVA_PERSONAL_CONTROL_RUNTIME_DSN_FILE"])
     assert file.is_absolute() and file.stat().st_mode & 0o077 == 0
     dsn = file.read_text()
-    connect = lambda: psycopg.connect(dsn, connect_timeout=5)
+    def connect():
+        return psycopg.connect(dsn, connect_timeout=5)
     with connect() as conn:
         assert conn.execute("SELECT current_database(),current_user").fetchone() == (
             "sj_control_b0be270e62", "sj_runtime_b0be270e62")
