@@ -238,12 +238,15 @@ print(json.dumps(result))
                     continue
                 if actual["Config"].get("Labels", {}).get("sova.qualification") != run:
                     raise RuntimeError("Diagnostic target ownership changed")
-                state = actual.get("State", {})
-                projection = {key: state.get(key) for key in ("Status", "Running", "ExitCode", "OOMKilled", "StartedAt", "FinishedAt")}
-                (args.artifacts / (name + "-state.json")).write_text(json.dumps(projection, indent=2)+"\n")
-                logs = subprocess.run(["docker", "logs", "--tail", "100", name],
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
-                (args.artifacts / (name + "-private.log")).write_bytes(logs.stdout[-65536:])
+                try:
+                    state = actual.get("State", {})
+                    projection = {key: state.get(key) for key in ("Status", "Running", "ExitCode", "OOMKilled", "StartedAt", "FinishedAt")}
+                    (args.artifacts / (name + "-state.json")).write_text(json.dumps(projection, indent=2)+"\n")
+                    logs = subprocess.run(["docker", "logs", "--tail", "100", name],
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+                    (args.artifacts / (name + "-private.log")).write_bytes(logs.stdout[-65536:])
+                except (OSError, subprocess.TimeoutExpired) as error:
+                    report.setdefault("diagnostic_failures", []).append({"container": name, "kind": type(error).__name__})
         # Only exact names whose labels prove this disposable run owns them.
         for name in reversed(attempted):
             try:
