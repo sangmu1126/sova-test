@@ -250,10 +250,10 @@ class ObjectStoreProbes:
                         "source": {k: source[k] for k in ("attempt", "access_view")}}
 
     # -- content -----------------------------------------------------------------
-    def _keys(self, side, prefix):
+    def _keys(self, side, prefix, bucket=None):
         s, keys = self._side(side), []
-        pages = s.client.get_paginator("list_objects_v2").paginate(Bucket=s.bucket,
-                                                                    Prefix=prefix)
+        pages = s.client.get_paginator("list_objects_v2").paginate(
+            Bucket=bucket or s.bucket, Prefix=prefix)
         for page in pages:
             keys += [o["Key"] for o in page.get("Contents", ())]
             if len(keys) > self.max_objects:
@@ -276,14 +276,8 @@ class ObjectStoreProbes:
     def _inventory(self, side, prefix, bucket=None):
         s = self._side(side)
         bucket = bucket or s.bucket
-        pages = s.client.get_paginator("list_objects_v2").paginate(Bucket=bucket,
-                                                                    Prefix=prefix)
-        keys = []
-        for page in pages:
-            keys += [o["Key"] for o in page.get("Contents", ())]
-            if len(keys) > self.max_objects:
-                raise ContractError("More objects than the probe is bounded to read")
-        return {key: self._fingerprint(s.client, bucket, key) for key in sorted(keys)}
+        return {key: self._fingerprint(s.client, bucket, key)
+                for key in self._keys(side, prefix, bucket)}
 
     @staticmethod
     def _digest(inventory):

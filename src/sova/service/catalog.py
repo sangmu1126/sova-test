@@ -17,8 +17,8 @@ execution file holds only their paths.
                                                                #   replication
         "databases": {"<db>": {"dsn_file": "<admin connection, no database>"}, ...},
         "zone_of": {"<db>": "<zone label>"},                   # MySQL: where each runs
-        "tls_endpoints": {"<db>": {"host": "...", "port": 5432,  # PostgreSQL, optional:
-                                   "server_name": "...",         #   what transport
+        "tls_endpoints": {"<db>": {"host": "...", "port": 5432,  # optional: what
+                                   "server_name": "...",         #   transport
                                    "ca_file": "..."}},           #   refusals ask
         "role_password_files": {"<role>": "<path>"},          # optional
         "source_db": "...", "target_db": "...", "scratch_db": "...", "other_db": "...",
@@ -151,13 +151,14 @@ def application_resolver(app, *, route_for=kubernetes_route):
 
 
 def _tls_endpoints(spec, databases, engine, *, sides):
-    """Each side's registered TLS endpoint (PostgreSQL), keyed by side."""
+    """Each side's registered TLS endpoint, keyed by side; the protocol's
+    step before the handshake follows the engine."""
     from sova.adapters.tls_refusal import TlsEndpoint
 
     if spec is None:
         return {}
-    if engine != "postgresql" or type(spec) is not dict or set(spec) - set(databases):
-        raise ContractError("tls_endpoints: PostgreSQL databases of this entry only")
+    if type(spec) is not dict or set(spec) - set(databases):
+        raise ContractError("tls_endpoints: databases of this entry only")
     endpoints = {}
     for side, database in sides.items():
         entry = spec.get(database)
@@ -165,8 +166,9 @@ def _tls_endpoints(spec, databases, engine, *, sides):
             continue
         if type(entry) is not dict or set(entry) != {"host", "port", "server_name", "ca_file"}:
             raise ContractError("A TLS endpoint: host, port, server_name and ca_file")
-        endpoints[side] = TlsEndpoint(entry["host"], entry["port"], entry["server_name"],
-                                      Path(entry["ca_file"]).read_bytes(), preamble="postgres")
+        endpoints[side] = TlsEndpoint(
+            entry["host"], entry["port"], entry["server_name"], ca_file=entry["ca_file"],
+            preamble="mysql" if engine == "mysql" else "postgres")
     return endpoints
 
 

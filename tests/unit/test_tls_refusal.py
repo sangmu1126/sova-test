@@ -92,9 +92,26 @@ class Server:
         except (ssl.SSLError, OSError):
             pass
 
+    def _mysql(self, connection):
+        flags = 0x200 | 0x8000 | 0x80000 | (0 if self.mode == "mysql-no-tls" else 0x800)
+        greeting = (b"\x0a8.4.0\0" + struct.pack("<I", 7) + b"saltsalt\0"
+                    + struct.pack("<HBHHB", flags & 0xFFFF, 255, 2, flags >> 16, 21)
+                    + b"\0" * 10 + b"saltsaltsalt\0" + b"mysql_native_password\0")
+        connection.sendall(len(greeting).to_bytes(3, "little") + b"\0" + greeting)
+        head = connection.recv(4)
+        body = connection.recv(int.from_bytes(head[:3], "little"))
+        self.received.append(body)
+        if struct.unpack("<I", body[:4])[0] & 0x800:
+            return self._tls(connection)
+        code = 3159 if self.mode == "mysql-required" else 1045
+        error = b"\xff" + struct.pack("<H", code) + b"#HY000refused"
+        connection.sendall(len(error).to_bytes(3, "little") + b"\x02" + error)
+
     def _one(self, connection):
         connection.settimeout(3)
         try:
+            if self.mode.startswith("mysql"):
+                return self._mysql(connection)
             if self.mode == "postgres-hostssl" or self.mode == "postgres-trust":
                 head = connection.recv(8)
                 self.received.append(head)
@@ -231,7 +248,7 @@ def test_an_endpoint_registration_is_complete():
     for bad in (dict(host="", port=1, server_name="x", ca_pem=ca),
                 dict(host="h", port=0, server_name="x", ca_pem=ca),
                 dict(host="h", port=1, server_name="x", ca_pem=b"not a cert"),
-                dict(host="h", port=1, server_name="x", ca_pem=ca, preamble="mysql")):
+                dict(host="h", port=1, server_name="x", ca_pem=ca, preamble="smtp")):
         with pytest.raises(ContractError):
             TlsEndpoint(**bad)
 
@@ -307,3 +324,28 @@ def test_each_units_probes_send_their_own_protocols_first_message(tls, serve, mo
     assert observation["side"] == "target"
     assert server.received == [getattr(refusal, hello)]
     assert not probes_class.transport_refusals(SimpleNamespace(tls={}), "target")[0]
+
+
+def test_mysql_tls_after_the_greeting_and_its_secure_transport_rule(tls, serve):
+    from sova.adapters.tls_refusal import mysql_plaintext
+
+    strict = serve("mysql-required")
+    passed, observation = transport_refusals(strict.endpoint(tls[0], preamble="mysql"),
+                                             plaintext=mysql_plaintext("orders_app"))
+    assert passed, observation
+    assert observation["checks"]["plaintext"]["reason"] == "server_requires_tls"
+    login = [b for b in strict.received if b"orders_app" in b][0]
+    assert login.endswith(b"orders_app\0\0mysql_native_password\0")  # no password
+    passed, observation = transport_refusals(serve("mysql-optional").endpoint(
+        tls[0], preamble="mysql"), plaintext=mysql_plaintext("orders_app"))
+    assert not passed and observation["accepted"] == ["plaintext"]
+    assert observation["checks"]["plaintext"]["reason"] == "authenticated_in_the_clear"
+
+
+def test_a_mysql_server_offering_no_tls_is_not_verified(tls, serve):
+    from sova.adapters.tls_refusal import mysql_plaintext
+
+    passed, observation = transport_refusals(serve("mysql-no-tls").endpoint(
+        tls[0], preamble="mysql"), plaintext=mysql_plaintext("orders_app"))
+    assert not passed and observation["outcome"] == "identity_not_verified"
+    assert observation["checks"]["positive_before"]["reason"] == "tls_unavailable"

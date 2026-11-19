@@ -70,7 +70,6 @@ def namespaces():
 
         def apply(document):
             kubectl(context, "-n", inside, "apply", "-f", "-", stdin=json.dumps(document))
-            time.sleep(5)  # the network plugin programs a new policy within seconds
 
         def remove():
             kubectl(context, "-n", inside, "delete", "networkpolicy", "--all")
@@ -93,9 +92,17 @@ def test_without_a_policy_any_namespace_reaches_the_endpoint(namespaces):
 
 
 def test_a_policy_admitting_only_the_applications_clients_is_enforced(namespaces):
+    """The plugin programs a new policy asynchronously - within seconds on an
+    idle node, longer on a loaded one (18th regression): the check, taken
+    once each time, must come to deny within a minute."""
     namespaces["apply"](policy([{"podSelector": {"matchLabels": {"role": "orders-client"}}}]))
     try:
-        passed, observation = namespaces["check"].measure()
+        deadline = time.monotonic() + 60
+        while True:
+            passed, observation = namespaces["check"].measure()
+            if passed or time.monotonic() > deadline:
+                break
+            time.sleep(3)
     finally:
         namespaces["remove"]()
     assert passed, observation

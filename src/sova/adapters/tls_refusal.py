@@ -17,7 +17,7 @@ runner judged its ENC-01.1 to ENC-01.3 tests:
    verification; a certificate valid for any name is no identity;
 4. plaintext - the protocol's own first message, sent without TLS, must not
    be served (``plaintext`` names how: ``http_plaintext``,
-   ``postgres_plaintext``, ``hello_plaintext`` with ``REDIS_PING``,
+   ``postgres_plaintext``, ``mysql_plaintext``, ``hello_plaintext`` with ``REDIS_PING``,
    ``AMQP_HEADER``, ``KAFKA_API_VERSIONS`` or ``MONGODB_HELLO``) - on the
    endpoint's port and on every port the service may also listen on in the
    clear (``plaintext_ports``: Redis keeps 6379 beside its TLS port). A
@@ -45,8 +45,11 @@ import struct
 
 from sova.domain.contracts import ContractError
 
-PREAMBLES = (None, "postgres")
+PREAMBLES = (None, "postgres", "mysql")
 _POSTGRES_SSL_REQUEST = struct.pack("!ii", 8, 80877103)
+# MySQL client capability flags (the protocol's own constants)
+_MYSQL_PROTOCOL_41, _MYSQL_SSL, _MYSQL_SECURE, _MYSQL_PLUGIN_AUTH = 0x200, 0x800, 0x8000, 0x80000
+_MYSQL_SECURE_TRANSPORT_REQUIRED = 3159
 # X509 verification results (OpenSSL x509_vfy.h) that mean "not issued by a
 # CA this client trusts", and "not issued for this name".
 _UNTRUSTED_CHAIN = frozenset({2, 18, 19, 20, 21})
@@ -61,7 +64,8 @@ class TlsEndpoint:
     hold, and the CA it must chain to (``ca_pem``, or ``ca_file`` read when a
     check runs, as the unit's own clients read it). ``preamble`` is the
     protocol's step before the handshake: None for TLS from the first byte,
-    ``postgres`` for PostgreSQL's SSLRequest."""
+    ``postgres`` for PostgreSQL's SSLRequest, ``mysql`` for the server's
+    greeting and MySQL's SSLRequest."""
 
     host: str
     port: int
@@ -141,9 +145,53 @@ def _context(ca_pem):
     return context
 
 
+def _mysql_packet(connection):
+    """(sequence, payload) of one MySQL packet (payload bounded)."""
+    head = b""
+    while len(head) < 4:
+        chunk = connection.recv(4 - len(head))
+        if not chunk:
+            raise ConnectionError("closed")
+        head += chunk
+    length = min(int.from_bytes(head[:3], "little"), _READ_LIMIT)
+    body = b""
+    while len(body) < length:
+        chunk = connection.recv(length - len(body))
+        if not chunk:
+            raise ConnectionError("closed")
+        body += chunk
+    return head[3], body
+
+
+def _mysql_capabilities(greeting):
+    """The server's capability flags from its HandshakeV10, or None."""
+    if not greeting or greeting[0] != 0x0A or b"\0" not in greeting[1:]:
+        return None
+    at = greeting.index(b"\0", 1) + 1 + 4 + 8 + 1  # version, thread id, salt, filler
+    lower = int.from_bytes(greeting[at:at + 2], "little")
+    upper = int.from_bytes(greeting[at + 5:at + 7], "little") if len(greeting) >= at + 7 else 0
+    return lower | (upper << 16)
+
+
+def _mysql_client(flags, rest=b""):
+    payload = struct.pack("<IIB", flags, 1 << 24, 255) + b"\0" * 23 + rest
+    return len(payload).to_bytes(3, "little") + b"\x01" + payload
+
+
 def _connect(endpoint):
     connection = socket.create_connection((endpoint.host, endpoint.port),
                                           timeout=endpoint.timeout_seconds)
+    if endpoint.preamble == "mysql":
+        _, greeting = _mysql_packet(connection)
+        flags = _mysql_capabilities(greeting)
+        if flags is None:
+            connection.close()
+            raise ConnectionError("no MySQL greeting")
+        if not flags & _MYSQL_SSL:
+            connection.close()
+            raise _NoTls("server offers no TLS")
+        connection.sendall(_mysql_client(
+            _MYSQL_PROTOCOL_41 | _MYSQL_SSL | _MYSQL_SECURE | _MYSQL_PLUGIN_AUTH))
     if endpoint.preamble == "postgres":
         connection.sendall(_POSTGRES_SSL_REQUEST)
         answer = connection.recv(1)
@@ -332,6 +380,44 @@ def side_refusals(tls, side, plaintext):
                        "reason": "no TLS endpoint registered"}
     passed, observation = transport_refusals(endpoint, plaintext=plaintext)
     return passed, {**observation, "side": side}
+
+
+def mysql_plaintext(user):
+    """A MySQL login as ``user`` without TLS and with an empty password. A
+    server requiring secure transport answers 3159; one that goes on to
+    authenticate in the clear (access denied, a method switch, or OK) serves
+    plaintext. No password is sent."""
+    def attempt(endpoint):
+        try:
+            connection = socket.create_connection((endpoint.host, endpoint.port),
+                                                  timeout=endpoint.timeout_seconds)
+        except (OSError, TimeoutError) as error:
+            return {"outcome": "undecided", "reason": f"unreachable:{type(error).__name__}"}
+        try:
+            _, greeting = _mysql_packet(connection)
+            if _mysql_capabilities(greeting) is None:
+                return {"outcome": "undecided", "reason": "no_greeting"}
+            connection.sendall(_mysql_client(
+                _MYSQL_PROTOCOL_41 | _MYSQL_SECURE | _MYSQL_PLUGIN_AUTH,
+                user.encode() + b"\0" + b"\0" + b"mysql_native_password\0"))
+            _, answer = _mysql_packet(connection)
+        except ConnectionError:
+            return {"outcome": "refused", "reason": "connection_closed"}
+        except (OSError, TimeoutError) as error:
+            return {"outcome": "undecided", "reason": f"exchange_failed:{type(error).__name__}"}
+        finally:
+            connection.close()
+        if answer[:1] == b"\xff":
+            code = int.from_bytes(answer[1:3], "little")
+            if code == _MYSQL_SECURE_TRANSPORT_REQUIRED:
+                return {"outcome": "refused", "reason": "server_requires_tls", "code": code}
+            if code == 1045:
+                return {"outcome": "served", "reason": "authenticated_in_the_clear", "code": code}
+            return {"outcome": "undecided", "reason": f"server_error:{code}"}
+        if answer[:1] in (b"\x00", b"\x01", b"\xfe"):
+            return {"outcome": "served", "reason": "authentication_continued"}
+        return {"outcome": "undecided", "reason": "unexpected_answer"}
+    return attempt
 
 
 def postgres_plaintext(user, database):

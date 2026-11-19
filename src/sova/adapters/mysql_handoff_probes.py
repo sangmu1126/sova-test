@@ -31,6 +31,7 @@ import ssl
 
 from sova.adapters.mysql_offline_copy import name, row_text
 from sova.adapters.row_digest import client_digest
+from sova.adapters.tls_refusal import check_tls, mysql_plaintext, side_refusals
 from sova.domain.contracts import ContractError
 
 DENIED = {1044, 1045, 1049, 1142, 1143, 1227, 1370, 3118}  # access, database, command, locked
@@ -42,13 +43,14 @@ def _code(error):
 
 class MySqlHandoffProbes:
     def __init__(self, *, connect_as, admin_connect, source_db, target_db, app_account,
-                 tables, probe_insert, writer_accounts=None, zone_of=None):
+                 tables, probe_insert, writer_accounts=None, zone_of=None, tls=None):
         """``connect_as(database, account)`` opens a session as a writer account
         with ``database`` selected; ``admin_connect(database)`` an administrative
         session on the server holding ``database``, none selected."""
         if not callable(connect_as) or not callable(admin_connect):
             raise ContractError("Writer and administrative connections required")
         self.connect_as, self.admin_connect = connect_as, admin_connect
+        self.tls = check_tls(tls, "mysql")
         self.source_db, self.target_db, self.app_account = source_db, target_db, app_account
         self.tables, self.probe_insert = tables, probe_insert
         self.writer_accounts = tuple(writer_accounts) if writer_accounts else (app_account,)
@@ -180,6 +182,13 @@ class MySqlHandoffProbes:
         return label in allowed, {"probe": "zone", "database": self._db(which),
                                   "label": label, "allowed": sorted(allowed),
                                   "source": "provider" if self.zone_of else "none"}
+
+    def transport_refusals(self, which):
+        """The side's registered TLS endpoint refuses a wrong CA, a wrong host
+        name, and the application account's login without TLS (no password
+        sent)."""
+        return side_refusals(self.tls, which,
+                             mysql_plaintext(self.app_account.rsplit("@", 1)[0]))
 
     def transport_encrypted(self, which):
         conn = self.admin_connect(self._db(which))

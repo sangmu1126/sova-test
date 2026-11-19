@@ -683,9 +683,10 @@ def test_a_postgres_target_may_register_its_tls_endpoint_for_transport_refusals(
             catalog_from({"version": 1, "applications": [application(tmp_path,
                                                                       tls_endpoints=bad)]},
                          route_for=lambda spec: FakeRoute())
-    with pytest.raises(ContractError):  # MySQL units do not take one yet
-        catalog_from({"version": 1, "applications": [mysql_application(
-            tmp_path, tls_endpoints={"tgt": endpoint})]}, route_for=lambda spec: FakeRoute())
+    mysql, close = catalog_from({"version": 1, "applications": [mysql_application(
+        tmp_path, tls_endpoints={"tgt": endpoint})]}, route_for=lambda spec: FakeRoute())
+    close()
+    assert mysql.build("tenant-a", "orders", "mysql-offline-copy", None) is not None
 
 
 def test_controls_a_units_probes_cannot_measure_fail_rather_than_pass():
