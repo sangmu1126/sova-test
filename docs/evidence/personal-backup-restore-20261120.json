@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "run_id": "b0be270e62",
+  "started_at": "2026-11-19T20:11:54.935546+00:00",
+  "scope": "actual source backup to encrypted VM and fresh isolated restore",
+  "application_db_or_route_changed": false,
+  "disaster_recovery_qualified": false,
+  "passed": true,
+  "restore_database": "q_backup_dfb52dbac535",
+  "checks": {
+    "restored_content_and_sequences_equal": true,
+    "source_app_unchanged": true,
+    "target_app_unchanged": true,
+    "application_roles_cannot_connect_to_restore": true
+  },
+  "archive": {
+    "archive": "/var/lib/sova-qualification/user-journey-b0be270e62/mounted/backups/dfb52dbac535/source.dump",
+    "archive_sha256": "9261d2f51f6bcca27f66a0fcbd5d568483e10a8ee72eca8abdca723979e70fd8",
+    "archive_bytes": 4546,
+    "archive_list_sha256": "3a774913c1dda93e82e05506f6b73f8280bbd10032f3cfe62cb052a81ee1c4d4",
+    "client_image_digest": "sha256:01f80835db480f8403d638051eff0ace599264a908bad70a214b8952173363c5",
+    "mounted_mapper": "/dev/mapper/sova-b0be270e62",
+    "credential_staging": "VM tmpfs only; removed after command",
+    "restored": true
+  },
+  "source_content": {
+    "tables": {
+      "orders": {
+        "rows": 1,
+        "sha256": "3d2287da028368e157b16af314be3df9cf66efc76599b448844e0666469b1822"
+      },
+      "work_items": {
+        "rows": 1,
+        "sha256": "cf05836b0b3b77b19ad5c90dabb50d26527dd3a657398942ccdc25a0300f3057"
+      },
+      "idempotency_results": {
+        "rows": 1,
+        "sha256": "448e8e115894acae40fd5dc7fb84db67f4306669ebdc1ff63e5e10c3000e00c9"
+      }
+    },
+    "sequences": [
+      [
+        "order_number_seq",
+        6
+      ]
+    ]
+  },
+  "restored_content": {
+    "tables": {
+      "orders": {
+        "rows": 1,
+        "sha256": "3d2287da028368e157b16af314be3df9cf66efc76599b448844e0666469b1822"
+      },
+      "work_items": {
+        "rows": 1,
+        "sha256": "cf05836b0b3b77b19ad5c90dabb50d26527dd3a657398942ccdc25a0300f3057"
+      },
+      "idempotency_results": {
+        "rows": 1,
+        "sha256": "448e8e115894acae40fd5dc7fb84db67f4306669ebdc1ff63e5e10c3000e00c9"
+      }
+    },
+    "sequences": [
+      [
+        "order_number_seq",
+        6
+      ]
+    ]
+  },
+  "completed_at": "2026-11-19T20:12:34.830088+00:00",
+  "driver_sha256": "bde48c6b7ee9fbb689aa04980612bde1dab89e312f0a68091674fe9ba2223de3",
+  "raw_evidence_sha256": "a40c306308e4adc5bb422cabae1dc5ac9f118ca913a114df51f3eee0c0692d5c"
+}
