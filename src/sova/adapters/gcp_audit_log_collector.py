@@ -1,23 +1,10 @@
-"""Change collector for GCP resources from Cloud Audit Logs (INV-08, §23.3).
+"""Partial change observations; never an environment-completeness barrier.
 
-The GCP counterpart of ``AwsCloudTrailCollector``. Each poll reads the Admin
-Activity audit log of the project - always on, kept 400 days, and written for
-every call that changes configuration or metadata - and records one change
-event per successful call on a registered resource: ``policy`` for calls that
-change who may do what, ``resource`` for calls that change the resource
-itself, ``unclassified`` for any other write, never nothing. A call Google
-refused (a non-zero ``status``) changed nothing and is not recorded.
-
-Resources are registered by the ``protoPayload.resourceName`` their audit
-entries carry (``projects/_/buckets/<bucket>``, ``projects/<number>/secrets/
-<secret>`` ...), and an entry on anything below a registered name counts for
-it: a new secret version is logged as ``.../secrets/<secret>/versions/<n>``
-(measured), and a collector matching names exactly would miss every rotation.
-Entries usually arrive within seconds, without a documented bound, so
-the watermark stays ``delivery_lag`` behind now and every poll reads again
-from the watermark; an entry is recorded once (its log name, insert ID and
-time identify it). Data Access logs (object reads and writes) are not read:
-they are off by default and are not catalogue changes.
+Cloud Audit Logs lookup has delayed delivery and limited registered-resource coverage. A delay allowance is not a delivery-completeness guarantee.
+This collector records observed events, but never advances a change-feed
+watermark. Admission needs a separately qualified, authenticated coverage
+barrier for every relevant change channel. Late events remain useful for
+invalidation; absent events never mean that the environment was unchanged.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -71,7 +58,7 @@ class GcpAuditLogCollector:
     def __init__(self, feed, *, rest, clock, tenant_id, application_id, collector_id,
                  resources, delivery_lag=timedelta(minutes=10), lookback=timedelta(hours=1)):
         """``resources`` maps an audit ``resourceName`` to its (environment, resource UID)."""
-        if not all(callable(getattr(feed, n, None)) for n in ("record", "advance")):
+        if not all(callable(getattr(feed, n, None)) for n in ("record",)):
             raise ContractError("Change feed required")
         if not isinstance(rest, GcpRest) or not callable(clock):
             raise ContractError("GCP REST access and trusted clock required")
@@ -127,7 +114,7 @@ class GcpAuditLogCollector:
         return max(found, key=len) if found else None
 
     def poll(self, *, cause=None):
-        """Record the successful write calls since each environment's watermark."""
+        """Record observed writes; do not certify coverage or advance a barrier."""
         now = utc(self.clock())
         recorded = []
         by_environment = {}
@@ -152,12 +139,5 @@ class GcpAuditLogCollector:
                 self.feed.record(change, collector_id=self.collector_id)
                 self.seen[key] = change.observed_at
                 recorded.append(change)
-        through = now - self.delivery_lag
-        for environment in sorted(by_environment):
-            if through > self.marks[environment]:
-                self.feed.advance(environment, collector_id=self.collector_id,
-                                  observed_through=through)
-                self.marks[environment] = through
-        oldest = min(self.marks.values())
-        self.seen = {i: t for i, t in self.seen.items() if t >= oldest}
+        # Observation progress cannot certify that every earlier change arrived.
         return tuple(recorded)

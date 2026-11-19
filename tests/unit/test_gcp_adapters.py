@@ -387,7 +387,7 @@ def test_nanosecond_timestamps_are_read():
         parse_time("yesterday")
 
 
-def test_successful_calls_are_recorded_once_and_the_watermark_lags():
+def test_successful_calls_are_observed_once_without_certifying_coverage():
     now = datetime(2026, 11, 15, 8, 0, tzinfo=UTC)
     entries = [
         {"insertId": "a1", "timestamp": "2026-11-15T07:58:00.5Z", "protoPayload": {
@@ -411,7 +411,7 @@ def test_successful_calls_are_recorded_once_and_the_watermark_lags():
     assert [c.kind for c in collector.poll()] == [ChangeKind.POLICY]
     assert collector.poll() == ()  # read again, recorded once
     assert len(feed.records) == 1 and feed.records[0].subject == "bucket-orders"
-    assert feed.advances[0] == ("gcp-source", now - timedelta(minutes=10))
+    assert feed.advances == []  # delivery delay is not a completeness guarantee
     assert 'protoPayload.resourceName:"projects/_/buckets/orders"' in bodies[0]["filter"]
     assert "cloudaudit.googleapis.com%2Factivity" in bodies[0]["filter"]
 

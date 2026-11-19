@@ -79,20 +79,20 @@ def test_write_calls_are_classified_and_refused_or_read_calls_are_not_changes():
     assert classify("SomethingNew") == ChangeKind.UNCLASSIFIED
 
 
-def test_the_watermark_trails_by_the_delivery_lag_and_late_events_are_still_caught():
+def test_delayed_observations_never_certify_coverage_and_late_events_are_caught():
     history, feed, now = History(), Feed(), [T0]
     c = collector(history, feed, now)
     late_call = T0 - timedelta(minutes=5)
     history.add("PutBucketPolicy", "orders-bucket", late_call,
                 visible_at=T0 + timedelta(minutes=8))  # delivered 13 minutes after the call
     assert c.poll() == ()
-    assert feed.advanced == [("aws-source", T0 - LAG)]  # never claims the last 15 minutes
+    assert feed.advanced == []  # a delivery allowance is not proof of completeness
     now[0] = T0 + timedelta(minutes=10)
     assert [e.observed_at for e in c.poll()] == [late_call]
     now[0] = T0 + timedelta(minutes=20)
     assert c.poll() == ()  # found once, never again
     assert len(feed.recorded) == 1
-    assert [t for _, t in feed.advanced] == sorted(t for _, t in feed.advanced)
+    assert feed.advanced == []
 
 
 def test_a_restarted_collector_resumes_from_the_feeds_watermark():

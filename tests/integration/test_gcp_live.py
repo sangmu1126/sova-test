@@ -233,5 +233,5 @@ def test_the_audit_log_collector_records_real_policy_and_version_changes(gcp, gc
     assert abs(policy_events[0].observed_at - changed) < timedelta(minutes=2)
     assert [e.kind for e in found].count(ChangeKind.RESOURCE) >= 3, found
     assert len({e.event_id for e in feed.recorded}) == len(feed.recorded)  # once each
-    assert all(mark <= polled_at - timedelta(minutes=10) for mark in feed.advanced)
+    assert feed.advanced == []  # observed delivery is not exhaustive coverage
     print(f"policy change visible after {(polled_at - changed).total_seconds():.0f}s")

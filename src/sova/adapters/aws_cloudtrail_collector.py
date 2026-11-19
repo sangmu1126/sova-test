@@ -1,22 +1,10 @@
-"""Change collector for AWS resources from CloudTrail event history (INV-08, §23.3).
+"""Partial change observations; never an environment-completeness barrier.
 
-Each poll looks up the management events of every registered resource and
-records one change event per successful write call: a ``policy`` change for
-calls that change who may do what, a ``resource`` change for calls that
-change the resource itself, and ``unclassified`` for any other write, never
-nothing. Read-only calls and calls AWS refused are not changes.
-
-CloudTrail puts an event into the event history some minutes after the call
-(typically within five, documented up to fifteen). A watermark claims that
-every change up to its time has been recorded, so it never moves past
-``now - delivery_lag``; each poll looks again from the watermark, so a late
-event is still recorded (once: event IDs are stable and recording is
-idempotent). On start the collector resumes from the feed's own watermark.
-
-Event history keeps 90 days of management events of one region and nothing
-of data events (object writes), which are not catalogue changes anyway. A
-trail with organisation-wide delivery is the production source; the lookup
-API is what an account offers without one, at two requests per second.
+CloudTrail management-event lookup has delayed delivery and limited registered-resource coverage. A delay allowance is not a delivery-completeness guarantee.
+This collector records observed events, but never advances a change-feed
+watermark. Admission needs a separately qualified, authenticated coverage
+barrier for every relevant change channel. Late events remain useful for
+invalidation; absent events never mean that the environment was unchanged.
 """
 
 from datetime import timedelta
@@ -55,7 +43,7 @@ class AwsCloudTrailCollector:
                  resources, delivery_lag=timedelta(minutes=15), lookback=timedelta(hours=1)):
         """``resources`` maps a CloudTrail resource name (bucket name, DB
         instance identifier) to its (environment, resource UID)."""
-        if not all(callable(getattr(feed, n, None)) for n in ("record", "advance")):
+        if not all(callable(getattr(feed, n, None)) for n in ("record",)):
             raise ContractError("Change feed required")
         if not callable(getattr(cloudtrail, "get_paginator", None)) or not callable(clock):
             raise ContractError("CloudTrail client and trusted clock required")
@@ -86,7 +74,7 @@ class AwsCloudTrailCollector:
         return self.marks[environment]
 
     def poll(self, *, cause=None):
-        """Record the write calls seen since each environment's watermark."""
+        """Record observed writes; do not certify coverage or advance a barrier."""
         now = utc(self.clock())
         recorded = []
         for name, (environment, uid) in sorted(self.resources.items()):
@@ -108,12 +96,5 @@ class AwsCloudTrailCollector:
                     self.feed.record(change, collector_id=self.collector_id)
                     self.seen[event["EventId"]] = change.observed_at
                     recorded.append(change)
-        through = now - self.delivery_lag
-        for environment in sorted({e for e, _ in self.resources.values()}):
-            if through > self.marks[environment]:
-                self.feed.advance(environment, collector_id=self.collector_id,
-                                  observed_through=through)
-                self.marks[environment] = through
-        oldest = min(self.marks.values())
-        self.seen = {i: t for i, t in self.seen.items() if t >= oldest}
+        # Observation progress cannot certify that every earlier change arrived.
         return tuple(recorded)

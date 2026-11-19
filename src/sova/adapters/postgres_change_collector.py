@@ -1,18 +1,12 @@
-"""Catalog change collector for PostgreSQL databases (INV-08, §23.3).
+"""Partial PostgreSQL catalog observations; not complete change capture.
 
-Each poll fingerprints, per database, its table structure (columns and types)
-and its access policy (table grants and the database ACL), records a
-``schema`` or ``policy`` change event when a fingerprint differs from the
-previous poll, and then advances the environment's watermark to the database
-clock time of that poll. Events are recorded before the watermark moves, so a
-watermark never claims a change it has not written.
-
-``cause`` attributes the changes found by one poll to a plan step. A caller
-should pass it only for a poll taken right after that step's own effect; the
-impact assessment still treats an attribution outside the step's write scope
-as foreign. Production collectors should attribute by correlation IDs carried
-in the change itself rather than by timing. Data changes (row writes) are not
-catalog changes and are not reported here.
+Polling can miss a change followed by a restoration between observations.
+The queried tables/ACLs also exclude role, code, automation and host changes.
+Observed differences are useful invalidations, but this collector never
+advances an environment watermark. A separately qualified, authenticated
+coverage barrier is required before admission. Timing alone cannot prove
+that a detected change was caused by the plan; callers must establish that
+correlation independently before supplying cause.
 """
 
 import hashlib
@@ -37,7 +31,7 @@ def _fingerprint(rows):
 class PostgresCatalogCollector:
     def __init__(self, feed, *, connect, tenant_id, application_id, collector_id, databases):
         if not callable(connect) or not all(
-            callable(getattr(feed, n, None)) for n in ("record", "advance")
+            callable(getattr(feed, n, None)) for n in ("record",)
         ):
             raise ContractError("Change feed and administrative connect required")
         if type(databases) is not dict or not databases:
@@ -70,6 +64,4 @@ class PostgresCatalogCollector:
                         self.feed.record(event, collector_id=self.collector_id)
                         recorded.append(event)
             self.last[database] = (schema, policy)
-            self.feed.advance(environment, collector_id=self.collector_id,
-                              observed_through=at)
         return tuple(recorded)

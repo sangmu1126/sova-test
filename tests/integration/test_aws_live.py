@@ -130,7 +130,7 @@ def test_cloudtrail_collector_records_a_real_policy_change(aws):
     found, deadline = [], time.monotonic() + 20 * 60
     while time.monotonic() < deadline:
         found += collector.poll()
-        polled_at = datetime.now(UTC)  # after the poll: its clock read is earlier
+        polled_at = datetime.now(UTC)
         if any(e.kind == ChangeKind.POLICY for e in found):
             break
         time.sleep(30)
@@ -139,5 +139,5 @@ def test_cloudtrail_collector_records_a_real_policy_change(aws):
     assert abs(policy[0].observed_at - changed) < timedelta(minutes=2)
     assert ChangeKind.RESOURCE in {e.kind for e in found}  # CreateBucket
     assert len({e.event_id for e in feed.recorded}) == len(feed.recorded)  # once each
-    assert all(mark <= polled_at - timedelta(minutes=15) for mark in feed.advanced)
+    assert feed.advanced == []  # actual event delivery is not an exhaustive barrier
     print(f"policy change visible after {(polled_at - changed).total_seconds():.0f}s")
