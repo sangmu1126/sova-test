@@ -42,3 +42,12 @@ application_name은 위조 가능한 client 설정이므로 운영 workload 신�
 단일 로컬 PG 서버의 별도 DB·합성 계획/신뢰 입력·파일 route·로컬 witness·fixture IdP라는 한계가 있다. 운영 이미지·실제 Pod·AWS→독립 온프렘·클라이언트 5초 완료·금융 보안 인수는 이번 시험의 범위가 아니다.
 
 [개발 기록](development/effect-settlement-2026-11-19.md) · [실측 증거](evidence/effect-settlement-20261119.json) · [선행 네트워크·세션 시험](pool-lifecycle-faults.md).
+
+
+## 2026-11-20 현재 기본 경로
+
+Kubernetes 신원의 워커도 Pod 종료·교체·같은 Pod 안의 프로세스 재시작만으로 자동 복구하지 않는다. `KubernetesWorkerQuiescence`는 등록된 `requests_settled` 관측자가 같은 tenant/app/operation/owner/epoch/pending 지문에 대해 정확히 True를 반환한 경우에만 복구 증거를 만든다. 관측자 부재·오류·불명확한 응답은 보류한다. 기본 배포에는 이 원격 종료 관측자가 아직 연결되지 않았다.
+
+이 호출은 신뢰 경계 안의 확장 접점이며, 일반 API에서 사용자가 boolean을 제출하는 경로가 아니다. 실제 관측자는 알려진 모든 원격 채널과 전송 계층의 종료를 확인해야 한다. 위조 가능한 application_name 조회나 빈 pg_stat_activity만으로 운영 권한을 발급해서는 안 된다. 기존 NativeSettlement는 계속 제한된 시험 생산자이며 운영 관측자로 승격하지 않는다.
+
+기존 Pod 복구 문서의 고정 이미지와 과거 결과는 보존한다. 현재 구현의 자동 복구 자격을 의미하지 않는다. 이 변경은 정상 이전을 막지 않으며, 진행 중 효과의 소유자가 사라진 경우 자동 재실행·쓰기 재개를 막는다. 실제 운영 연결과 장애 시험은 별도 인수 항목이다.
