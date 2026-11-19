@@ -54,3 +54,23 @@ kubeconfig는 `~/.kube/sova-test-env.yaml`(또는 `SOVA_TEST_KUBECONFIG`)에만 
 - 성능 측정(`tests/perf`)의 10만 행 크기는 MacBook Air M1에서 Docker Desktop VM을 두 번 비정상 종료시켰다. 이 기기에서는 기본 크기(1천·1만 행)만 쓴다.
 - 플랫폼 탈출 시험의 고객 백업은 `SOVA_TEST_POSTGRES_EXEC`(이 환경에서는 `kubectl exec deploy/postgres`)로 DB의 `pg_dump`·`pg_restore`를 쓴다.
 - 실제 클라우드 실측(`aws_live`, `gcp_live`)은 이 환경과 별개로, 명시적으로 켤 때만 돈다. 클라우드 쪽 자원은 [cloud-env](../cloud-env/README.md) 스위치로 AWS·GCP를 함께 켜고 끄며, 정한 시간이 지나면 저절로 꺼진다.
+
+## 목적지 접근 통제 시험의 서버 (2026-11-20)
+
+목적지 접근 통제(무인증·다른 tenant·전송 거부·Secret·네트워크) 시험은 Redis·MongoDB 시험처럼, 시험 모듈이 kind에 자기 namespace를 만들어 서버를 띄우고 `kubectl port-forward`로 붙는다. 끝나면 namespace를 지운다. 클러스터 구성(`kind-config.yaml`)은 바꾸지 않았다.
+
+- **SeaweedFS 두 대**(`tests/seaweedfs_fixtures.py`, 팀 목적지와 같은 4.52 digest 고정).
+  - 기본값 그대로 시작한 것: 계정 파일이 없어 누구나 읽고 씀.
+  - 계정 파일과 TLS로 잠근 것: 관리자, 앱·배치는 `orders-*`, 다른 tenant는 `other-*`.
+  - 텔레메트리는 끈다.
+  - 버킷마다 볼륨을 하나씩만 늘리게 한다(`WEED_MASTER_VOLUME_GROWTH_COPY_1=1`). 기본값은 7개씩이라 시험 버킷이 늘면 상한에 걸린다.
+- **`hostssl`만 허용하는 PostgreSQL**(`test_postgres_transport_refusals.py`): 평문 거부가 통과하는 쪽이다.
+  - 공용 TLS 서버(55433)는 접근 규칙이 `trust`라 평문을 받는다. 이 시험은 그것을 실패로 보고하는 것을 확인한다. 공용 서버는 다른 시험이 쓰므로 그대로 둔다.
+  - 준비 확인은 TCP로 한다. 이미지의 초기화용 서버는 로컬 소켓으로만 뜬다.
+- **port-forward 중계기**(`tests/forward_relay.py`).
+  - Pod가 연결을 RST로 끊으면 `kubectl port-forward`(1.36)는 "lost connection to pod"로 끝난다. Valkey의 TLS 포트에 평문을 보내면 그렇다.
+  - 그런 포트는 연결마다 port-forward를 다시 살리는 중계기로 잰다.
+- **NetworkPolicy**: kind의 kindnetd가 집행한다.
+  - 정책 감시가 끊기면(예: Mac이 잠든 뒤 컨트롤 플레인 이름 조회 실패) 오래된 캐시로 새 정책을 집행하지 않는다.
+  - 네트워크 도달 시험이 이유 없이 실패하면 `kubectl -n kube-system logs ds/kindnet`에서 `Failed to watch *v1.NetworkPolicy`를 확인하고, kindnet Pod를 다시 띄운다.
+- **시험용 venv.** 세션 작업 폴더에 두면 자정의 임시 파일 정리가 오래된 파일을 지운다(security 사본과 같다). 회귀 전에 `pyvenv.cfg`가 있는지 본다.

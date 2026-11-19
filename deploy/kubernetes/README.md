@@ -145,6 +145,42 @@ rules:
 
 경로 저장소(`route`)는 `kubernetes_service` 또는 `gateway_httproute`다(`sova.service.route_stores`). Gateway 경로의 표본 요청은 앱이 응답 헤더로 내는 쪽 표식을 HTTPS로 읽는다.
 
+### 목적지 접근 통제의 추가 항목 (2026-11-20)
+
+계약이 목적지 접근 통제를 요구하면, 어떤 엔진의 항목에든 다음을 더한다. 등록이 없거나 그 단위가 잴 수 없는 통제는 FAIL이다. 판정 규칙은 [구현 안내](../../docs/contract-foundation.md#목적지-접근-통제의-실측-2026-11-20)에 있다.
+
+| 항목 | 통제 | 내용 |
+|---|---|---|
+| `secret_access` | `deny_cross_workload_secret_access` | 앱 namespace의 등록, 앱의 Secret 이름들, 다른 워크로드의 서비스 계정(`[namespace, 이름]`) |
+| `network_reach` | `deny_cross_namespace_network_access` | 앱 namespace와 바깥 namespace들의 등록, 끝점 DNS 이름(`<service>.<namespace>.svc`)·포트, 앱 클라이언트 레이블, digest 고정 이미지, `run_as` |
+| `tls_endpoints`(PostgreSQL) | `refuse_unverified_transport` | DB마다 `host`·`port`·`server_name`·`ca_file` |
+| `plaintext_ports`(Redis·RabbitMQ·Kafka·MongoDB 항목 안) | 같음 | 쪽마다 서비스가 평문으로도 열어 둘 수 있는 포트. TLS로 설정된 쪽의 host·port·CA는 자동으로 등록 끝점이 된다 |
+
+`secret_access`에 필요한 워커 권한은 다음과 같다.
+
+- 앱 namespace에서 그 Secret들의 `get`.
+- 다른 서비스 계정마다, 그 계정의 namespace에서 `serviceaccounts/token`의 `create`(`resourceNames`로 그 계정만).
+- 클러스터 범위에서 `subjectaccessreviews`의 `create`.
+
+다른 계정의 토큰은 10분짜리로 받아 메모리에만 둔다. 그 토큰으로 하는 일은 get·list와 저장되지 않는 Pod dry run뿐이다.
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: sova-secret-check, namespace: orders}
+rules:
+  - {apiGroups: [""], resources: [secrets], resourceNames: [orders-db], verbs: [get]}
+  - {apiGroups: [""], resources: [serviceaccounts/token], resourceNames: [billing], verbs: [create]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: sova-access-review}
+rules:
+  - {apiGroups: [authorization.k8s.io], resources: [subjectaccessreviews], verbs: [create]}
+```
+
+`network_reach`에 필요한 권한은 앱 namespace와 바깥 namespace마다 Pod의 `create`·`get`·`delete`, `pods/log`의 `get`이다. 측정 Pod는 비루트·읽기 전용 루트·토큰 없음으로 한 번 연결하고 바로 지워진다.
+
 ## 배포 순서
 
 1. Secret을 만든다.

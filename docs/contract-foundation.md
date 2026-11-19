@@ -836,9 +836,13 @@ readback은 두 realm을 다시 읽고 다음이 모두 성립할 때만 확인�
 | 위치(residency) | 목적지 버킷의 zone 태그(환경 소유자가 버킷을 미리 만들어 붙임) |
 | 원본 차단·오래된 경로 | 원본 쓰기 거부 |
 | 단일 writer | 목적지만 쓰기 가능 |
-| 다른 테넌트 거부 | 권한이 없는 계정의 접근 거부 |
-| 복원 시험 | 목적지를 새 버킷으로 복원해 비교 |
+| 다른 테넌트 거부 | 다른 tenant 계정과 앱 사이 양방향, 보호 집합마다 읽기·목록·조건부 쓰기 거부(양성 대조) |
+| 무인증 거부 | 서명 없는 요청의 읽기·목록·조건부 쓰기 거부(양성 대조) |
+| 전송 | 끝점 핸드셰이크(등록 CA·이름), 틀린 CA·hostname·평문 HTTP 거부 |
+| 복원 시험 | 목적지를 새 버킷으로 복원해 비교하고 지움 |
 | 예산 | 기존처럼 효과 원장 관측 시각으로 측정 |
+
+측정은 모두 `ObjectStoreProbes`가 한다(2026-11-20, [목적지 접근 통제의 실측](#목적지-접근-통제의-실측-2026-11-20)). 그 전에는 시험 코드 안의 즉석 측정이었고, 다른 tenant 거부는 목록 한 번만 봤다.
 
 로컬의 독립된 S3 호환 저장소 두 개 사이에서 인계가 완료되고, 앱만 목적지에 쓴다. 원본 데이터에서 결과 기록 하나를 빼면 복사는 충실해도 ORDER-01이 FAIL한다. 그러면 활성화 전에 계약 위반 보류가 되고 경로는 원본에 남는다. 데이터의 종류가 바뀌어도 권한 프로토콜은 그대로임을 보인다. 실행 루프가 의무별 측정을 외부에서 받게 한 덕분이다.
 
@@ -1972,6 +1976,57 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 - ~~실제 oplog 순환으로 인한 이력 유실~~ → 실측(2026-11-18, 67d73f2). 시험 서버의 oplog는 128MB다. 단위 밖에서 문서를 쓰고 지워 oplog가 보관 중인 재개 지점을 지나가게 했다. 448MiB를 쓰자 원본이 286(ChangeStreamHistoryLost)으로 재개를 거부했다. 최종 단계는 차단된 원본을 전체 복사했고, readback이 그렇게 맞췄다고 적었으며, 내용이 같았다(2회). 코드는 바꾸지 않았다.
   - 알게 된 것: oplog는 마지막 checkpoint 뒤로만 잘린다. 충돌 뒤 그 지점부터 재생해야 하기 때문이다. 그래서 1GiB를 써도 checkpoint(기본 60초) 전에는 하나도 잘리지 않았다. 시험은 64MiB마다 `fsync`로 checkpoint를 만든다.
 - ~~TTL 인덱스가 지우는 문서~~ → 해결(2026-11-18). 각 서버의 TTL 감시는 60초마다 따로 돌아, 복사 직후 한쪽에만 만료 세션이 남을 수 있었다(Express·Django 세션 저장소가 이렇게 쓴다). 이제 비교(adapter, 내용 probe, 복원 훈련)는 다음 문서를 양쪽에서 똑같이 뺀다: 한 기준 시각에 2분 여유를 더한 때까지 TTL 인덱스가 지울 문서. 판정 기준은 인덱스 날짜(배열이면 가장 이른 것)와 부분 인덱스 조건이다. readback에 뺀 수를 적는다. 목적지에서만 만료 세션이 지워져도 같다고 판정하고, 유효한 세션이 바뀌면 다르다고 판정한다. 제외를 빼면 시험이 실패한다. MongoDB 시험 32 PASS.
+
+## 목적지 접근 통제의 실측 (2026-11-20)
+
+목적지가 업무를 받기 전에, 앱 말고 누가 그 데이터에 닿을 수 있는지를 잰다. 팀 T14 시험기가 목적지에서 직접 재던 통제를 단위 probe와 계약 의무로 옮겼다([대조표](development/platform-gap-map-2026-11-19.md) 1순위, 경위는 [개발 기록](development/contract-foundation-2026-11-20.md)). 측정 시점은 다른 목적지 통제와 같이 쓰기 정지 직전 단계다(ADR-0003). 그래서 실패하면 앱은 출발지에서 계속 쓴다.
+
+| 계약 통제(`security.required_controls`) | 팀 통제 | 측정 |
+|---|---|---|
+| `deny_anonymous_data_access` | IAM-01.1 | 객체 저장소: 서명 없는 읽기·목록·조건부 쓰기, 보호 집합마다 |
+| `deny_cross_tenant_data_access` | ISO-01.1 | 기존 단위 probe. 객체 저장소는 양방향·집합마다 |
+| `verified_transport_encryption` | ENC-01.1 | 기존 단위 probe. 객체 저장소는 끝점 핸드셰이크 |
+| `refuse_unverified_transport` | ENC-01.2·01.3 | `tls_refusal`: 틀린 CA, 틀린 hostname, 평문 첫 메시지 |
+| `deny_cross_workload_secret_access` | SEC-01.1 | `KubernetesSecretProbes`: 다른 서비스 계정의 토큰 시도 + API 서버 판단 |
+| `deny_cross_namespace_network_access` | NET-01.3 | `NetworkReachCheck`: 바깥 namespace의 클라이언트 Pod 연결 |
+
+**판정 규칙.**
+
+- 거부는 두 양성 대조 사이에서만 인정한다. 판독 주체가 증인을 읽음(또는 정상 핸드셰이크, 앱 클라이언트 연결) → 시도 → 다시 확인.
+- 거부로 세는 것은 접근 거부(HTTP 403, TLS 검증 실패, 서버의 TLS 요구)뿐이다. 알아보지 못한 자격(401·`InvalidAccessKeyId`), 시간 초과, 닿지 않음은 판정 불가이고 PASS가 아니다.
+- 하나라도 허용되면 결정된 실패다. 양성 대조와 상관없다.
+- 쓰기 거부와 Secret 접근은 시도와 접근 모델(정책·RBAC)이 함께 동의해야 한다(ADR-0007). 관측에는 주체의 이름과 digest만 남는다. 객체 내용·Secret 값·자격은 남지 않는다.
+
+**어떤 단위가 무엇을 재나.**
+
+- 객체 저장소: 표의 앞 네 통제를 `ObjectStoreProbes`가 잰다.
+- PostgreSQL·Redis·RabbitMQ·Kafka·MongoDB: 기존 probe에 `transport_refusals(side)`가 더해졌다.
+  - 평문 시도는 PostgreSQL 시작 메시지(비밀번호를 묻기 전에 멈춤), `PING`, AMQP 헤더, ApiVersions, hello다.
+- Secret 접근과 네트워크 도달은 저장소와 상관없이 어떤 단위에도 붙는다.
+
+**워커 실행 파일.**
+
+- 어떤 엔진의 항목이든 `secret_access`(앱의 Secret, 다른 서비스 계정 목록)와 `network_reach`(앱 namespace·바깥 namespace의 등록, 끝점 DNS 이름·포트, 앱 클라이언트 레이블, 고정 이미지)를 더할 수 있다. 각 항목의 필요 권한은 [배포 안내](../deploy/kubernetes/README.md)에 있다.
+- PostgreSQL은 `tls_endpoints`로 쪽마다 끝점을 등록한다.
+- Redis·RabbitMQ·Kafka·MongoDB는 TLS로 설정된 쪽의 host·port·CA가 그대로 등록 끝점이 된다. `plaintext_ports`로 평문 포트를 더한다.
+- 계약이 요구했는데 등록이 없거나 그 단위의 probe가 잴 수 없으면 FAIL이다.
+
+**실측 요약(로컬 kind).**
+
+- SeaweedFS를 기본값으로 시작하면 누구에게나 읽기·목록·쓰기를 허용해 세 통제가 모두 FAIL이다. 계정 파일과 TLS로 잠그면 모두 PASS다.
+  - 이전 계획 전체에서 기본값 목적지는 쓰기 정지 전에 멈추고, 잠근 목적지는 완료된다.
+- SeaweedFS 4.52는 맨 이름 주체를 적은 버킷 정책을 저장·반환하지만 집행하지 않는다. 정책만 읽는 확인은 속고, 두 관점 probe는 잡는다.
+- `ssl = on`인 PostgreSQL도 접근 규칙이 `host`면 평문을 받는다(FAIL). `hostssl`만 두면 PASS다.
+  - MongoDB `preferTLS`와 Valkey의 6379도 평문을 받는다.
+  - TLS 리스너만 둔 RabbitMQ·Redpanda는 PASS다.
+- Deployment 생성 권한만 가진 계정도 Secret에 닿는 주체로 FAIL이다(마운트).
+- 같은 namespace 클라이언트만 허용하는 NetworkPolicy는 kindnetd가 집행해 PASS다. 정책 감시가 끊긴 kindnetd에서는 같은 정책이 집행되지 않아 FAIL이었다.
+
+**한계.**
+
+- MySQL 평문 거부는 재지 않는다(인증 응답 뒤에 거부됨).
+- 객체 저장소는 아직 워커 엔진이 아니다(경로 저장소 설계 필요).
+- GCS 무인증, 클라우드 비밀 저장소의 다른 주체 거부, 외부 노출(NET-01.1·01.2)은 재지 않는다.
 
 ## probe 설계 원칙 (ADR-0007)
 
