@@ -61,13 +61,24 @@ def main():
                 report["checks"][name] = exc.sqlstate == "42501"
             else:
                 raise ValueError("Unexpected runtime privilege: " + name)
-    with psycopg.connect(dsn, dbname="target_orders", connect_timeout=5) as conn:
-        try:
-            conn.execute("SELECT id FROM orders LIMIT 1")
-        except psycopg.errors.InsufficientPrivilege as exc:
-            report["checks"]["runtime_business_data_read_denied"] = exc.sqlstate == "42501"
-        else:
-            raise ValueError("Control runtime unexpectedly reads business data")
+    try:
+        with psycopg.connect(dsn, dbname="target_orders", connect_timeout=5) as conn:
+            try:
+                conn.execute("SELECT id FROM orders LIMIT 1")
+            except psycopg.errors.InsufficientPrivilege as exc:
+                report["checks"]["runtime_business_data_read_denied"] = exc.sqlstate == "42501"
+                report["business_denial_mechanism"] = "table_privilege"
+            else:
+                raise ValueError("Control runtime unexpectedly reads business data")
+    except psycopg.OperationalError as exc:
+        # A reachable, authenticated ledger on this same server was the positive
+        # control above. Never accept TLS/timeouts as a business-data denial.
+        text = str(exc)
+        if ('permission denied for database "target_orders"' not in text
+                or 'does not have CONNECT privilege' not in text):
+            raise
+        report["checks"]["runtime_business_data_read_denied"] = True
+        report["business_denial_mechanism"] = "database_connect_privilege"
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
