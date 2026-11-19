@@ -114,6 +114,13 @@ def identity_provider(h):
         yield {"origin": origin, "issuer": issuer, "users": users, "report": report}
     finally:
         if container:
+            # Keep private startup/runtime diagnostics before owned cleanup.
+            # Never persist inspect Config/Env, which contains bootstrap credentials.
+            state = json.loads(docker("inspect", container))[0]["State"]
+            (h.directory / "keycloak-state.json").write_text(json.dumps({
+                key: state.get(key) for key in ("Status", "Running", "OOMKilled", "ExitCode", "Error", "StartedAt", "FinishedAt")
+            }, indent=2))
+            (h.directory / "keycloak.log").write_text(docker("logs", "--tail", "120", container))
             # ID and immutable run label, not a broad name glob, establish ownership.
             info = json.loads(docker("inspect", container))[0]
             if info["Config"]["Labels"].get("sova.journey") != run:
