@@ -38,12 +38,21 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("inputs", "connections", "control-directory", "artifacts"):
         p.add_argument("--" + name, type=Path, required=True)
-    p.add_argument("--case", choices=("registration", "verifier"), default="registration")
+    p.add_argument("--case", choices=("registration", "verifier", "registry"), default="registration")
+    p.add_argument("--registry-package", type=Path)
     p.add_argument("--identity-startup-seconds", type=int, default=300)
     args = p.parse_args()
     os.umask(0o077)
     args.artifacts.mkdir(mode=0o700, exist_ok=False)
     identity = json.loads((args.inputs / "identity.json").read_text())
+    registry_package = None
+    if args.case == "registry":
+        if args.registry_package is None:
+            raise ValueError("An actually measured signed registry package is required")
+        registry_package = json.loads(args.registry_package.read_text())
+        if (registry_package["run_id"] != identity["run_id"] or registry_package["business_plan_admitted"] is not False
+                or datetime.now(UTC) >= datetime.fromisoformat(registry_package["expires_at"])):
+            raise ValueError("Unexpired owned measured registry package required")
     links = json.loads(args.connections.read_text())
     if identity["run_id"] != "b0be270e62" or datetime.now(UTC) >= datetime.fromisoformat(identity["expires_at"]):
         raise ValueError("Unexpired owned canary required")
@@ -114,13 +123,19 @@ def main():
                 "directory": str(args.artifacts), "tools": TOOLS, "executable": CHROME,
                 "tenant": tenant, "application": application, "registrations": registrations,
                 "source_profile": source.profile_id, "target_profile": target.profile_id}
+            if registry_package is not None:
+                browser_input["registrations"] = registry_package["registrations"]
+                browser_input["attestations"] = registry_package["attestations"]
+                report["preissued_measured_qualifications"] = 2
+                report["qualified_implementation_digest"] = registry_package["implementation_digest"]
             if args.case == "verifier":
                 from qualification_personal_keys import registry_proposal
 
                 proposal = registry_proposal(identity, lambda: psycopg.connect((args.control_directory / "runtime.dsn").read_text()))
                 browser_input["verifier_request"] = proposal
                 report["private_key_reference"] = proposal["private_key_reference"]
-            browser_script = "qualification_personal_verifier.mjs" if args.case == "verifier" else "qualification_personal_console.mjs"
+            browser_script = {"verifier":"qualification_personal_verifier.mjs", "registry":"qualification_personal_registry.mjs"}.get(
+                args.case, "qualification_personal_console.mjs")
             run = subprocess.run([NODE, str(ROOT / "tests" / browser_script)],
                 input=json.dumps(browser_input), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
             (args.artifacts / "browser.stdout").write_text(run.stdout)
@@ -144,7 +159,8 @@ def main():
                 conn.execute("SELECT set_config('sova.tenant_id', %s, true)", (tenant,))
                 report["registered_rows"] = conn.execute("SELECT count(*) FROM sova_control.registration_heads").fetchone()[0]
                 report["plan_rows"] = conn.execute("SELECT count(*) FROM sova_control.plans").fetchone()[0]
-            if report["registered_rows"] != 3 or report["plan_rows"] != 0:
+            expected_rows = 7 if args.case == "registry" else 3
+            if report["registered_rows"] != expected_rows or report["plan_rows"] != 0:
                 raise ValueError("Unexpected registration/plan count")
             api.terminate()
             api.wait(timeout=30)
