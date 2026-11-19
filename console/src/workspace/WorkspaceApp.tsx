@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { api, initialize, login, logout, currentConfig } from "./auth";
 import type { Identity } from "./auth";
+import { TrustPanel } from "./TrustPanel";
 import { NativePlanView } from "../features/native/NativePlanPanel";
 import { nativeStatus } from "../features/native/status";
 import type { NativeStatus } from "../features/native/status";
@@ -684,6 +685,17 @@ export function WorkspaceApp() {
                     </button>
                   </section>
                 </div>
+              )}
+              {tab === "register" && application && identity && (
+                <TrustPanel
+                  key={JSON.stringify([
+                    identity.tenant_id,
+                    identity.subject,
+                    application,
+                  ])}
+                  application={application}
+                  identity={identity}
+                />
               )}
               {tab === "plan" && (
                 <section className="native-card">
