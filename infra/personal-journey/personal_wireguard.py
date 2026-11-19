@@ -8,7 +8,7 @@ Deployment is changed. Existing SSM remains the management channel.
 
 import argparse
 import base64
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import hashlib
 import ipaddress
 import json
@@ -184,6 +184,7 @@ print(json.dumps(s))
             raise ValueError("Prepared endpoint identity changed")
         reviewed = dict(plan, prepared_endpoint_code_sha256=plan["endpoint_code_sha256"],
                         endpoint_code_sha256=endpoint_hash, reviewed_at=datetime.now(UTC).isoformat(),
+                        driver_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                         review_scope="Autonomous personal infrastructure maintenance authorized by user; not product approval")
         with (a.artifacts / "reviewed-plan.json").open("x") as f:
             f.write(json.dumps(reviewed, indent=2)+"\n")
@@ -191,6 +192,8 @@ print(json.dumps(s))
         return
     if plan["endpoint_code_sha256"] != endpoint_hash:
         raise ValueError("Endpoint changed after review")
+    if plan["driver_sha256"] != hashlib.sha256(Path(__file__).read_bytes()).hexdigest():
+        raise ValueError("Driver changed after review")
     if a.mode == "observe":
         observed = {side: (source("source-observe", endpoint, {**base,"side":side,"action":"observe"})
                           if side == "source" else target(endpoint, {**base,"side":side,"action":"observe"}))
@@ -200,12 +203,37 @@ print(json.dumps(s))
         return
     if (a.artifacts / "apply-result.json").exists() or group["IpPermissions"]:
         raise ValueError("Existing ingress/apply requires readback, never replay an uncertain change")
+    if until-datetime.now(UTC) < timedelta(minutes=10):
+        raise ValueError("Do not create a new data connection near the trial deadline")
     permission = {"IpProtocol":"udp","FromPort":51820,"ToPort":51820,
                   "IpRanges":[{"CidrIp":peer_ip+"/32","Description":"Sova b0be270e62 authenticated WireGuard peer only"}]}
     before = {"phase":"before_ingress","at":datetime.now(UTC).isoformat(),"applied":False,
               "application_data_or_route_changed":False,"public_tcp_added":False}
     receipt = a.artifacts / "apply-result.json"
     receipt.write_text(json.dumps(before,indent=2)+"\n")
+    timer_code = """import base64,datetime,io,json,pathlib,subprocess,sys
+c=json.load(sys.stdin);side=c['side']
+if side=='source':
+ if pathlib.Path('/var/lib/sova-journey/run-id').read_text().strip()!='b0be270e62':raise ValueError('Wrong source')
+ root=pathlib.Path('/var/lib/sova-journey')
+else:
+ if pathlib.Path('/etc/machine-id').read_text().strip()!='a789f623bca040989f282881d9a21654':raise ValueError('Wrong VM')
+ root=pathlib.Path('/var/lib/sova-qualification/user-journey-b0be270e62')
+path=root/'wireguard-expiry.py'
+if path.exists():raise ValueError('Never replace an existing expiry job')
+request=json.dumps({'side':side,'action':'remove','expires_at':c['expires_at']})
+wrapper='import io,sys;sys.stdin=io.StringIO('+repr(request)+');exec('+repr(c['endpoint'])+')'
+with path.open('x')as f:f.write(wrapper)
+path.chmod(0o500)
+deadline=datetime.datetime.fromisoformat(c['expires_at']).astimezone(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+subprocess.run(['systemd-run','--unit=sova-wg-b0be-expiry','--on-calendar='+deadline,'--timer-property=AccuracySec=1s','--property=Type=oneshot','/usr/bin/python3',str(path)],stdout=subprocess.DEVNULL,check=True,timeout=10)
+print(json.dumps({'timer':'sova-wg-b0be-expiry.timer','deadline':c['expires_at'],'only_owned_link_removed':True}))
+"""
+    before["expiry"]={}
+    for side in ("source","target"):
+        payload={"side":side,"expires_at":until.isoformat(),"endpoint":endpoint}
+        before["expiry"][side]=(source("source-expiry",timer_code,payload) if side=="source" else target(timer_code,payload))
+        receipt.write_text(json.dumps(before,indent=2)+"\n")
     change = ec2.authorize_security_group_ingress(GroupId=group_id,IpPermissions=[permission],
         TagSpecifications=[{"ResourceType":"security-group-rule","Tags":[
             {"Key":"RunId","Value":inputs["run_id"]},{"Key":"Purpose","Value":"wireguard-personal-data-plane"}]}])
@@ -239,6 +267,8 @@ ns='sova-b0be270e62-vpn';base=['/usr/local/bin/nerdctl','--namespace',ns]
 subprocess.run(['/usr/local/bin/ctr','--namespace',ns,'images','import','--base-name','local.sova.invalid/b0be270e62/proxy','--digests',str(archive)],check=True,stdout=subprocess.DEVNULL)
 cfg=root/'haproxy.cfg';cfg.write_text('global\\n  maxconn 128\\n  nbthread 1\\ndefaults\\n  mode tcp\\n  timeout connect 3s\\n  timeout client 5m\\n  timeout server 5m\\nfrontend database\\n  bind 10.247.0.1:5432\\n  default_backend database\\nbackend database\\n  server db 10.246.0.10:5432\\nfrontend application\\n  bind 10.247.0.1:8080\\n  default_backend application\\nbackend application\\n  server app 10.246.0.20:8080\\n');cfg.chmod(0o444)
 mount='type=bind,src='+str(cfg)+',dst=/usr/local/etc/haproxy/haproxy.cfg,ro'
+common=['--network','host','--read-only','--user','10001:10001','--cap-drop','ALL','--security-opt','no-new-privileges','--mount',mount]
+subprocess.run(base+['run','--rm',*common,c['image'],'haproxy','-c','-f','/usr/local/etc/haproxy/haproxy.cfg'],check=True,stdout=subprocess.DEVNULL)
 subprocess.run(base+['run','--detach','--name','wireguard-passthrough','--label','sova.run=b0be270e62','--label','sova.purpose=wireguard-passthrough',
  '--network','host','--read-only','--user','10001:10001','--cap-drop','ALL','--security-opt','no-new-privileges',
  '--memory','64m','--pids-limit','64','--cpus','0.25','--mount',mount,c['image'],'haproxy','-W','-db','-f','/usr/local/etc/haproxy/haproxy.cfg'],check=True,stdout=subprocess.DEVNULL)

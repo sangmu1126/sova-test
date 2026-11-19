@@ -23,6 +23,8 @@ UTC = timezone.utc  # The Amazon Linux operator interpreter is Python 3.9.
 
 
 def call(*args, data=None, check=True):
+    if args and args[0] == "iptables":
+        args = ("iptables", "--wait", "5", *args[1:])
     return subprocess.run(args, input=data, capture_output=True, check=check, timeout=20)
 
 
@@ -91,6 +93,12 @@ def main():
         client = ipaddress.IPv4Address(data["client_public_ip"])
         if not endpoint.is_global or not client.is_global:
             raise ValueError("Current public endpoint/NAT addresses required")
+        image = data.get("proxy_image")
+        if side == "source" and (not isinstance(image, str)
+                or not image.startswith("local.sova.invalid/"+RUN+"/proxy@sha256:")
+                or len(image.rsplit(":",1)[1]) != 64
+                or any(c not in "0123456789abcdef" for c in image.rsplit(":",1)[1])):
+            raise ValueError("Exact run-owned proxy digest required before any change")
         if call("ip", "link", "show", INTERFACE, check=False).returncode == 0:
             raise ValueError("Never overwrite an existing interface")
         chains, hooks = {}, []
@@ -138,9 +146,6 @@ def main():
                       interface=INTERFACE, forwarding_enabled_by_this_tool=False,
                       default_route_added=False, business_data_changed=False)
         if side == "source":
-            image = data["proxy_image"]
-            if not image.startswith("local.sova.invalid/"+RUN+"/proxy@sha256:") or len(image.rsplit(":",1)[1]) != 64:
-                raise ValueError("Exact run-owned proxy digest required")
             result["proxy_image"] = image
         state.write_text(json.dumps(result)+"\n")
     elif action == "observe":
