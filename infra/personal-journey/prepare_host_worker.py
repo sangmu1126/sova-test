@@ -79,7 +79,7 @@ def main():
         "probe": {"url": f"https://127.0.0.1:{entry['port']}/healthz", "header": "X-Sova-Side",
             "values": {"source_orders": "source", "target_orders": "target"}, "ca_file": str(args.inputs / "pki/ca.pem")}}
     common = {"tenant_id": inputs["tenant_id"], "application_id": inputs["application_id"],
-        "adapter_id": "pg-personal-offline-v1", "engine": "postgresql", "mode": "offline_copy", "databases": databases,
+        "adapter_id": "postgres-offline-copy", "engine": "postgresql", "mode": "offline_copy", "databases": databases,
         "database_role_password_files": passwords, "app_role": "orders_app",
         "writer_roles": ["orders_app", "orders_batch"], "tables": [list(row) for row in TABLES],
         "schema_sql_file": str(args.output / "schema.sql"), "probe_insert": PROBE_INSERT, "route": route}
