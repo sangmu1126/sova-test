@@ -7,6 +7,9 @@ without those prerequisites must remain blocked. Business data is untouched.
 """
 
 import argparse
+import hashlib
+from importlib import import_module
+import shutil
 from datetime import UTC, datetime
 import json
 import os
@@ -38,8 +41,11 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("inputs", "connections", "control-directory", "artifacts"):
         p.add_argument("--" + name, type=Path, required=True)
-    p.add_argument("--case", choices=("registration", "verifier", "registry"), default="registration")
+    p.add_argument("--case", choices=("registration", "verifier", "registry", "operational"), default="registration")
     p.add_argument("--registry-package", type=Path)
+    p.add_argument("--operational-read-models", type=Path)
+    p.add_argument("--refresh-health-collector", type=Path)
+    p.add_argument("--health-artifacts", type=Path)
     p.add_argument("--identity-startup-seconds", type=int, default=300)
     p.add_argument("--witness-installation", type=Path)
     args = p.parse_args()
@@ -78,6 +84,8 @@ def main():
         "SOVA_OIDC_AUDIENCE": "sova-control-plane", "SOVA_REGISTRY_VERIFIER_VERSION": "registry-attestor-1",
         "SOVA_EVIDENCE_VERIFIER": "handoff-verifier-1", "SOVA_EVIDENCE_ISSUER": "personal-handoff-producer",
         "SOVA_WITNESS": "file:" + str(args.artifacts / "witness")}
+    if args.operational_read_models:
+        env["SOVA_OPERATIONAL_READ_MODELS_FILE"] = str(args.operational_read_models.resolve())
     if args.witness_installation:
         sys.path.insert(0, str(ROOT / "infra/personal-journey"))
         from witness_configuration import witness_environment
@@ -110,6 +118,26 @@ def main():
         prior_heads=set(conn.execute("SELECT kind,subject_id FROM sova_control.registration_heads").fetchall())
     intended=registry_package["registrations"] if registry_package is not None else registrations
     expected_heads=prior_heads | {(r["kind"],r["subject"]) for r in intended}
+    # Freeze actual API implementation separately from the Git commit label.
+    # A dirty tree or another session cannot change imports during this run.
+    from sova.service.directional_catalog import source_identity
+    measured = source_identity()
+    frozen = args.artifacts / "api-implementation/src"
+    frozen.mkdir(parents=True)
+    for name, source in (("sova", ROOT / "src/sova"),
+                         ("sova_security", Path(import_module("sova_security").__file__).resolve().parent)):
+        shutil.copytree(source, frozen / name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"))
+        expected = {k[len(name)+1:]: v for k, v in measured["files"].items() if k.startswith(name+"/")}
+        if source_identity(frozen/name)["files"] != expected:
+            raise ValueError("API snapshot changed while it was copied")
+    for path in sorted(frozen.rglob("*"), reverse=True):
+        path.chmod(0o500 if path.is_dir() else 0o400)
+    frozen.chmod(0o500)
+    env["PYTHONPATH"] = str(frozen)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    report["actual_api_implementation"] = measured
+    report["actual_console_bundle_sha256"] = {p.relative_to(ROOT/"console/dist").as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in (ROOT/"console/dist").rglob("*") if p.is_file()}
     api = None
     try:
         with identity_provider(harness, startup_seconds=args.identity_startup_seconds,
@@ -130,6 +158,16 @@ def main():
                     if time.monotonic() >= deadline:
                         raise RuntimeError("Native API did not become ready")
                     time.sleep(0.2)
+            if args.refresh_health_collector or args.health_artifacts:
+                if args.case != "operational" or not (args.refresh_health_collector and args.health_artifacts):
+                    raise ValueError("Explicit operational health collector and new artifacts both required")
+                refreshed = subprocess.run([sys.executable, str(ROOT/"infra/personal-journey/observe_actual_health_otel.py"),
+                    "--inputs",str(args.inputs),"--connections",str(args.connections),
+                    "--collector",str(args.refresh_health_collector),"--artifacts",str(args.health_artifacts)],
+                    stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=90)
+                (args.artifacts/"health-refresh.stdout").write_bytes(refreshed.stdout)
+                (args.artifacts/"health-refresh.stderr").write_bytes(refreshed.stderr)
+                refreshed.check_returncode()
             browser_input = {"origin": origin, "idpOrigin": idp["origin"], "users": idp["users"],
                 "directory": str(args.artifacts), "tools": TOOLS, "executable": CHROME,
                 "tenant": tenant, "application": application, "registrations": registrations,
@@ -139,14 +177,15 @@ def main():
                 browser_input["attestations"] = registry_package["attestations"]
                 report["preissued_measured_qualifications"] = sum(r["kind"]=="strategy_qualification" for r in registry_package["registrations"])
                 report["observed_implementation_digest"] = registry_package["implementation_digest"]
-                report["partial_inventory"] = registry_package.get("partial_inventory",False)
+                report["partial_inventory"] = registry_package.get("partial_inventory")
+                report["inventory_evaluated"] = any(r["kind"]=="dependency_snapshot" for r in registry_package["registrations"])
             if args.case == "verifier":
                 from qualification_personal_keys import registry_proposal
 
                 proposal = registry_proposal(identity, lambda: psycopg.connect((args.control_directory / "runtime.dsn").read_text()))
                 browser_input["verifier_request"] = proposal
                 report["private_key_reference"] = proposal["private_key_reference"]
-            browser_script = {"verifier":"qualification_personal_verifier.mjs", "registry":"qualification_personal_registry.mjs"}.get(
+            browser_script = {"verifier":"qualification_personal_verifier.mjs", "registry":"qualification_personal_registry.mjs", "operational":"qualification_personal_operational.mjs"}.get(
                 args.case, "qualification_personal_console.mjs")
             run = subprocess.run([NODE, str(ROOT / "tests" / browser_script)],
                 input=json.dumps(browser_input), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
