@@ -1,0 +1,560 @@
+{
+  "version": 1,
+  "native_verifier": {
+    "source_commit": "80906ae173963c8a4e0cda537c4456dabbb95485",
+    "database_versions": {
+      "source": {
+        "version": "17.12",
+        "system_identifier": "7709720208587968539"
+      },
+      "target": {
+        "version": "17.12",
+        "system_identifier": "7709723763091251229"
+      }
+    },
+    "actual_business_mutations": false,
+    "strategy_qualification_issued": false,
+    "migration_complete": false,
+    "operational_qualification": false,
+    "identity_scope": "disposable local test IdP; not corporate SSO/MFA",
+    "api_stopped": true,
+    "identity_removed": true,
+    "browser": {
+      "pkce": 2,
+      "actual_native_api": true,
+      "actual_vm_ledger": true,
+      "requester_subject": "72451826-73bd-4315-8e9a-821e0abbe97b",
+      "approver_subject": "d78ef1b8-fb77-47ef-9d14-0811d6497340",
+      "missing_security_role_status": 403,
+      "different_request_digest_status": 409,
+      "stale_scope_cleared": true,
+      "token_persisted": false,
+      "publication_revision": 1,
+      "execution_admitted": false
+    },
+    "identity_runtime": {
+      "image_id": "sha256:923a431c08971d49727a857e64870d8d63b5bf294a730e5dde729b5138c26c9e",
+      "architecture": "arm64",
+      "version": "26.8.2",
+      "transport": "loopback HTTP; local test only",
+      "operational_idp_qualified": false,
+      "direct_password_grant_for_spa": false,
+      "pkce_method": "S256",
+      "cold_start_seconds": 512.252,
+      "cold_start_budget_seconds": 900,
+      "dedicated_security_roles": true,
+      "container_removed": true,
+      "network_removed": true
+    },
+    "verifier_publication": {
+      "revision": 1,
+      "digest": "3b2b3459c9ee9a9d8cb277714e7c748b45854e9dcbc811cd1d99d89e2b04c654",
+      "requested_by": "72451826-73bd-4315-8e9a-821e0abbe97b",
+      "approved_by": "d78ef1b8-fb77-47ef-9d14-0811d6497340"
+    },
+    "approval_scope": "Distinct authenticated test subjects; not proof of two independent humans",
+    "registered_rows": 3,
+    "plan_rows": 0,
+    "completed_at": "2026-11-19T19:11:05.650956+00:00"
+  },
+  "isolated_real_strategy": {
+    "version": 1,
+    "trial_id": "qualification-fe486f49ba",
+    "started_at": "2026-11-19T19:09:00.526731+00:00",
+    "code_commit": "d2b00c7c68c488907e042d76b473b987e771812c",
+    "provider_path": "personal AWS EC2 PostgreSQL to local Lima/RKE2 PostgreSQL",
+    "source_file_hashes": {
+      "tests/qualification_personal_strategy.py": "1cc1a0489be5c2733f104afbaa7a835906004592507b3f4478b2916ddbfb4264",
+      "src/sova/adapters/postgres_offline_copy.py": "c6629037a25736c7d45b29beff1cb2a546de6622a3572ae062c14a8585c5f3c9",
+      "src/sova/adapters/kubernetes/handoff_controls.py": "583eef63868570e89bb890aca93df6d86db668a30b16e6c3e30c967eb041451f",
+      "tests/postgres_world.py": "9bbc36972d5207c38a0d64b17fee765b1c875df0ca484bb9534f54915879e90a"
+    },
+    "real_business_migration_complete": false,
+    "signed_qualification_issued": false,
+    "passed": true,
+    "checks": {
+      "nologin_is_not_activation": true,
+      "forward_content_and_sequence_equal": true,
+      "new_target_write_preserved_on_failback": true,
+      "single_writer_after_failback": true,
+      "actual_route_returned_to_source": true,
+      "original_app_data_privileges_and_entry_unchanged": true
+    },
+    "steps": [
+      {
+        "direction": "forward",
+        "action": "stage_target",
+        "status": "confirmed_applied",
+        "elapsed_ms": 2002.369,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "forward",
+        "action": "pause_admission",
+        "status": "confirmed_applied",
+        "elapsed_ms": 600.001,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "forward",
+        "action": "fence_source_writes",
+        "status": "confirmed_applied",
+        "elapsed_ms": 3058.31,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "forward",
+        "action": "copy_content",
+        "status": "confirmed_applied",
+        "elapsed_ms": 2653.297,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "forward",
+        "action": "verify_final_state",
+        "status": "confirmed_applied",
+        "elapsed_ms": 4422.111,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "forward",
+        "action": "activate_target",
+        "status": "confirmed_applied",
+        "elapsed_ms": 4477.939,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "forward",
+        "action": "commit_route",
+        "status": "confirmed_applied",
+        "elapsed_ms": 5025.906,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "verify_return_target",
+        "status": "confirmed_applied",
+        "elapsed_ms": 5410.881,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "start_sync",
+        "status": "confirmed_applied",
+        "elapsed_ms": 3265.262,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "pause_admission",
+        "status": "confirmed_applied",
+        "elapsed_ms": 567.528,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "fence_source_writes",
+        "status": "confirmed_applied",
+        "elapsed_ms": 3112.985,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "apply_final_changes",
+        "status": "confirmed_applied",
+        "elapsed_ms": 3309.57,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "verify_final_state",
+        "status": "confirmed_applied",
+        "elapsed_ms": 6203.418,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "activate_target",
+        "status": "confirmed_applied",
+        "elapsed_ms": 2662.028,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "commit_route",
+        "status": "confirmed_applied",
+        "elapsed_ms": 3997.155,
+        "fresh_instance_readback": true
+      }
+    ],
+    "original_before": {
+      "source": {
+        "counts": [
+          1,
+          1,
+          1
+        ],
+        "writers": [
+          [
+            "orders_app",
+            true,
+            true
+          ],
+          [
+            "orders_batch",
+            true,
+            true
+          ]
+        ],
+        "content": {
+          "orders": {
+            "rows": 1,
+            "sha256": "3d2287da028368e157b16af314be3df9cf66efc76599b448844e0666469b1822"
+          },
+          "work_items": {
+            "rows": 1,
+            "sha256": "cf05836b0b3b77b19ad5c90dabb50d26527dd3a657398942ccdc25a0300f3057"
+          },
+          "idempotency_results": {
+            "rows": 1,
+            "sha256": "448e8e115894acae40fd5dc7fb84db67f4306669ebdc1ff63e5e10c3000e00c9"
+          }
+        },
+        "sequences": [
+          [
+            "order_number_seq",
+            4
+          ]
+        ],
+        "grants": [
+          [
+            "orders_app",
+            "idempotency_results",
+            "DELETE"
+          ],
+          [
+            "orders_app",
+            "idempotency_results",
+            "INSERT"
+          ],
+          [
+            "orders_app",
+            "idempotency_results",
+            "SELECT"
+          ],
+          [
+            "orders_app",
+            "idempotency_results",
+            "UPDATE"
+          ],
+          [
+            "orders_app",
+            "orders",
+            "DELETE"
+          ],
+          [
+            "orders_app",
+            "orders",
+            "INSERT"
+          ],
+          [
+            "orders_app",
+            "orders",
+            "SELECT"
+          ],
+          [
+            "orders_app",
+            "orders",
+            "UPDATE"
+          ],
+          [
+            "orders_app",
+            "work_items",
+            "DELETE"
+          ],
+          [
+            "orders_app",
+            "work_items",
+            "INSERT"
+          ],
+          [
+            "orders_app",
+            "work_items",
+            "SELECT"
+          ],
+          [
+            "orders_app",
+            "work_items",
+            "UPDATE"
+          ],
+          [
+            "orders_batch",
+            "orders",
+            "INSERT"
+          ]
+        ]
+      },
+      "target": {
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "writers": [
+          [
+            "orders_app",
+            false,
+            true
+          ],
+          [
+            "orders_batch",
+            false,
+            true
+          ]
+        ],
+        "content": {
+          "orders": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "work_items": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "idempotency_results": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        "sequences": [
+          [
+            "order_number_seq",
+            null
+          ]
+        ],
+        "grants": []
+      },
+      "entry": {
+        "uid": "c5565701-1035-4140-aaf1-e6442a89b2d9",
+        "resourceVersion": "648317",
+        "selector": {
+          "sova.role": "edge",
+          "sova.run": "b0be270e62",
+          "sova.side": "source"
+        }
+      }
+    },
+    "readiness_observations": [
+      {
+        "selector_side": "q_source_fe486f49ba",
+        "ready_endpoints": 1,
+        "foreign_endpoints": [],
+        "route": "q_source_fe486f49ba",
+        "http_sides": [
+          "q_source_fe486f49ba",
+          "q_source_fe486f49ba",
+          "q_source_fe486f49ba"
+        ]
+      }
+    ],
+    "trial_service": {
+      "uid": "1f451020-9db5-420c-8bd8-5a804f109e6b",
+      "port": 64287,
+      "original_entry_changed": false
+    },
+    "source_system_identifier": "7709720208587968539",
+    "target_system_identifier": "7709723763091251229",
+    "created_objects": [
+      {
+        "kind": "Service",
+        "name": "qualification-fe486f49ba",
+        "uid": "1f451020-9db5-420c-8bd8-5a804f109e6b"
+      },
+      {
+        "kind": "ServiceAccount",
+        "name": "qualification-fe486f49ba",
+        "uid": "14ba57dd-56ab-4e57-9f0f-5c0a06125870"
+      },
+      {
+        "kind": "Role",
+        "name": "qualification-fe486f49ba",
+        "uid": "6c56bd9a-c044-41ac-82c9-530b5a525168"
+      },
+      {
+        "kind": "RoleBinding",
+        "name": "qualification-fe486f49ba",
+        "uid": "1c980e8e-ebde-4783-9ab9-9921ecac3a8c"
+      }
+    ],
+    "trial_writers_disabled": true,
+    "original_after": {
+      "source": {
+        "counts": [
+          1,
+          1,
+          1
+        ],
+        "writers": [
+          [
+            "orders_app",
+            true,
+            true
+          ],
+          [
+            "orders_batch",
+            true,
+            true
+          ]
+        ],
+        "content": {
+          "orders": {
+            "rows": 1,
+            "sha256": "3d2287da028368e157b16af314be3df9cf66efc76599b448844e0666469b1822"
+          },
+          "work_items": {
+            "rows": 1,
+            "sha256": "cf05836b0b3b77b19ad5c90dabb50d26527dd3a657398942ccdc25a0300f3057"
+          },
+          "idempotency_results": {
+            "rows": 1,
+            "sha256": "448e8e115894acae40fd5dc7fb84db67f4306669ebdc1ff63e5e10c3000e00c9"
+          }
+        },
+        "sequences": [
+          [
+            "order_number_seq",
+            4
+          ]
+        ],
+        "grants": [
+          [
+            "orders_app",
+            "idempotency_results",
+            "DELETE"
+          ],
+          [
+            "orders_app",
+            "idempotency_results",
+            "INSERT"
+          ],
+          [
+            "orders_app",
+            "idempotency_results",
+            "SELECT"
+          ],
+          [
+            "orders_app",
+            "idempotency_results",
+            "UPDATE"
+          ],
+          [
+            "orders_app",
+            "orders",
+            "DELETE"
+          ],
+          [
+            "orders_app",
+            "orders",
+            "INSERT"
+          ],
+          [
+            "orders_app",
+            "orders",
+            "SELECT"
+          ],
+          [
+            "orders_app",
+            "orders",
+            "UPDATE"
+          ],
+          [
+            "orders_app",
+            "work_items",
+            "DELETE"
+          ],
+          [
+            "orders_app",
+            "work_items",
+            "INSERT"
+          ],
+          [
+            "orders_app",
+            "work_items",
+            "SELECT"
+          ],
+          [
+            "orders_app",
+            "work_items",
+            "UPDATE"
+          ],
+          [
+            "orders_batch",
+            "orders",
+            "INSERT"
+          ]
+        ]
+      },
+      "target": {
+        "counts": [
+          0,
+          0,
+          0
+        ],
+        "writers": [
+          [
+            "orders_app",
+            false,
+            true
+          ],
+          [
+            "orders_batch",
+            false,
+            true
+          ]
+        ],
+        "content": {
+          "orders": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "work_items": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "idempotency_results": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        "sequences": [
+          [
+            "order_number_seq",
+            null
+          ]
+        ],
+        "grants": []
+      },
+      "entry": {
+        "uid": "c5565701-1035-4140-aaf1-e6442a89b2d9",
+        "resourceVersion": "648317",
+        "selector": {
+          "sova.role": "edge",
+          "sova.run": "b0be270e62",
+          "sova.side": "source"
+        }
+      }
+    },
+    "completed_at": "2026-11-19T19:11:01.701874+00:00"
+  },
+  "raw_hashes": {
+    "personal-verifier-console-03/result.json": "edcf219af36821b21d71490518a183c6d5c8527fbd6ba153ffd49066b4bedd77",
+    "physical-strategy-trial-03/trial.json": "9cc547510703eb0adc7d8a2f29d8b10f9931abc592432cda9cdd2b97ed8b019e"
+  },
+  "claims": {
+    "real_personal_cloud_vm_adapter_trial": true,
+    "real_business_app_migrated": false,
+    "continuity_qualified": false,
+    "signed_strategy_qualification_issued": false,
+    "six_stages_complete": false
+  }
+}
