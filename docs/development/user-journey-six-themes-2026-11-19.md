@@ -76,3 +76,14 @@
 연결은 개인 `default`의 AWS SSM과 local VM의 호스트 키를 고정한 SSH다. Tailscale이나 공개 앱·DB ingress 없이 Mac loopback 네 개를 사용한다. 최초 listener 준비를 실제 목적지 준비로 오인하지 않았고, 실패 실행은 timeout·인증서 오류로 보존했다. 플러그인 누락 실패의 소유 프로세스를 정리하고 AWS 서명·공증·ARM64·버전이 확인된 Session Manager plugin 1.2.896.0을 명시했다.
 
 다음은 표준 HAProxy의 안정 진입점 → 실제 자원에 결속된 등록·자격 → 같은 네이티브 API/계획·독립 승인·워커 실행 → 데이터·새 쓰기·복귀 검증이다. 현재 `migration_complete=false`, `operational_qualification=false`, 무중단 미자격을 유지한다. 실제 위치 대신 DB 주석만 읽는 기존 placement probe를 운영 위치 증거로 승격하지 않는다. 원격 효과 settlement와 제한된 복원 시험의 운영 한계도 유지한다.
+
+### 개인 AWS → VM 실제 진입점과 호스트 워커 준비
+
+- 전용 네임스페이스의 HAProxy 3.4.8 비루트 이미지 두 실행본을 사용한다. 진입점은 아직 AWS source만 가리킨다. 재시도는 0이며 앱의 side/digest 헤더를 프록시가 만들지 않는다.
+- 로컬 SSH 고정 연결을 거쳐 실제 진입점의 HTTPS `/healthz`가 200을 반환했다. 엄격한 X509 체인·호스트명 검증과 앱이 반환한 source 및 고정 digest를 확인했다. 이것은 데이터 이전·전환 성공 근거가 아니다.
+- 준비 중 기존 SSM 세션 두 개가 유휴 만료된 것을 관측했다. 원래 개인 EC2·포트만 재연결한 뒤 HAProxy source 준비 상태가 돌아왔고 실제 HTTPS 응답을 검증했다. 터널 수명도 실행 전 재검증 대상이다.
+- 네이티브 `run-worker`에 명시적인 `SOVA_WORKER_IDENTITY=host` 구성을 추가했다. 실제 PID와 시작별 nonce를 사용하며 Pod 신원을 함께 주면 거부한다. 기존 Kubernetes 기본값은 유지한다.
+- 호스트 워커는 Kubernetes API를 조회하지 않고 quiescence 제공자를 두지 않는다. 로컬 프로세스 종료만으로 원격 SQL 완료를 주장하거나 불명확한 효과를 자동 재실행할 수 없다. 상태 조회용 health listener는 loopback에만 바인딩한다.
+- 관련 설정·시작·서비스 시험: **73 통과, 실환경 조건부 18 제외**, Ruff 통과. 첫 실행의 5건 실패는 시험 실행의 PyMySQL 경로 누락이었으며, 기존 격리 의존 경로를 포함해 재실행했다. 제외를 실환경 통과로 합산하지 않는다.
+- 남은 범위: 실제 개인 환경의 원장·등록·독립 승인·자격 프로필·증거 수집·워커 설정, 데이터 권한 전환과 반대 방향 복귀. 기존 로컬 fixture 신뢰 등록·watermark를 개인 AWS 실측으로 바꾸어 표시하지 않는다.
+- 특히 현재 PG의 DB comment 기반 zone 확인은 실제 위치 증명이 아니다. 이를 근거로 사업 데이터·백업·감사 기록 위치를 모두 통과시켜서는 안 된다. 확인되지 않은 위치 통제는 차단 상태를 유지한다.

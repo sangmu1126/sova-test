@@ -57,6 +57,7 @@ def main():
     pem = cert.public_bytes(serialization.Encoding.PEM) + key.private_bytes(serialization.Encoding.PEM,
         serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
     (args.output / "entry.pem").write_bytes(pem)
+    (args.output / "ca.pem").write_bytes((args.inputs / "pki/ca.pem").read_bytes())
     labels = {"sova.run": run, "sova.scope": "personal-qualification"}
     resources = []
 
