@@ -1,0 +1,274 @@
+{
+  "version": 1,
+  "actual_business_migration_complete": false,
+  "execution_authorized": false,
+  "measured_strategy": {
+    "code_commit": "ca40bbba93b2928220185d6a933417849d2e234f",
+    "implementation_digest": "bd4973a9c1620e23c7bd33a6de6188cbc06b264e8e4e21b29dcd8217acdb07b6",
+    "checks": {
+      "nologin_is_not_activation": true,
+      "forward_content_and_sequence_equal": true,
+      "new_target_write_preserved_on_failback": true,
+      "single_writer_after_failback": true,
+      "actual_route_returned_to_source": true,
+      "native_and_security_implementation_unchanged": true,
+      "original_app_data_privileges_and_entry_unchanged": true
+    },
+    "scope": {
+      "tables": [
+        [
+          "orders",
+          "id"
+        ],
+        [
+          "work_items",
+          "id"
+        ],
+        [
+          "idempotency_results",
+          "customer"
+        ]
+      ],
+      "schema_sha256": "4339b036b9343646d0100578171a60de991c6cd17656f0eaa37ca39c0f26b957",
+      "writer_paths": 2,
+      "admin_connection_reuse": true,
+      "source_rows": {
+        "orders": 50,
+        "work_items": 50,
+        "idempotency_results": 50
+      },
+      "target_rows_after_new_write": {
+        "orders": 51,
+        "work_items": 51,
+        "idempotency_results": 51
+      },
+      "max_prepared_transactions": 0,
+      "native_catalog_version": 2,
+      "conformance_documents_are_not_admitted_plans": true
+    },
+    "steps": [
+      {
+        "direction": "forward",
+        "action": "stage_target",
+        "status": "confirmed_applied",
+        "elapsed_ms": 4477.978,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "forward",
+        "action": "pause_admission",
+        "status": "confirmed_applied",
+        "elapsed_ms": 2537.43,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "forward",
+        "action": "fence_source_writes",
+        "status": "confirmed_applied",
+        "elapsed_ms": 4316.655,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "forward",
+        "action": "copy_content",
+        "status": "confirmed_applied",
+        "elapsed_ms": 4476.905,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "forward",
+        "action": "verify_final_state",
+        "status": "confirmed_applied",
+        "elapsed_ms": 4026.994,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "forward",
+        "action": "activate_target",
+        "status": "confirmed_applied",
+        "elapsed_ms": 3824.505,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "forward",
+        "action": "commit_route",
+        "status": "confirmed_applied",
+        "elapsed_ms": 5187.906,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "verify_return_target",
+        "status": "confirmed_applied",
+        "elapsed_ms": 5056.572,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "start_sync",
+        "status": "confirmed_applied",
+        "elapsed_ms": 3607.347,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "pause_admission",
+        "status": "confirmed_applied",
+        "elapsed_ms": 2397.972,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "fence_source_writes",
+        "status": "confirmed_applied",
+        "elapsed_ms": 2487.743,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "apply_final_changes",
+        "status": "confirmed_applied",
+        "elapsed_ms": 4043.0,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "verify_final_state",
+        "status": "confirmed_applied",
+        "elapsed_ms": 3885.14,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "activate_target",
+        "status": "confirmed_applied",
+        "elapsed_ms": 2702.926,
+        "fresh_instance_readback": true
+      },
+      {
+        "direction": "reverse",
+        "action": "commit_route",
+        "status": "confirmed_applied",
+        "elapsed_ms": 3544.25,
+        "fresh_instance_readback": true
+      }
+    ]
+  },
+  "native_registry": {
+    "source_commit": "00f11ccc3642ce8f63df2fc70779ebbd01c27d3c",
+    "preissued_measured_qualifications": 2,
+    "qualified_implementation_digest": "bd4973a9c1620e23c7bd33a6de6188cbc06b264e8e4e21b29dcd8217acdb07b6",
+    "registered_rows": 7,
+    "plan_rows": 0,
+    "identity_scope": "disposable local test IdP; not corporate SSO/MFA",
+    "api_stopped": true,
+    "identity_removed": true,
+    "completed_at": "2026-11-19T19:48:37.786862+00:00"
+  },
+  "directional_c3": {
+    "results": [
+      {
+        "strategy": "offline-copy",
+        "current_signed_qualification": {
+          "schema_version": 1,
+          "status": "QUALIFIED_CANDIDATE",
+          "reason": "DIRECTIONAL_QUALIFICATION_CURRENT",
+          "contract_digest": "35412958b1b4cf9346a9601fd24c8458259b5427d21127160a9dd0303f04a743",
+          "manifest_digest": "0c02a79975b0d8b279475aa04f9decd8d99813b3122045c56e8195f88aae2ecf",
+          "source_profile_digest": "5ab5ba48c8a4db72ea9fea5c8b73f20c68f21516273c114b9dc05aa02d5f60cc",
+          "target_profile_digest": "ccc710ef6486929471d71d59f6851aebd0b41b6be243515cefb356776b7dab0e",
+          "qualification_digest": "2e00456952843d520d09bdb96d0b24737dda6d5be88cc126d8921666a2cadebd",
+          "evaluated_at": "2026-11-19T19:58:27.922874+00:00",
+          "evaluated_scope": "C3_DIRECTIONAL_STRATEGY_ELIGIBILITY_ONLY",
+          "contract_satisfied": false,
+          "executable": false,
+          "authorizes_execution": false
+        },
+        "beyond_measured_row_bound": {
+          "schema_version": 1,
+          "status": "NEEDS_EVIDENCE",
+          "reason": "QUALIFICATION_LIMIT_EXCEEDED",
+          "contract_digest": "35412958b1b4cf9346a9601fd24c8458259b5427d21127160a9dd0303f04a743",
+          "manifest_digest": "0c02a79975b0d8b279475aa04f9decd8d99813b3122045c56e8195f88aae2ecf",
+          "source_profile_digest": "5ab5ba48c8a4db72ea9fea5c8b73f20c68f21516273c114b9dc05aa02d5f60cc",
+          "target_profile_digest": "ccc710ef6486929471d71d59f6851aebd0b41b6be243515cefb356776b7dab0e",
+          "qualification_digest": "2e00456952843d520d09bdb96d0b24737dda6d5be88cc126d8921666a2cadebd",
+          "evaluated_at": "2026-11-19T19:58:27.928488+00:00",
+          "evaluated_scope": "C3_DIRECTIONAL_STRATEGY_ELIGIBILITY_ONLY",
+          "contract_satisfied": false,
+          "executable": false,
+          "authorizes_execution": false
+        }
+      },
+      {
+        "strategy": "failback-resync",
+        "current_signed_qualification": {
+          "schema_version": 1,
+          "status": "QUALIFIED_CANDIDATE",
+          "reason": "DIRECTIONAL_QUALIFICATION_CURRENT",
+          "contract_digest": "35412958b1b4cf9346a9601fd24c8458259b5427d21127160a9dd0303f04a743",
+          "manifest_digest": "f1670baac604f4002ee9e2a238d6668323729e11d73e82b2fa78e90e25f04802",
+          "source_profile_digest": "ccc710ef6486929471d71d59f6851aebd0b41b6be243515cefb356776b7dab0e",
+          "target_profile_digest": "5ab5ba48c8a4db72ea9fea5c8b73f20c68f21516273c114b9dc05aa02d5f60cc",
+          "qualification_digest": "62336dc8aae42ed794a5c36634641559541aa602c1c465474be28a2619560680",
+          "evaluated_at": "2026-11-19T19:58:34.700890+00:00",
+          "evaluated_scope": "C3_DIRECTIONAL_STRATEGY_ELIGIBILITY_ONLY",
+          "contract_satisfied": false,
+          "executable": false,
+          "authorizes_execution": false
+        },
+        "beyond_measured_row_bound": {
+          "schema_version": 1,
+          "status": "NEEDS_EVIDENCE",
+          "reason": "QUALIFICATION_LIMIT_EXCEEDED",
+          "contract_digest": "35412958b1b4cf9346a9601fd24c8458259b5427d21127160a9dd0303f04a743",
+          "manifest_digest": "f1670baac604f4002ee9e2a238d6668323729e11d73e82b2fa78e90e25f04802",
+          "source_profile_digest": "ccc710ef6486929471d71d59f6851aebd0b41b6be243515cefb356776b7dab0e",
+          "target_profile_digest": "5ab5ba48c8a4db72ea9fea5c8b73f20c68f21516273c114b9dc05aa02d5f60cc",
+          "qualification_digest": "62336dc8aae42ed794a5c36634641559541aa602c1c465474be28a2619560680",
+          "evaluated_at": "2026-11-19T19:58:34.702551+00:00",
+          "evaluated_scope": "C3_DIRECTIONAL_STRATEGY_ELIGIBILITY_ONLY",
+          "contract_satisfied": false,
+          "executable": false,
+          "authorizes_execution": false
+        }
+      }
+    ],
+    "contract_signature_current": true,
+    "execution_authorized": false
+  },
+  "provenance": [
+    {
+      "relative_private_record": "physical-strategy-trial-05/trial.json",
+      "sha256": "d12bd0c051d70e2c444368a2f6c7b6fdce16c692eef3894c6b72b05ed225af72"
+    },
+    {
+      "relative_private_record": "personal-measured-registry-01/result.json",
+      "sha256": "83502d78009c1d13dad79299d2adbe943a69f3fc8418885c541a63c192f2c813"
+    },
+    {
+      "relative_private_record": "qualified-strategies-01.json",
+      "sha256": "9fa444d4918e4cb347524e1a98e36b32875b01f4850ffef1139e2b6b8af4c185"
+    },
+    {
+      "relative_private_record": "registry-outbox-component-06.xml",
+      "sha256": "11001e88caf81e3948e87a505bea4992157e5b524419117d7e848fbb89b4681e"
+    },
+    {
+      "relative_private_record": "directional-catalog-unit-05.xml",
+      "sha256": "c7925cf6fdb3e73cfba932b94ced8e487334aba6afe1bdc9bb300bad61afe79c"
+    },
+    {
+      "relative_private_record": "dependency-facts-04/facts.json",
+      "sha256": "528f79565fff8e7f192bff7635bb5d09e9e35a50a93f937c02066864cf20c191"
+    },
+    {
+      "relative_private_record": "native-host-worker-v2-startup-03/result.json",
+      "sha256": "bde27ee290b1ba1dce139a7296b50625363731d9fb58cb6b7c48556509cfe017"
+    },
+    {
+      "relative_private_record": "actual-registry-c3-01.json",
+      "sha256": "5ffa7abc8a86e6a9fcdb9c3ad1cb7f819c0c6cd9daec5bdec3c46219639d23f6"
+    }
+  ]
+}
