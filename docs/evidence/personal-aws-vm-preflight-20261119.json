@@ -1,0 +1,116 @@
+{
+  "run_id": "b0be270e62",
+  "source_commit": "7bb76f477f0f061d26fde52e2c98256c15ad22e6",
+  "checks": {
+    "source_verified_database_and_writer_scope": true,
+    "source_verified_https_identity": true,
+    "target_verified_database_and_writer_scope": true,
+    "target_verified_https_identity": true,
+    "independent_database_systems": true,
+    "source_unauthorized_denied": true,
+    "target_writer_still_fenced": true,
+    "source_actual_request_replay_and_lookup": true,
+    "source_business_effect_count": true,
+    "source_wrong_hostname_denied": true,
+    "source_plaintext_without_password_denied": true,
+    "target_business_effect_count": true,
+    "target_wrong_hostname_denied": true,
+    "target_plaintext_without_password_denied": true
+  },
+  "databases": {
+    "source": {
+      "database": "source_orders",
+      "version": "17.12",
+      "verified_tls": true,
+      "system_identifier": "7709720208587968539",
+      "writers": [
+        {
+          "role": "orders_app",
+          "login": true
+        },
+        {
+          "role": "orders_batch",
+          "login": true
+        }
+      ],
+      "business_counts": [
+        1,
+        1,
+        1
+      ]
+    },
+    "target": {
+      "database": "target_orders",
+      "version": "17.12",
+      "verified_tls": true,
+      "system_identifier": "7709723763091251229",
+      "writers": [
+        {
+          "role": "orders_app",
+          "login": false
+        },
+        {
+          "role": "orders_batch",
+          "login": false
+        }
+      ],
+      "business_counts": [
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "http": {
+    "source": {
+      "verified_hostname": "source-app.b0be270e62.sova.invalid",
+      "tls_protocol": "TLSv1.3",
+      "claimed_deployment_digest": "sha256:f80bc08328b0f962151b949706589bd5db3a12803dfa3096fb700bd3fad5e208"
+    },
+    "target": {
+      "verified_hostname": "target-app.b0be270e62.sova.invalid",
+      "tls_protocol": "TLSv1.3",
+      "claimed_deployment_digest": "sha256:f80bc08328b0f962151b949706589bd5db3a12803dfa3096fb700bd3fad5e208"
+    }
+  },
+  "migration_complete": false,
+  "operational_qualification": false,
+  "writes": [
+    {
+      "side": "source",
+      "business_key": "personal-canary/aws-before-1",
+      "outcome": "OBSERVED",
+      "receipt": {
+        "order_id": 1,
+        "customer": "personal-canary",
+        "idempotency_key": "aws-before-1",
+        "amount": "17.25",
+        "result": "confirmed"
+      },
+      "http_attempts": 2
+    }
+  ],
+  "passed": true,
+  "at": "2026-11-19T04:04:48.052553+00:00",
+  "test_driver_sha256": "e1596584c33c93a873fc773085c39b9e522c09f8adad46d5244526aa2c254356",
+  "scope": "Actual personal AWS EC2 containers and this Mac independent Linux/RKE2 VM via authenticated SSM and pinned SSH. Direct endpoint preflight only; no route switch/data migration/operational qualification.",
+  "retained_failures": [
+    "physical-preflight-01: source TCP connection timed out; no business requests performed",
+    "Earlier listener readiness was not remote endpoint readiness; kept failed session records and exact cleanup",
+    "Strict X509 client rejected incomplete certificate identifiers; reissued certificates without relaxing validation or extending expiry"
+  ],
+  "network": "No Tailscale; no public application/database ingress; four Mac loopback listeners",
+  "destination_encryption": {
+    "type": "LUKS2",
+    "cipher": "aes-xts-plain64",
+    "key_bits": 512,
+    "wrong_key_rejected": true,
+    "key_storage": "macOS Keychain; no key file on VM or AWS dependency"
+  },
+  "limitations": [
+    "Target write rejection is observed alongside NOLOGIN; a successful post-activation target write is still required as positive control",
+    "Application response digest is a claimed identity and must be corroborated with runtime inventory",
+    "Mac FileVault is off; do not claim all developer/control-plane secrets are protected at rest",
+    "No end-to-end migration or continuity qualification issued"
+  ]
+}

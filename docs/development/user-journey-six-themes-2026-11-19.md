@@ -14,7 +14,7 @@
 | 2 | 등록·계획·독립 승인·접수 | 실제 IdP 로그인, 작성자와 다른 승인자, 기존 API의 서버 권한 검사 | 실제 Keycloak 두 계정 PKCE·자기 승인 403 통과. 조직 SSO 인수 별도 |
 | 3 | HTTP 앱·PG 사용자 흐름 | UI에서 접수한 같은 계획이 실제 HTTP·PG 효과와 연결 | 실제 로컬 API·폴링 프로세스·PG·HTTP 흐름 통과. 공유 파일 경로는 fixture |
 | 4 | 보류·UNKNOWN·프로세스 사망·안전 복구 | 불확실한 효과 재실행 차단, 신규 데이터 보존, 복귀 근거 | 실제 SIGKILL·원장 보류·재실행 차단·별도 승인 복귀 통과. 원격 settlement/운영 복구 인수 별도 |
-| 5 | 개인 AWS → 독립 Linux VM | 실제 실행 위치·신규 쓰기·원본 차단·데이터 대조·복구 기록 | 전용 AWS 출발지·SSM·containerd 준비, 앱·DB 산출물 실제 로컬 인수 통과. 물리 배포·이전 미완료 |
+| 5 | 개인 AWS → 독립 Linux VM | 실제 실행 위치·신규 쓰기·원본 차단·데이터 대조·복구 기록 | 실제 AWS/VM 앱·DB 기동, 엄격한 TLS·인증·업무 쓰기 사전 시험 14개 통과. 네이티브 계획·승인·데이터 이전·전환 미완료 |
 | 6 | AI·데이터 위치·목적지 보호·비용·OTel | 같은 실행에 정책·독립 검증·실제 지표·비용 출처 연결 | 기존 계약 재사용 검토 필요 |
 
 로컬 PostgreSQL의 실제 트랜잭션 시험, 실제 브라우저 로그인, 실제 AWS/VM 배포는 서로 다른 검증이다. 로컬 시험의 등록·자격·신뢰 부트스트랩이나 파일 경로 fixture를 운영 인수로 승격하지 않는다. 화면이 PASS·서명·승인 권한을 만들어 내지 않는다.
@@ -58,4 +58,21 @@
 - 두 산출물 모두 Trivy 0.76.2의 모든 심각도·전체 패키지 검사에서 발견 0건이다. 이 로컬 preflight는 registry에 결속된 정식 보안 admission이나 운영 자격을 대신하지 않는다.
 - 같은 실제 앱·DB 산출물로 13개 검사를 통과했다. HTTP 주문·재전송·조회, 업무 효과 1회, 정상 TLS/SCRAM, 잘못된 CA·호스트명·비밀번호/평문/타 DB 거부, 예상하지 않은 역할 멤버십과 NOLOGIN 차단, 비루트·읽기 전용 앱·capability 제거를 확인했다. [런타임 증거](../evidence/canary-runtime-acceptance-20261119.json)는 AWS/VM 이전 증거가 아니다.
 - 첫 인수는 제한된 초기화 도우미에서 실패했다. 두 번째는 임시 초기화 서버의 socket 준비를 실제 TCP 준비로 잘못 읽어 SQL이 종료 시점과 겹쳤다. 실제 TCP 서버를 기다리도록 고친 세 번째 실행이 통과했다. 단순 sleep·자동 재시도로 통과시키지 않았고 실패와 자원 정리 기록을 보존했다.
-- 물리 source/target용으로 DB별 다른 SCRAM 비밀번호와 TLS leaf를 준비했다. CA 개인 키는 Mac에만 둔다. source 전용 Secret·이미지 전송 준비와 실제 앱 기동·등록·승인·이전은 별개이며 아직 후자가 끝나지 않았다.
+- 물리 source/target용으로 DB별 다른 SCRAM 비밀번호와 TLS leaf를 준비했다. CA 개인 키는 Mac에만 둔다. source 전용 Secret과 정확한 OCI 산출물을 전달해 앱·DB를 실제 기동했다. 네이티브 등록·승인·이전은 아직 별도다.
+
+## 실제 개인 AWS·VM 사전 시험 — 이전 완료와 구분
+
+전용 목적지 namespace는 `sj-b0be270e62`, UID는 `565b91c4-4f6e-4d06-94c6-9f8803afa6c9`다. 새 19개 Kubernetes 자원만 생성했고 기존 namespace·앱은 변경하지 않았다. 두 워크로드는 비루트·읽기 전용 rootfs·capability 제거·자원 상한을 사용한다. NetworkPolicy 선언만으로 실제 통신 거부를 PASS 처리하지 않는다.
+
+이 Mac의 FileVault는 꺼져 있었다. 전체 Mac 설정을 바꾸지 않고 목적지용 새 파일 한 개에 LUKS2 AES-XTS 512비트/Argon2id 볼륨을 준비했다. 포맷 전 새 backing file과 mapping을 대조했고 잘못된 키 거부를 확인했다. 키는 표준 `keyring` 25.7.0의 macOS Keychain에만 저장·재조회했다. VM 디스크나 평문 키 파일·AWS에는 남기지 않는다. 이는 VM 데이터 볼륨의 통제이며, 개발 PC·제어면의 모든 비밀정보가 저장 시 보호됐다는 주장은 아니다. PVC는 Retain이고 DB 시작은 암호화 볼륨의 실행 마커를 확인한다. 재부팅 후 unlock·운영 복구 인수는 별도다.
+
+실제 검사에서 두 설정 문제를 수정했다.
+
+- 내부 CNI bridge에는 호스트 IPv4 경로가 없어 SSM에서 앱·DB에 닿지 않았다. 해당 bridge의 호스트 주소만 추가하고, 컨테이너가 새로 시작하는 host-directed 요청 및 외부 forwarding을 먼저 차단했다. 공개 수신 포트·컨테이너 default route는 추가하지 않았다. 방화벽·경로는 재부팅 후 재인수가 필요하다.
+- 새 인증서에 엄격한 X509 검증에 필요한 식별자 확장이 빠져 있었다. 검증을 끄지 않고 SKI·AKI를 추가해 새 입력 revision으로 재발급했다. 키·비밀번호·원래 만료 시각은 유지했다. source의 인증서만 원자 교체하고, 데이터 0건·목적지 writer NOLOGIN을 확인한 뒤 전용 워크로드의 새 불변 Secret 참조만 CAS 변경했다. 기본 HTTP 헬스체크도 실제 HTTPS·신원 검증으로 고쳤다.
+
+[실제 사전 시험 14개 증거](../evidence/personal-aws-vm-preflight-20261119.json): 양쪽 DB의 다른 system identifier와 TLS, 앱 HTTPS의 엄격한 CA·호스트명 검증, writer 권한·초기 활성 상태, 무인증 요청 거부, 출발지 주문·재요청·조회, 잘못된 DB 호스트명·평문 시작 거부를 확인했다. 동일 키 두 번 요청의 업무 효과는 source `(1,1,1)`, target `(0,0,0)`이다. target의 NOLOGIN과 HTTP 503을 함께 관측했지만, 실제 활성화 후 정상 쓰기는 아직 양성 대조군으로 남아 있다.
+
+연결은 개인 `default`의 AWS SSM과 local VM의 호스트 키를 고정한 SSH다. Tailscale이나 공개 앱·DB ingress 없이 Mac loopback 네 개를 사용한다. 최초 listener 준비를 실제 목적지 준비로 오인하지 않았고, 실패 실행은 timeout·인증서 오류로 보존했다. 플러그인 누락 실패의 소유 프로세스를 정리하고 AWS 서명·공증·ARM64·버전이 확인된 Session Manager plugin 1.2.896.0을 명시했다.
+
+다음은 표준 HAProxy의 안정 진입점 → 실제 자원에 결속된 등록·자격 → 같은 네이티브 API/계획·독립 승인·워커 실행 → 데이터·새 쓰기·복귀 검증이다. 현재 `migration_complete=false`, `operational_qualification=false`, 무중단 미자격을 유지한다. 실제 위치 대신 DB 주석만 읽는 기존 placement probe를 운영 위치 증거로 승격하지 않는다. 원격 효과 settlement와 제한된 복원 시험의 운영 한계도 유지한다.
