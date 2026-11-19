@@ -23,6 +23,7 @@ from psycopg.conninfo import make_conninfo
 from sova.adapters.ed25519_evidence import Ed25519EvidenceSigner
 from sova.adapters.postgres_registrations import PostgresRegistrations
 from sova.adapters.postgres_verifier_registry import PostgresVerifierRegistry
+from sova.application.registry_authentication import postgres_registry_authenticator
 from sova.adapters.registration.registry_codec import encode, subject_of
 from sova.domain.capability_catalog import CapabilityManifest, StrategyQualification, EvidenceGrade
 from sova.domain.contracts import canonical_json
@@ -83,6 +84,12 @@ def main():
         return psycopg.connect((args.control_directory/"runtime.dsn").read_text(),connect_timeout=5)
     registry = PostgresRegistrations(connect,tenant_id=identity["tenant_id"])
     contract = registry.current("service_contract",identity["application_id"]).value
+    # Requalification is not permission to create another envelope for an
+    # unchanged contract. Exact lookup deliberately rejects ambiguous copies.
+    authenticate = postgres_registry_authenticator(connect, tenant_id=identity["tenant_id"],
+        application_id=identity["application_id"], verifier_version=VERIFIER, clock=lambda: datetime.now(UTC))
+    if authenticate(contract) is not True:
+        raise ValueError("Existing current contract attestation required")
     profiles = {"source":registry.current("environment_profile","aws-ec2-b0be270e62").value,
                 "target":registry.current("environment_profile","local-rke2-b0be270e62").value}
     observations = {}
@@ -135,19 +142,17 @@ def main():
             "personal-strategy-verifier-v1",hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             trial["source_file_hashes"]["tests/qualification_personal_strategy.py"],raw_digest,EvidenceGrade.LIVE)
         for kind,value in (("capability_manifest",manifest),("strategy_qualification",qualification)):
-            package["registrations"].append({"kind":kind,"subject":subject_of(value),"document":encode(value)})
+            subject = subject_of(value)
+            current = registry.current(kind, subject)
+            package["registrations"].append({"kind":kind,"subject":subject,"document":encode(value),
+                                             "expected_revision": current.revision if current else 0})
         record = attestation_record(qualification,verifier_version=VERIFIER,observed_at=now,valid_until=until)
         if record.scope not in trust.allowed_scopes:
             raise ValueError("Qualification signature outside approved verifier scope")
         package["attestations"].append(signer.sign(record,issued_at=now).document)
-    # The contract signature authenticates the exact registered requirements;
-    # it does not claim those requirements have been satisfied by migration.
-    record = attestation_record(contract,verifier_version=VERIFIER,observed_at=now,valid_until=until)
-    if record.scope not in trust.allowed_scopes:
-        raise ValueError("Contract signature outside approved verifier scope")
-    package["attestations"].append(signer.sign(record,issued_at=now).document)
+    package["existing_contract_attestation_revalidated"] = True
     args.output.write_text(canonical_json(package,limit=1<<20)+"\n")
-    print(json.dumps({"directional_qualifications":2,"signatures":3,"measured_rows":{
+    print(json.dumps({"directional_qualifications":2,"signatures":len(package["attestations"]),"measured_rows":{
         direction:sum(scope[key].values()) for direction,key in (("forward","source_rows"),("reverse","target_rows_after_new_write"))},
         "implementation_digest":measured["digest"],"business_plan_admitted":False,"continuity_qualified":False}))
 

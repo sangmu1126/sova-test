@@ -30,6 +30,7 @@ try{
  for(const item of c.registrations){
   await requester.page.getByLabel('등록 종류',{exact:true}).selectOption(item.kind);
   await requester.page.getByLabel('등록 ID',{exact:true}).fill(item.subject);
+  await requester.page.getByLabel('읽은 revision',{exact:true}).fill(String(item.expected_revision??0));
   await requester.page.getByLabel('등록 JSON',{exact:true}).fill(JSON.stringify(item.document));
   const pending=requester.page.waitForResponse(r=>r.request().method()==='PUT'&&decodeURIComponent(new URL(r.url()).pathname).endsWith('/'+item.kind+'/'+item.subject));
   await requester.page.getByRole('button',{name:'등록 저장',exact:true}).click();
