@@ -132,7 +132,7 @@ def serve_api(env=os.environ, *, host="0.0.0.0", port=8080):
     return 0
 
 
-def _health_server(worker, stall_seconds, port):
+def _health_server(worker, stall_seconds, port, *, host="0.0.0.0"):
     """Liveness for a worker: fails once it has made no progress (a poll or
     a step boundary) for ``stall_seconds``, so a hung worker is restarted in
     place and its successor recovers the step it held."""
@@ -149,7 +149,7 @@ def _health_server(worker, stall_seconds, port):
         def log_message(self, *args):
             pass
 
-    server = ThreadingHTTPServer(("0.0.0.0", port), Health)
+    server = ThreadingHTTPServer((host, port), Health)
     threading.Thread(target=server.serve_forever, name="health", daemon=True).start()
     return server
 
@@ -174,9 +174,13 @@ def run_worker(env=os.environ, *, health_port=8081, poll_seconds=5.0):
         Ed25519PrivateKey.from_private_bytes(worker_config.evidence_key),
         issuer_id=config.evidence_issuer, key_id=worker_config.evidence_key_id)
     owner = worker_config.owner_id
-    quiescence = KubernetesWorkerQuiescence(
-        pod_running=in_cluster_pod_state(worker_config.pod_namespace), clock=_clock,
-        this_owner=owner)
+    # A dead local process does not prove its remote DB request has settled.
+    # Host workers therefore retain the existing manual UNKNOWN/hold path.
+    quiescence = None
+    if worker_config.identity_mode == "kubernetes":
+        quiescence = KubernetesWorkerQuiescence(
+            pod_running=in_cluster_pod_state(worker_config.pod_namespace), clock=_clock,
+            this_owner=owner)
     worker = HandoffWorker(_connect(config), settings=_settings(config), catalog=catalog,
                            signer=signer, clock=_clock, owner_id=owner,
                            quiescence=quiescence, lease_seconds=worker_config.lease_seconds,
@@ -188,7 +192,9 @@ def run_worker(env=os.environ, *, health_port=8081, poll_seconds=5.0):
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    health = _health_server(worker, worker_config.stall_seconds, health_port)
+    health = _health_server(
+        worker, worker_config.stall_seconds, health_port,
+        host="127.0.0.1" if worker_config.identity_mode == "host" else "0.0.0.0")
     log.info("worker %s serving %s", owner, ", ".join(worker_config.tenants))
     try:
         worker.run(worker_config.tenants, poll_seconds=poll_seconds,

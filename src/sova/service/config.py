@@ -17,7 +17,8 @@ file (a mounted Kubernetes Secret) that holds a DSN, a key or credentials.
     SOVA_EXECUTION_FILE            the worker's adapter catalog (``catalog.py``)
     SOVA_LEASE_SECONDS             execution lease, 10..300 seconds (default 120)
     SOVA_WORKER_STALL_SECONDS      no progress this long fails liveness (default 600)
-    POD_NAME, POD_UID, POD_NAMESPACE  from the downward API (worker owner identity)
+    SOVA_WORKER_IDENTITY          kubernetes (default) | host
+    POD_NAME, POD_UID, POD_NAMESPACE  downward API, kubernetes mode only
 
 The JWKS is fetched over HTTPS. Plain HTTP is accepted only for a loopback
 test issuer (``http://127.0.0.1...``), the one exception the authenticator
@@ -143,6 +144,7 @@ class WorkerConfig:
     pod_uid: str
     pod_namespace: str
     instance: str  # new at every process start: a restarted container is a new owner
+    identity_mode: str = "kubernetes"
 
     @classmethod
     def from_env(cls, env=os.environ):
@@ -167,10 +169,19 @@ class WorkerConfig:
         stall = _seconds("SOVA_WORKER_STALL_SECONDS", 600, env)
         if not lease < stall <= 86400:
             raise ContractError("SOVA_WORKER_STALL_SECONDS must exceed the lease")
+        mode = env.get("SOVA_WORKER_IDENTITY", "kubernetes")
+        if mode not in ("kubernetes", "host"):
+            raise ContractError("SOVA_WORKER_IDENTITY is kubernetes or host")
+        if mode == "host":
+            if any(env.get(name) for name in ("POD_NAME", "POD_UID", "POD_NAMESPACE")):
+                raise ContractError("Host workers must not claim a Kubernetes Pod identity")
+            name, uid, namespace = "host", str(os.getpid()), ""
+        else:
+            name, uid, namespace = (_required(name, env) for name in
+                                     ("POD_NAME", "POD_UID", "POD_NAMESPACE"))
         return cls(tenants, key, _required("SOVA_EVIDENCE_KEY_ID", env),
                    json.loads(_secret("SOVA_EXECUTION_FILE", env)), lease, stall,
-                   _required("POD_NAME", env), _required("POD_UID", env),
-                   _required("POD_NAMESPACE", env), secrets.token_hex(6))
+                   name, uid, namespace, secrets.token_hex(6), mode)
 
     @property
     def owner_id(self):
