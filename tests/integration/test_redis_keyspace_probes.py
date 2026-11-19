@@ -6,8 +6,10 @@ from adapter_conformance import apply
 import pytest
 from redis_business import as_user
 from redis_world import RedisWorld
+from tls_checks import endpoint, identity_held, summary
 
 from sova.adapters.redis_keyspace_probes import RedisKeyspaceProbes
+from sova.adapters.tls_refusal import REDIS_PING, hello_plaintext, transport_refusals
 
 pytestmark = [pytest.mark.redis, pytest.mark.kubernetes]
 
@@ -79,3 +81,25 @@ def test_a_writer_that_cannot_log_in_but_keeps_its_keys_is_not_denied(redis_busi
 def test_unencrypted_transport_is_reported_as_such(redis_business):
     passed, observation = probes(RedisWorld(redis_business)).transport_encrypted("target")
     assert not passed and observation["tls"] is False
+
+
+def test_valkey_refuses_plaintext_on_its_tls_port_and_serves_it_beside(redis_servers):
+    """Valkey resets a plaintext connection on its TLS port, which ends a
+    port-forward; the relay brings the forward back for the next check."""
+    from forward_relay import ForwardRelay
+
+    relay = ForwardRelay(redis_servers["context"], redis_servers["namespace"],
+                         "deployment/valkey-target", 6380)
+    plain_port = redis_servers["ports"]["target"]
+    try:
+        passed, observation = transport_refusals(
+            endpoint(relay.port, redis_servers["ca_file"]), plaintext=hello_plaintext(REDIS_PING))
+        assert passed and identity_held(observation), summary(observation)
+        passed, observation = transport_refusals(
+            endpoint(relay.port, redis_servers["ca_file"], plaintext_ports=(plain_port,)),
+            plaintext=hello_plaintext(REDIS_PING))
+    finally:
+        relay.close()
+    assert not passed and observation["accepted"] == ["plaintext"]
+    by_port = {p["port"]: p["outcome"] for p in observation["checks"]["plaintext"]["ports"]}
+    assert by_port == {relay.port: "refused", plain_port: "served"}

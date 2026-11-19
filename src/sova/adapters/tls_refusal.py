@@ -17,9 +17,13 @@ runner judged its ENC-01.1 to ENC-01.3 tests:
    verification; a certificate valid for any name is no identity;
 4. plaintext - the protocol's own first message, sent without TLS, must not
    be served (``plaintext`` names how: ``http_plaintext``,
-   ``postgres_plaintext``). A closed connection, a TLS alert, or the server's
-   explicit TLS-only refusal is a refusal; an answer of the service itself is
-   served - even an error, since the service read the request in the clear;
+   ``postgres_plaintext``, ``hello_plaintext`` with ``REDIS_PING``,
+   ``AMQP_HEADER``, ``KAFKA_API_VERSIONS`` or ``MONGODB_HELLO``) - on the
+   endpoint's port and on every port the service may also listen on in the
+   clear (``plaintext_ports``: Redis keeps 6379 beside its TLS port). A
+   closed connection or port, a TLS alert, or the server's explicit TLS-only
+   refusal is a refusal; an answer of the service itself is served - even an
+   error, since the service read the request in the clear;
 5. positive again.
 
 A refusal counts only between two positive controls that verified, and only
@@ -64,6 +68,7 @@ class TlsEndpoint:
     ca_pem: bytes = field(repr=False)
     preamble: str | None = None
     timeout_seconds: float = 5.0
+    plaintext_ports: tuple[int, ...] = ()
 
     def __post_init__(self):
         if type(self.host) is not str or not self.host or type(self.server_name) is not str \
@@ -77,11 +82,15 @@ class TlsEndpoint:
             raise ContractError(f"Preamble one of {PREAMBLES} required")
         if type(self.timeout_seconds) not in (int, float) or not 0 < self.timeout_seconds <= 30:
             raise ContractError("Timeout 0 to 30 seconds required")
+        if type(self.plaintext_ports) is not tuple or not all(
+                type(p) is int and 0 < p < 65536 for p in self.plaintext_ports):
+            raise ContractError("plaintext_ports: a tuple of ports")
 
     def binding(self):
         """A digest naming what was checked: address, name, CA, preamble."""
         text = "|".join((self.host, str(self.port), self.server_name,
-                         hashlib.sha256(self.ca_pem).hexdigest(), str(self.preamble)))
+                         hashlib.sha256(self.ca_pem).hexdigest(), str(self.preamble),
+                         ",".join(map(str, self.plaintext_ports))))
         return hashlib.sha256(text.encode()).hexdigest()
 
 
@@ -207,6 +216,90 @@ def http_plaintext(endpoint):
     if status == 400 and _HTTPS_ONLY.search(body):
         return {"outcome": "refused", "reason": "https_only_answer", "http_status": status}
     return {"outcome": "served", "http_status": status}
+
+
+def _bson(fields):
+    """A BSON document of int32 and string fields, in order."""
+    body = b""
+    for name, value in fields:
+        key = name.encode() + b"\0"
+        if type(value) is int:
+            body += b"\x10" + key + struct.pack("<i", value)
+        else:
+            text = value.encode() + b"\0"
+            body += b"\x02" + key + struct.pack("<i", len(text)) + text
+    return struct.pack("<i", len(body) + 5) + body + b"\0"
+
+
+REDIS_PING = b"PING\r\n"
+AMQP_HEADER = b"AMQP\x00\x00\x09\x01"
+KAFKA_API_VERSIONS = (struct.pack("!ihhih", 10 + len(b"sova-tls-check"), 18, 0, 1,
+                                  len(b"sova-tls-check")) + b"sova-tls-check")
+_HELLO = _bson([("hello", 1), ("$db", "admin")])
+MONGODB_HELLO = struct.pack("<iiii", 16 + 5 + len(_HELLO), 1, 0, 2013) + \
+    struct.pack("<I", 0) + b"\0" + _HELLO
+
+
+def hello_plaintext(hello):
+    """The protocol's first message, in the clear, on the endpoint's port and
+    on each of its ``plaintext_ports``. A service answering in its protocol
+    on any of them serves plaintext."""
+    def one(endpoint, port):
+        try:
+            connection = socket.create_connection((endpoint.host, port),
+                                                  timeout=endpoint.timeout_seconds)
+        except ConnectionRefusedError:
+            return {"port": port, "outcome": "refused", "reason": "port_closed"}
+        except (OSError, TimeoutError) as error:
+            return {"port": port, "outcome": "undecided",
+                    "reason": f"unreachable:{type(error).__name__}"}
+        try:
+            try:
+                connection.sendall(hello)
+            except OSError:
+                return {"port": port, "outcome": "refused", "reason": "closed_before_request"}
+            connection.settimeout(min(endpoint.timeout_seconds, 3))
+            try:
+                data = connection.recv(4096)
+            except (ConnectionResetError, BrokenPipeError):
+                return {"port": port, "outcome": "refused", "reason": "connection_reset"}
+            except (TimeoutError, socket.timeout):
+                return {"port": port, "outcome": "undecided", "reason": "no_answer"}
+        finally:
+            connection.close()
+        if not data:
+            return {"port": port, "outcome": "refused", "reason": "connection_closed"}
+        if data[:1] == b"\x15":
+            return {"port": port, "outcome": "refused", "reason": "tls_alert"}
+        return {"port": port, "outcome": "served", "answered_bytes": len(data)}
+
+    def attempt(endpoint):
+        ports = [one(endpoint, port) for port in (endpoint.port, *endpoint.plaintext_ports)]
+        outcomes = [p["outcome"] for p in ports]
+        outcome = ("served" if "served" in outcomes
+                   else "refused" if set(outcomes) == {"refused"} else "undecided")
+        return {"outcome": outcome, "ports": ports}
+    return attempt
+
+
+def check_tls(tls, preamble=None):
+    """A unit's registered endpoints: ``{side: TlsEndpoint}``, or none."""
+    tls = dict(tls or {})
+    if set(tls) - {"source", "target"} or not all(
+            isinstance(e, TlsEndpoint) and e.preamble == preamble for e in tls.values()):
+        raise ContractError("tls: a TlsEndpoint per side")
+    return tls
+
+
+def side_refusals(tls, side, plaintext):
+    """``transport_refusals`` of the side's registered endpoint, for a unit's
+    probes: not passed when none is registered."""
+    endpoint = (tls or {}).get(side)
+    if endpoint is None:
+        return False, {"probe": "transport_refusals", "side": side,
+                       "reason": "no TLS endpoint registered"}
+    passed, observation = transport_refusals(endpoint, plaintext=plaintext)
+    return passed, {**observation, "side": side}
 
 
 def postgres_plaintext(user, database):

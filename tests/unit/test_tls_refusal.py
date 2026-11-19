@@ -111,7 +111,7 @@ class Server:
             first = connection.recv(1, socket.MSG_PEEK)
             if first == b"\x16" or self.mode == "tls-only":
                 return self._tls(connection)
-            connection.recv(4096)
+            self.received.append(connection.recv(4096))
             if self.mode == "go":
                 connection.sendall(b"HTTP/1.0 400 Bad Request\r\n\r\n"
                                    b"Client sent an HTTP request to an HTTPS server.\n")
@@ -284,3 +284,26 @@ def test_a_connection_closed_before_the_ssl_request_is_answered_is_undecided(ser
     finally:
         listener.close()
     assert found["outcome"] == "undecided"
+
+
+@pytest.mark.parametrize("module, cls, hello", [
+    ("sova.adapters.redis_keyspace_probes", "RedisKeyspaceProbes", "REDIS_PING"),
+    ("sova.adapters.rabbitmq_queue_probes", "RabbitMqQueueProbes", "AMQP_HEADER"),
+    ("sova.adapters.kafka_topic_probes", "KafkaTopicProbes", "KAFKA_API_VERSIONS"),
+    ("sova.adapters.mongodb_probes", "MongoDatabaseProbes", "MONGODB_HELLO"),
+])
+def test_each_units_probes_send_their_own_protocols_first_message(tls, serve, module, cls,
+                                                                  hello):
+    import importlib
+    from types import SimpleNamespace
+
+    import sova.adapters.tls_refusal as refusal
+
+    probes_class = getattr(importlib.import_module(module), cls)
+    server = serve("s3-in-clear")  # answers anything sent in the clear
+    unit = SimpleNamespace(tls={"target": server.endpoint(tls[0])})
+    passed, observation = probes_class.transport_refusals(unit, "target")
+    assert not passed and observation["accepted"] == ["plaintext"]
+    assert observation["side"] == "target"
+    assert server.received == [getattr(refusal, hello)]
+    assert not probes_class.transport_refusals(SimpleNamespace(tls={}), "target")[0]

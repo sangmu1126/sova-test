@@ -38,6 +38,7 @@ from sova.adapters.redis_keyspace_handoff import (
     slot_mate,
 )
 from sova.adapters.redis_keyspace_handoff import prefix as plain_prefix
+from sova.adapters.tls_refusal import REDIS_PING, check_tls, hello_plaintext, side_refusals
 from sova.domain.contracts import ContractError
 
 
@@ -71,12 +72,13 @@ def _fields_with_expiry(client, key, cut):
 class RedisKeyspaceProbes:
     def __init__(self, *, connect, connect_as, writers, app_user, sets, invariants=None,
                  scratch_db=15, other_prefix=None, zone_of=None, replicas=None,
-                 expiry_margin_seconds=120):
+                 expiry_margin_seconds=120, tls=None):
         """``connect(side)`` is an administrative client (a cluster client for a
         cluster), ``connect_as(side, user, node=None)`` a client logged in as
         ``user`` (on one ``(host, port)`` node of a cluster); ``sets`` maps each
         protected set to its key prefix; ``replicas(side)`` administrative
         clients on the side's registered replicas."""
+        self.tls = check_tls(tls)
         if not callable(connect) or not callable(connect_as):
             raise ContractError("Administrative and per-user connections required")
         if type(expiry_margin_seconds) not in (int, float) or \
@@ -242,6 +244,12 @@ class RedisKeyspaceProbes:
         return all(a != "OK" for a in answers.values()), {
             "probe": "cross_tenant_denied", "other_prefix": other,
             "allowed": {c: a == "OK" for c, a in answers.items()}}
+
+    def transport_refusals(self, side):
+        """The side's registered TLS endpoint refuses a wrong CA, a wrong host
+        name and the protocol's first message in the clear, on its port and on
+        any port the service may also serve in the clear."""
+        return side_refusals(self.tls, side, hello_plaintext(REDIS_PING))
 
     def transport_encrypted(self, side):
         kwargs = node_clients(self.connect(side))[0][1].connection_pool.connection_kwargs

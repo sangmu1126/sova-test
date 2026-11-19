@@ -37,6 +37,7 @@ import json
 import time
 from uuid import uuid4
 
+from sova.adapters.tls_refusal import KAFKA_API_VERSIONS, check_tls, hello_plaintext, side_refusals
 from sova.domain.contracts import ContractError
 
 
@@ -50,11 +51,12 @@ def _kafka():
 class KafkaTopicProbes:
     def __init__(self, *, config, config_as, topics, producers, app_producer, probe_prefix,
                  groups=(), sets=None, invariants=None, other_topic=None, zone_of=None,
-                 timeout=15.0):
+                 timeout=15.0, tls=None):
         """``config(side)`` gives the administrative client settings of a side's
         cluster, ``config_as(side, principal)`` a producer principal's own;
         ``topics`` maps side to topic; ``sets`` maps each protected set to a
         topic name pattern of the unit (default: the topic)."""
+        self.tls = check_tls(tls)
         if not callable(config) or not callable(config_as):
             raise ContractError("Administrative and per-principal settings required")
         if type(topics) is not dict or set(topics) != {"source", "target"}:
@@ -345,6 +347,12 @@ class KafkaTopicProbes:
             consumer.close()
         return denied and read != "record_read", {
             "probe": "cross_tenant_denied", "other_topic": topic, "write": write, "read": read}
+
+    def transport_refusals(self, side):
+        """The side's registered TLS endpoint refuses a wrong CA, a wrong host
+        name and the protocol's first message in the clear, on its port and on
+        any port the service may also serve in the clear."""
+        return side_refusals(self.tls, side, hello_plaintext(KAFKA_API_VERSIONS))
 
     def transport_encrypted(self, side):
         """The settings ask for TLS with the broker's certificate and host name

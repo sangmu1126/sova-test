@@ -217,6 +217,7 @@ def _servers(tmp_path_factory, *, replicated, sentinels=False):
                     raise AssertionError("the Sentinel did not find the replicas")
                 time.sleep(1)
         yield {"ports": ports, "tls_ports": tls_ports, "ca_file": str(ca_file),
+               "context": context, "namespace": namespace,
                "admin": clients, "redis": redis, "replica_ports": replica_ports,
                "replicas": replicas, "sentinel": watching}
     finally:

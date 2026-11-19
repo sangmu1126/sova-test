@@ -14,8 +14,10 @@ from mysql_pair_business import tls_material
 import pytest
 from rabbitmq_business import EXCHANGE, PASSWORD, QUEUE, ROUTING_KEY
 from rabbitmq_world import Route
+from tls_checks import endpoint, identity_held, summary
 
 from sova.adapters.rabbitmq_queue_probes import RabbitMqQueueProbes
+from sova.adapters.tls_refusal import AMQP_HEADER, hello_plaintext, transport_refusals
 from sova.application.service_contracts import example_service_contract
 from sova.domain.contracts import ContractError
 from sova.domain.handoff_authority import HandoffState
@@ -125,3 +127,10 @@ def test_unverified_or_plain_channels_do_not_pass(rabbitmq_tls_business, other_v
         broker = wrong["broker"]("target")
         httpx.get(broker["http"] + "/api/overview", auth=broker["auth"],
                   verify=broker["verify"], timeout=5)
+
+
+def test_a_broker_listening_only_over_tls_refuses_plaintext(rabbitmq_tls_broker):
+    b = rabbitmq_tls_broker
+    passed, observation = transport_refusals(endpoint(b["port"], b["ca_file"]),
+                                             plaintext=hello_plaintext(AMQP_HEADER))
+    assert passed and identity_held(observation), summary(observation)

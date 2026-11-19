@@ -9,9 +9,11 @@ from mongodb_business import ADMIN
 from mongodb_world import COLLECTIONS, Route
 from mysql_pair_business import tls_material
 import pytest
+from tls_checks import endpoint, identity_held, summary
 
 from sova.adapters.mongodb_handoff import MongoDatabaseHandoffAdapter
 from sova.adapters.mongodb_probes import MongoDatabaseProbes
+from sova.adapters.tls_refusal import MONGODB_HELLO, hello_plaintext, transport_refusals
 from sova.domain.contracts import EffectStatus
 from sova.service.mongodb_execution import _client_settings
 
@@ -56,3 +58,11 @@ def test_the_catalogs_tls_settings_verify_and_carry_a_handoff(mongo_business, tm
     other_ca.write_bytes(tls_material("elsewhere")["ca.pem"])
     with pytest.raises(b["pymongo"].errors.ServerSelectionTimeoutError):
         client(b, tmp_path, "target", str(other_ca)).admin.command("ping")
+
+
+def test_mongodb_preferring_tls_still_takes_plaintext(mongo_servers):
+    passed, observation = transport_refusals(
+        endpoint(mongo_servers["ports"]["target"], mongo_servers["ca_file"]),
+        plaintext=hello_plaintext(MONGODB_HELLO))
+    assert not passed and observation["accepted"] == ["plaintext"]
+    assert identity_held(observation), summary(observation)

@@ -31,15 +31,18 @@ import ssl
 from urllib.parse import quote
 from uuid import uuid4
 
+from sova.adapters.tls_refusal import AMQP_HEADER, check_tls, hello_plaintext, side_refusals
 from sova.domain.contracts import ContractError
 
 
 class RabbitMqQueueProbes:
     def __init__(self, *, broker, connect_as, vhosts, queue, exchange, routing_key, publishers,
-                 app_publisher, invariants=None, other_vhost=None, zone_of=None, timeout=10.0):
+                 app_publisher, invariants=None, other_vhost=None, zone_of=None, timeout=10.0,
+                 tls=None):
         """``broker(side)`` is the adapter's administrative access (management API,
         AMQP parameters, credentials); ``connect_as(side, user, vhost)`` gives
         AMQP parameters for ``user``'s own login."""
+        self.tls = check_tls(tls)
         if not callable(broker) or not callable(connect_as):
             raise ContractError("Administrative and per-user access required")
         if type(vhosts) is not dict or set(vhosts) != {"source", "target"}:
@@ -184,6 +187,12 @@ class RabbitMqQueueProbes:
         wrote, attempt = self._try_publish("target", self.app_publisher, vhost)
         return not wrote and attempt in ("login_refused", "write_refused"), {
             "probe": "cross_tenant_denied", "other_vhost": vhost, "attempt": attempt}
+
+    def transport_refusals(self, side):
+        """The side's registered TLS endpoint refuses a wrong CA, a wrong host
+        name and the protocol's first message in the clear, on its port and on
+        any port the service may also serve in the clear."""
+        return side_refusals(self.tls, side, hello_plaintext(AMQP_HEADER))
 
     def transport_encrypted(self, side):
         """Both channels that carry the administrator's credentials: AMQP and the

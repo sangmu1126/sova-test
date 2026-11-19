@@ -15,8 +15,10 @@ from kafka_business import settings
 from kafka_world import Route
 from mysql_pair_business import tls_material
 import pytest
+from tls_checks import endpoint, identity_held, summary
 
 from sova.adapters.kafka_topic_probes import KafkaTopicProbes
+from sova.adapters.tls_refusal import KAFKA_API_VERSIONS, hello_plaintext, transport_refusals
 from sova.application.service_contracts import example_service_contract
 from sova.domain.handoff_authority import HandoffState
 from sova.service.kafka_execution import kafka_factory, kafka_resolver
@@ -121,3 +123,11 @@ def test_unverified_or_plain_settings_do_not_pass(kafka_tls_business, other_topi
     assert not passed and observation["connected"] is False, observation
     with pytest.raises(KafkaException):
         AdminClient(wrong["config"]("target")).list_topics(timeout=5)
+
+
+def test_a_kafka_api_listening_only_over_tls_refuses_plaintext(kafka_tls_broker):
+    b = kafka_tls_broker
+    port = int(b["address"].rsplit(":", 1)[1])
+    passed, observation = transport_refusals(endpoint(port, b["ca_file"]),
+                                             plaintext=hello_plaintext(KAFKA_API_VERSIONS))
+    assert passed and identity_held(observation), summary(observation)

@@ -27,15 +27,17 @@ from datetime import UTC, datetime
 import hashlib
 
 from sova.adapters.mongodb_handoff import may_write, placement_index, shard_keys, ttl_live
+from sova.adapters.tls_refusal import MONGODB_HELLO, check_tls, hello_plaintext, side_refusals
 from sova.domain.contracts import ContractError
 
 
 class MongoDatabaseProbes:
     def __init__(self, *, connect, connect_as, databases, collections, writers, app_user,
-                 invariants=None, other_db=None, zone_of=None):
+                 invariants=None, other_db=None, zone_of=None, tls=None):
         """``connect(side)`` is an administrative client, ``connect_as(side, user)`` a
         client logging in as ``user`` (``user@authdb``); ``databases`` maps side to
         the unit's database."""
+        self.tls = check_tls(tls)
         if not callable(connect) or not callable(connect_as):
             raise ContractError("Administrative and per-user clients required")
         self.connect, self.connect_as, self.databases = connect, connect_as, databases
@@ -175,6 +177,12 @@ class MongoDatabaseProbes:
             client.close()
         return outcome == "refused", {"probe": "cross_tenant_denied", "other_db": database,
                                       "outcome": outcome}
+
+    def transport_refusals(self, side):
+        """The side's registered TLS endpoint refuses a wrong CA, a wrong host
+        name and the protocol's first message in the clear, on its port and on
+        any port the service may also serve in the clear."""
+        return side_refusals(self.tls, side, hello_plaintext(MONGODB_HELLO))
 
     def transport_encrypted(self, side):
         options = self.connect(side).options.pool_options
