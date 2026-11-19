@@ -26,14 +26,19 @@ to a request; nothing is concluded from configuration alone.
   a new scratch bucket of the target store, compares the sets there, and
   removes the scratch bucket whatever happens.
 * Anonymous access (IAM-01.1) and another tenant's access (ISO-01.1) are
-  bracketed by positive controls, as the team's control runner judged them:
-  the application reads one of its own objects before and after (and the
-  other tenant one of its own); between them the unsigned client - or the
-  other tenant, and the application towards the other tenant - reads that
-  object, lists the bucket and tries a conditional write. Every attempt must
-  be refused with an access denial. A refusal without both positive controls
-  proves nothing (a missing object is refused too), so it is undecided; an
-  attempt that is served decides the failure.
+  bracketed by positive controls, as the team's control runner judged them.
+  Access can differ by prefix, so each protected set has a witness: an object
+  under its prefix, or - before the data is copied - a canary the probe's own
+  client places there and removes. The probe's reader reads every witness
+  before and after (the application itself is fenced off the target until
+  activation), the other tenant reads one of its own objects; between them
+  the unsigned client - or the other tenant - reads each witness, lists each
+  prefix and tries a conditional write under it, and the application tries
+  the other tenant's bucket. Every attempt must be refused with an access
+  denial; a credential the store does not recognise is never a refusal. A
+  refusal without the positive controls proves nothing (a missing object is
+  refused too), so it is undecided; an attempt that is served decides the
+  failure.
 * Transport: ``transport_encrypted`` is this probe's own connection to the
   side - an HTTPS endpoint, a handshake verified against the registered CA
   and name; ``transport_refusals`` asks the endpoint to refuse a wrong CA, a
@@ -160,17 +165,18 @@ class ObjectStoreProbes:
             body.close()
         return "allowed"
 
-    def _list(self, client, bucket):
+    def _list(self, client, bucket, prefix=""):
         try:
-            client.list_objects_v2(Bucket=bucket, MaxKeys=1)
+            client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
         except (ClientError, BotoCoreError, OSError) as error:
             return _refusal(error)
         return "allowed"
 
-    def _write(self, client, bucket, admin):
-        """A conditional write that cannot succeed. An allowed writer gets "no
-        such key" or a failed precondition, a denied one an access denial."""
-        key = PROBE_PREFIX + uuid4().hex
+    def _write(self, client, bucket, admin, prefix=""):
+        """A conditional write under ``prefix`` that cannot succeed. An allowed
+        writer gets "no such key" or a failed precondition, a denied one an
+        access denial."""
+        key = prefix + PROBE_PREFIX.rstrip("/") + "-" + uuid4().hex
         try:
             client.put_object(Bucket=bucket, Key=key, Body=b"", IfMatch=NEVER_ETAG)
         except ClientError as error:
@@ -183,16 +189,30 @@ class ObjectStoreProbes:
         admin.delete_object(Bucket=bucket, Key=key)  # the store ignored If-Match
         return "allowed:condition_ignored"
 
-    def _tries(self, client, bucket, key, admin):
-        return {"read": self._read(client, bucket, key), "list": self._list(client, bucket),
-                "write": self._write(client, bucket, admin)}
+    def _writes(self, client, bucket, admin):
+        """A writer is refused only if refused under every protected prefix: a
+        denial of some prefixes leaves the others writable."""
+        found = [self._write(client, bucket, admin, prefix) for prefix in self.sets.values()]
+        return next((f for f in found if f != "refused"), "refused")
+
+    def _tries(self, client, bucket, witnesses, admin):
+        """Per protected set: read its witness, list its prefix, write under it."""
+        return {name: {"read": self._read(client, bucket, key),
+                       "list": self._list(client, bucket, self.sets[name]),
+                       "write": self._write(client, bucket, admin, self.sets[name])}
+                for name, key in witnesses.items()}
+
+    @staticmethod
+    def _flat(tries):
+        return [outcome for per_set in tries.values() for outcome in per_set.values()]
 
     @staticmethod
     def _verdict(positives, attempts):
         """refused (pass), allowed (a decided failure) or undecided."""
         if any(a.startswith("allowed") for a in attempts):
             return "allowed"
-        if all(p == "allowed" for p in positives) and all(a == "refused" for a in attempts):
+        if positives and all(p == "allowed" for p in positives) and attempts and all(
+                a == "refused" for a in attempts):
             return "refused"
         return "undecided"
 
@@ -204,7 +224,7 @@ class ObjectStoreProbes:
 
     def _writer_attempts(self, side, names):
         s = self._side(side)
-        return {n: self._write(s.client_as(n), s.bucket, s.client) for n in names}
+        return {n: self._writes(s.client_as(n), s.bucket, s.client) for n in names}
 
     def write_denied(self, side):
         attempts = self._writer_attempts(side, self.writers)
@@ -354,58 +374,88 @@ class ObjectStoreProbes:
         client.delete_bucket(Bucket=bucket)
 
     # -- access by others ----------------------------------------------------------
-    def _witness(self, side):
-        """One current object of the protected sets, for the positive control."""
-        s = self._side(side)
-        for prefix in self.sets.values():
+    def _witnesses(self, side):
+        """Per protected set, one current object under its prefix to read: an
+        existing one, or - before the data is there - a canary the probe's
+        own client places under the prefix and removes afterwards. Access can
+        differ by prefix, so every set is tried. Returns (witnesses, placed)."""
+        s, witnesses, placed = self._side(side), {}, []
+        for name, prefix in self.sets.items():
             found = s.client.list_objects_v2(Bucket=s.bucket, Prefix=prefix, MaxKeys=1)
-            for item in found.get("Contents", ()):
-                return item["Key"]
-        return None
+            keys = [item["Key"] for item in found.get("Contents", ())]
+            if keys:
+                witnesses[name] = keys[0]
+                continue
+            key = prefix + "sova-probe-canary-" + uuid4().hex
+            try:
+                s.client.put_object(Bucket=s.bucket, Key=key, Body=uuid4().bytes)
+            except (ClientError, BotoCoreError, OSError):
+                continue  # no witness for this set: the probe stays undecided
+            witnesses[name] = key
+            placed.append(key)
+        return witnesses, placed
+
+    def _remove(self, side, keys):
+        s = self._side(side)
+        for key in keys:
+            s.client.delete_object(Bucket=s.bucket, Key=key)
+
+    def _positives(self, side, witnesses):
+        s = self._side(side)
+        return [self._read(s.client, s.bucket, key) for key in witnesses.values()]
 
     def anonymous_denied(self, side="target"):
+        """No unsigned request reads, lists or writes any protected set. The
+        positive control is the probe's own reader: the witness is there and
+        the store answers (the application may itself be fenced off the
+        target until activation)."""
         s = self._side(side)
         if s.anonymous is None:
             return False, {"probe": "anonymous_denied", "side": side,
                            "reason": "no unsigned client registered"}
-        key = self._witness(side)
-        if key is None:
-            return False, {"probe": "anonymous_denied", "side": side,
-                           "reason": "no object to read in the protected sets"}
-        app = s.client_as(self.app)
-        before = self._read(app, s.bucket, key)
-        tries = self._tries(s.anonymous, s.bucket, key, s.client)
-        after = self._read(app, s.bucket, key)
-        verdict = self._verdict((before, after), tries.values())
+        witnesses, placed = self._witnesses(side)
+        try:
+            before = self._positives(side, witnesses)
+            tries = self._tries(s.anonymous, s.bucket, witnesses, s.client)
+            after = self._positives(side, witnesses)
+        finally:
+            self._remove(side, placed)
+        complete = len(witnesses) == len(self.sets)
+        verdict = self._verdict(before + after if complete else [], self._flat(tries))
         return verdict == "refused", {
             "probe": "anonymous_denied", "side": side, "outcome": verdict,
-            "positive": [before, after], "anonymous": tries}
+            "canaries": len(placed), "positive": {"before": before, "after": after},
+            "anonymous": tries}
 
     def cross_tenant_denied(self, other=None):
-        """Another tenant cannot reach the application's target bucket, and the
-        application cannot reach the other tenant's (``other`` overrides the
-        registered tenant)."""
+        """Another tenant cannot read, list or write any protected set of the
+        application's target bucket, and the application cannot reach the
+        other tenant's bucket (``other`` overrides the registered tenant).
+        Positive controls: the probe's reader reads each witness, the other
+        tenant its own object. A refusal counts only as an access denial, so
+        a credential the store does not recognise is never a refusal."""
         other = other or self.outsider
         if other is None:
             return False, {"probe": "cross_tenant_denied", "reason": "no other tenant registered"}
         s = self._side("target")
-        key = self._witness("target")
-        if key is None:
-            return False, {"probe": "cross_tenant_denied",
-                           "reason": "no object to read in the protected sets"}
         app = s.client_as(self.app)
-
-        def positives():
-            return [self._read(app, s.bucket, key), self._read(other.client, other.bucket,
-                                                               other.key)]
-
-        before = positives()
-        into_app = self._tries(other.client, s.bucket, key, s.client)
-        into_other = self._tries(app, other.bucket, other.key, s.client)
-        after = positives()
-        verdict = self._verdict(before + after, [*into_app.values(), *into_other.values()])
+        witnesses, placed = self._witnesses("target")
+        try:
+            before = self._positives("target", witnesses) + [
+                self._read(other.client, other.bucket, other.key)]
+            into_app = self._tries(other.client, s.bucket, witnesses, s.client)
+            into_other = {"read": self._read(app, other.bucket, other.key),
+                          "list": self._list(app, other.bucket),
+                          "write": self._write(app, other.bucket, s.client)}
+            after = self._positives("target", witnesses) + [
+                self._read(other.client, other.bucket, other.key)]
+        finally:
+            self._remove("target", placed)
+        complete = len(witnesses) == len(self.sets)
+        verdict = self._verdict(before + after if complete else [],
+                                [*self._flat(into_app), *into_other.values()])
         return verdict == "refused", {
-            "probe": "cross_tenant_denied", "outcome": verdict,
+            "probe": "cross_tenant_denied", "outcome": verdict, "canaries": len(placed),
             "positive": {"before": before, "after": after},
             "other_into_application": into_app, "application_into_other": into_other}
 

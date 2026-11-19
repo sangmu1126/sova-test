@@ -13,7 +13,6 @@ from botocore.exceptions import ClientError
 import pytest
 
 from sova.adapters.object_store_probes import (
-    PROBE_PREFIX,
     ObjectReference,
     ObjectStoreProbes,
     ObjectStoreSide,
@@ -37,11 +36,12 @@ class Body(io.BytesIO):
 
 
 class Store:
-    """Buckets of objects; ``grants[principal][bucket]`` the operations allowed.
-    The administrator may do anything; ``None`` is the anonymous caller."""
+    """Buckets of objects; ``grants[principal][bucket]`` the operations allowed,
+    ``prefix_grants[principal]`` (bucket, prefix, operation) triples. The
+    administrator may do anything; ``None`` is the anonymous caller."""
 
     def __init__(self, name="store"):
-        self.name, self.buckets, self.grants = name, {}, {}
+        self.name, self.buckets, self.grants, self.prefix_grants = name, {}, {}, {}
         self.ignore_if_match, self.fail = False, None
 
     def grant(self, principal, bucket, *ops):
@@ -56,14 +56,18 @@ class Client:
         self.store, self.principal = store, principal
         self.meta = SimpleNamespace(endpoint_url=endpoint)
 
-    def _check(self, bucket, op, operation):
+    def _check(self, bucket, op, operation, key=""):
         if self.store.fail and self.store.fail[0] == operation:
             raise _error(*self.store.fail[1:], operation)
         if bucket not in self.store.buckets:
             raise _error(404, "NoSuchBucket", operation)
-        if self.principal != "admin" and op not in self.store.grants.get(
+        if self.principal == "admin" or op in self.store.grants.get(
                 self.principal, {}).get(bucket, ()):
-            raise _error(403, "AccessDenied", operation)
+            return
+        if any(b == bucket and key.startswith(p) and o == op and p
+               for b, p, o in self.store.prefix_grants.get(self.principal, ())):
+            return
+        raise _error(403, "AccessDenied", operation)
 
     def create_bucket(self, Bucket):  # noqa: N803 - the S3 client's names
         if self.principal != "admin":
@@ -78,7 +82,7 @@ class Client:
 
     def put_object(self, Bucket, Key, Body=b"", IfMatch=None, Metadata=None, Tagging=None,  # noqa: N803
                    **headers):
-        self._check(Bucket, "write", "PutObject")
+        self._check(Bucket, "write", "PutObject", Key)
         objects = self.store.buckets[Bucket]
         if IfMatch is not None and not self.store.ignore_if_match:
             if Key not in objects:
@@ -91,7 +95,7 @@ class Client:
                         **headers}
 
     def get_object(self, Bucket, Key):  # noqa: N803
-        self._check(Bucket, "read", "GetObject")
+        self._check(Bucket, "read", "GetObject", Key)
         found = self.store.buckets[Bucket].get(Key)
         if found is None:
             raise _error(404, "NoSuchKey", "GetObject")
@@ -113,7 +117,7 @@ class Client:
         self.store.buckets[Bucket].pop(Key, None)
 
     def list_objects_v2(self, Bucket, Prefix="", MaxKeys=1000):  # noqa: N803
-        self._check(Bucket, "list", "ListObjectsV2")
+        self._check(Bucket, "list", "ListObjectsV2", Prefix)
         keys = sorted(k for k in self.store.buckets[Bucket] if k.startswith(Prefix))[:MaxKeys]
         return {"Contents": [{"Key": k} for k in keys]}
 
@@ -193,7 +197,7 @@ def test_a_denial_counts_only_when_the_attempt_and_the_access_view_agree():
     world.fence("source")
     passed, observation = world.probes().write_denied("source")
     assert passed and observation["views_agree"]
-    assert not any(k.startswith(PROBE_PREFIX) for k in world.source_store.buckets["orders-src"])
+    assert not any("sova-probe" in k for k in world.source_store.buckets["orders-src"])
 
 
 def test_a_denial_kept_in_policy_but_not_enforced_is_caught():
@@ -220,7 +224,7 @@ def test_a_store_that_ignores_if_match_is_an_allowed_write_and_leaves_nothing():
     world.source_store.ignore_if_match = True
     passed, observation = world.probes().write_denied("source")
     assert not passed and observation["attempt"]["app"] == "allowed:condition_ignored"
-    assert not any(k.startswith(PROBE_PREFIX) for k in world.source_store.buckets["orders-src"])
+    assert not any("sova-probe" in k for k in world.source_store.buckets["orders-src"])
 
 
 def test_only_the_application_writes_the_target_after_activation():
@@ -279,19 +283,22 @@ def test_the_restore_drill_compares_in_a_scratch_bucket_and_removes_it():
     assert set(world.target_store.buckets) == {"orders-tgt", "other-tenant"}
 
 
+REFUSED = {"read": "refused", "list": "refused", "write": "refused"}
+
+
 def test_anonymous_access_is_refused_between_two_positive_controls():
     world = World()
     passed, observation = world.probes().anonymous_denied()
-    assert passed and observation["anonymous"] == {"read": "refused", "list": "refused",
-                                                   "write": "refused"}
-    assert observation["positive"] == ["allowed", "allowed"]
+    assert passed and observation["anonymous"] == {"orders": REFUSED, "results": REFUSED}
+    assert observation["positive"] == {"before": ["allowed"] * 2, "after": ["allowed"] * 2}
+    assert observation["canaries"] == 0
 
 
 def test_an_open_target_fails_anonymous_access_decidedly():
     world = World(open_target=True)
     passed, observation = world.probes().anonymous_denied()
     assert not passed and observation["outcome"] == "allowed"
-    assert observation["anonymous"]["read"] == "allowed"
+    assert observation["anonymous"]["orders"]["read"] == "allowed"
 
 
 def test_one_open_operation_is_enough_to_fail():
@@ -299,35 +306,73 @@ def test_one_open_operation_is_enough_to_fail():
     world.target_store.grant(ANONYMOUS, "orders-tgt", "list")
     passed, observation = world.probes().anonymous_denied()
     assert not passed and observation["outcome"] == "allowed"
-    assert observation["anonymous"] == {"read": "refused", "list": "allowed",
-                                        "write": "refused"}
+    assert observation["anonymous"]["orders"] == {"read": "refused", "list": "allowed",
+                                                  "write": "refused"}
 
 
-def test_a_refusal_without_the_positive_control_is_undecided():
-    """The application cannot read its own object either: a refusal of the
-    anonymous caller then proves nothing about anonymous access."""
+def test_one_open_prefix_is_enough_to_fail():
+    """Only ``results/`` is public: a single registered key under ``orders/``
+    would have passed."""
     world = World()
-    world.target_store.revoke("app", "orders-tgt", "read")
+    world.target_store.prefix_grants[ANONYMOUS] = [("orders-tgt", "results/", "read")]
+    passed, observation = world.probes().anonymous_denied()
+    assert not passed and observation["outcome"] == "allowed"
+    assert observation["anonymous"]["orders"] == REFUSED
+    assert observation["anonymous"]["results"]["read"] == "allowed"
+
+
+def test_before_the_copy_canaries_stand_in_for_the_sets_and_are_removed():
+    world = World()
+    world.target_store.buckets["orders-tgt"].clear()
+    passed, observation = world.probes().anonymous_denied()
+    assert passed and observation["canaries"] == 2
+    assert world.target_store.buckets["orders-tgt"] == {}
+    world.target_store.prefix_grants[ANONYMOUS] = [("orders-tgt", "orders/", "read")]
+    passed, observation = world.probes().cross_tenant_denied()
+    assert passed and observation["canaries"] == 2
+    passed, observation = world.probes().anonymous_denied()
+    assert not passed and observation["anonymous"]["orders"]["read"] == "allowed"
+    assert world.target_store.buckets["orders-tgt"] == {}
+
+
+def test_a_refusal_of_a_missing_object_is_undecided():
+    """The witness is gone when read: the store refuses the anonymous caller
+    as it would refuse any read of a missing key, which proves nothing."""
+    world = World()
+    probes = world.probes()
+    probes._witnesses = lambda side: ({"orders": "orders/gone.json",
+                                       "results": "results/c/k0.json"}, [])
+    passed, observation = probes.anonymous_denied()
+    assert not passed and observation["outcome"] == "undecided"
+    assert observation["positive"]["before"][0] == "undecided:NoSuchKey"
+
+
+def test_a_set_without_a_witness_is_undecided():
+    world = World()
+    world.target_store.buckets["orders-tgt"].clear()
+    world.target_store.fail = ("PutObject", 500, "InternalError")  # no canary can be placed
     passed, observation = world.probes().anonymous_denied()
     assert not passed and observation["outcome"] == "undecided"
 
 
 def test_errors_that_are_not_access_denials_are_undecided():
     world = World()
-    world.target_store.fail = ("ListObjectsV2", 500, "InternalError")
     probes = world.probes()
-    probes._witness = lambda side: "orders/0.json"  # the probe's own listing is not the case
+    probes._witnesses = lambda side: ({"orders": "orders/0.json",
+                                       "results": "results/c/k0.json"}, [])
+    world.target_store.fail = ("ListObjectsV2", 500, "InternalError")
     passed, observation = probes.anonymous_denied()
     assert not passed and observation["outcome"] == "undecided"
-    assert observation["anonymous"]["list"] == "undecided:InternalError"
+    assert observation["anonymous"]["orders"]["list"] == "undecided:InternalError"
 
 
 def test_another_tenant_is_refused_both_ways():
     world = World()
     passed, observation = world.probes().cross_tenant_denied()
     assert passed, observation
-    assert observation["positive"] == {"before": ["allowed", "allowed"],
-                                       "after": ["allowed", "allowed"]}
+    assert observation["positive"] == {"before": ["allowed"] * 3, "after": ["allowed"] * 3}
+    assert observation["other_into_application"] == {"orders": REFUSED, "results": REFUSED}
+    assert observation["application_into_other"] == REFUSED
 
 
 @pytest.mark.parametrize("who, bucket", [("outsider", "orders-tgt"), ("app", "other-tenant")])
@@ -342,6 +387,19 @@ def test_isolation_without_the_other_tenants_positive_control_is_undecided():
     world = World()
     world.target_store.revoke("outsider", "other-tenant", "read")
     passed, observation = world.probes().cross_tenant_denied()
+    assert not passed and observation["outcome"] == "undecided"
+
+
+def test_a_credential_the_store_does_not_know_is_never_a_refusal():
+    world = World()
+    probes = world.probes()
+    unknown = Client(world.target_store, "outsider")
+
+    def invalid(**kwargs):
+        raise _error(403, "InvalidAccessKeyId", "GetObject")
+    unknown.get_object = unknown.list_objects_v2 = unknown.put_object = invalid
+    passed, observation = probes.cross_tenant_denied(
+        ObjectTenant(unknown, "other-tenant", "x/1.json"))
     assert not passed and observation["outcome"] == "undecided"
 
 
@@ -376,5 +434,22 @@ def test_an_anonymous_write_a_store_took_despite_if_match_is_a_decided_failure()
     world.target_store.ignore_if_match = True
     passed, observation = world.probes().anonymous_denied()
     assert not passed and observation["outcome"] == "allowed"
-    assert observation["anonymous"]["write"] == "allowed:condition_ignored"
-    assert not any(k.startswith(PROBE_PREFIX) for k in world.target_store.buckets["orders-tgt"])
+    assert observation["anonymous"]["orders"]["write"] == "allowed:condition_ignored"
+    assert not any("sova-probe" in k for k in world.target_store.buckets["orders-tgt"])
+
+
+def test_a_writer_open_under_one_prefix_is_not_denied():
+    world = World()
+    world.fence("source")
+    world.source_store.prefix_grants["batch"] = [("orders-src", "results/", "write")]
+    passed, observation = world.probes().write_denied("source")
+    assert not passed and observation["attempt"] == {"app": "refused", "batch": "allowed"}
+
+
+def test_a_set_left_without_a_witness_keeps_the_probe_undecided():
+    world = World()
+    probes = world.probes()
+    probes._witnesses = lambda side: ({"orders": "orders/0.json"}, [])  # results: none
+    passed, observation = probes.anonymous_denied()
+    assert not passed and observation["outcome"] == "undecided"
+    assert not probes.cross_tenant_denied()[0]

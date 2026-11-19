@@ -77,8 +77,8 @@ def test_the_store_as_it_starts_by_default_serves_anyone(seaweedfs_stores):
     probes = Unit(seaweedfs_stores["open"]).probes()
     passed, observation = probes.anonymous_denied()
     assert not passed and observation["outcome"] == "allowed"
-    assert observation["anonymous"] == {"read": "allowed", "list": "allowed",
-                                        "write": "allowed"}
+    allowed = {"read": "allowed", "list": "allowed", "write": "allowed"}
+    assert observation["anonymous"] == {"orders": allowed, "results": allowed}
     passed, observation = probes.cross_tenant_denied()
     assert not passed and observation["outcome"] == "allowed"
     passed, observation = probes.transport_encrypted("target")
@@ -89,11 +89,12 @@ def test_the_locked_store_refuses_anonymous_callers_and_other_tenants(seaweedfs_
     probes = Unit(seaweedfs_stores["locked"]).probes()
     passed, observation = probes.anonymous_denied()
     assert passed, observation
-    assert observation["positive"] == ["allowed", "allowed"]
+    assert observation["positive"] == {"before": ["allowed"] * 2, "after": ["allowed"] * 2}
     passed, observation = probes.cross_tenant_denied()
     assert passed, observation
-    assert observation["other_into_application"] == observation["application_into_other"] == {
-        "read": "refused", "list": "refused", "write": "refused"}
+    refused = {"read": "refused", "list": "refused", "write": "refused"}
+    assert observation["other_into_application"] == {"orders": refused, "results": refused}
+    assert observation["application_into_other"] == refused
 
 
 def test_the_locked_store_keeps_its_tls_identity_and_refuses_plain_http(seaweedfs_stores):
