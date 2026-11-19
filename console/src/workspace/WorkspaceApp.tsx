@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { api, initialize, login, logout, currentConfig } from "./auth";
 import type { Identity } from "./auth";
+import { OperationalPanel } from "./OperationalPanel";
 import { TrustPanel } from "./TrustPanel";
 import { NativePlanView } from "../features/native/NativePlanPanel";
 import { nativeStatus } from "../features/native/status";
@@ -375,6 +376,7 @@ export function WorkspaceApp() {
             ["execute", "승인·실행", ArrowRight],
             ["observe", "워크로드·보안", ShieldCheck],
             ["evidence", "검증 기록", Activity],
+            ["operational", "실측·비용", Activity],
           ].map(([value, label, Icon]) => {
             const Glyph = Icon as typeof Activity;
             return (
@@ -937,6 +939,12 @@ export function WorkspaceApp() {
                     워크로드·보안 메뉴에서 확인합니다.
                   </p>
                 </section>
+              )}
+              {tab === "operational" && (
+                <OperationalPanel
+                  application={application}
+                  identity={identity}
+                />
               )}
               {tab === "observe" &&
                 (fresh ? (
