@@ -39,6 +39,7 @@ def main():
     for name in ("inputs", "connections", "control-directory", "artifacts"):
         p.add_argument("--" + name, type=Path, required=True)
     p.add_argument("--case", choices=("registration", "verifier"), default="registration")
+    p.add_argument("--identity-startup-seconds", type=int, default=300)
     args = p.parse_args()
     os.umask(0o077)
     args.artifacts.mkdir(mode=0o700, exist_ok=False)
@@ -91,7 +92,8 @@ def main():
         ("environment_profile", source.profile_id, source), ("environment_profile", target.profile_id, target))]
     api = None
     try:
-        with identity_provider(harness, startup_seconds=300, security_roles=args.case == "verifier") as idp:
+        with identity_provider(harness, startup_seconds=args.identity_startup_seconds,
+                               security_roles=args.case == "verifier") as idp:
             with (args.artifacts / "api.log").open("xb") as log:
                 api = subprocess.Popen([sys.executable, "-m", "sova.service.main", "serve-api", "--host", "127.0.0.1", "--port", str(port)],
                     env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)

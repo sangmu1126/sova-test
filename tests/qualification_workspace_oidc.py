@@ -33,7 +33,7 @@ def docker(*args):
 
 @contextmanager
 def identity_provider(h, *, startup_seconds=100, security_roles=False):
-    if type(startup_seconds) is not int or not 30 <= startup_seconds <= 300:
+    if type(startup_seconds) is not int or not 30 <= startup_seconds <= 900:
         raise ValueError("Explicit bounded local IdP cold-start budget required")
     image = os.environ.get("SOVA_TEST_JOURNEY_KEYCLOAK_IMAGE")
     if image != IMAGE:
