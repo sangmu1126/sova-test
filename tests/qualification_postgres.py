@@ -31,15 +31,18 @@ import psycopg
 from psycopg.conninfo import make_conninfo
 
 
-def certificates(directory):
+def certificates(directory, *, valid_until=None):
     now = datetime.now(UTC)
+    expires = valid_until or now + timedelta(days=1)
+    if expires.tzinfo is None or not now < expires <= now + timedelta(days=1):
+        raise ValueError("Bounded timezone-aware test certificate deadline required")
     server_input = directory / "server"
     server_input.mkdir(mode=0o700)
     ca_key, server_key = ec.generate_private_key(ec.SECP256R1()), ec.generate_private_key(ec.SECP256R1())
     ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Sova MQ-02 disposable test CA")])
     ca = (x509.CertificateBuilder().subject_name(ca_name).issuer_name(ca_name)
           .public_key(ca_key.public_key()).serial_number(x509.random_serial_number())
-          .not_valid_before(now - timedelta(minutes=1)).not_valid_after(now + timedelta(days=1))
+          .not_valid_before(now - timedelta(minutes=1)).not_valid_after(expires)
           .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
           .add_extension(x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key()), critical=False)
           .sign(ca_key, hashes.SHA256()))
@@ -47,7 +50,7 @@ def certificates(directory):
               .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")]))
               .issuer_name(ca_name).public_key(server_key.public_key())
               .serial_number(x509.random_serial_number())
-              .not_valid_before(now - timedelta(minutes=1)).not_valid_after(now + timedelta(days=1))
+              .not_valid_before(now - timedelta(minutes=1)).not_valid_after(expires)
               .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
               .add_extension(x509.SubjectAlternativeName([
                   x509.DNSName("localhost"), x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]), critical=False)
@@ -59,7 +62,7 @@ def certificates(directory):
               .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "mq02-client")]))
               .issuer_name(ca_name).public_key(client_key.public_key())
               .serial_number(x509.random_serial_number())
-              .not_valid_before(now - timedelta(minutes=1)).not_valid_after(now + timedelta(days=1))
+              .not_valid_before(now - timedelta(minutes=1)).not_valid_after(expires)
               .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
               .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CLIENT_AUTH]), critical=False)
               .sign(ca_key, hashes.SHA256()))
