@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "scope": "personal-only six-stage work; no completion claim",
+  "unit_regression": {
+    "tests": 1286,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 22
+  },
+  "images": {
+    "app-image-07": {
+      "manifest_digest": "sha256:518b6fa0e1b28ff1c7d1c055f907fa71ae8ed01db52a7af88e97bfb3db45a174",
+      "config_digest": "sha256:852c1570fac12d9bafb0397b21d7ca76a4e4412e0c21c6ed4b5c736515ceccfb",
+      "source_commit": "e196ceaad0464d39f15e1a38521f8df4fc170c60"
+    },
+    "postgres-image-03": {
+      "manifest_digest": "sha256:934224e0a5c2003ead54d50f897278b34aa626a4b132844fe885666da35146f7",
+      "config_digest": "sha256:7b62f1eb627c951a2fa33c892bac6c2487c46d50d1eec4bdd3079b0ae0915728",
+      "source_commit": "553be58480262feb1215ee82bf39a40ae5b0875b"
+    }
+  },
+  "fresh_image_scan_all_severities": {
+    "app": 0,
+    "postgresql": 0,
+    "proxy": 0
+  },
+  "runtime_qualification": {
+    "startup_limit_seconds": 20,
+    "first_trial": "FAIL: app did not become reachable within limit",
+    "diagnostic_reproduction": "FAIL: same startup boundary; app still running, no OOM, no startup log at capture",
+    "threshold_raised": false,
+    "resources_removed": true,
+    "app_or_pg_candidate_deployed": false
+  },
+  "harbor": {
+    "framework": "0.26.0",
+    "prepared_public_code_exercise": true,
+    "distinct_agent_verifier_contexts": true,
+    "verifier_unit_tests": 5,
+    "agent_run": false,
+    "model_invoked": false,
+    "production_promoted": false
+  },
+  "discovery": {
+    "actual_source_containers": 2,
+    "actual_target_pods": 4,
+    "actual_sql_servers": 2,
+    "source_roles": 30,
+    "target_roles": 32,
+    "security_definer_functions": 0,
+    "foreign_tables": 0,
+    "snapshot_nodes": 3,
+    "unresolved_paths": 5,
+    "signed_partial_document_prepared": true,
+    "document_registered_via_api": false,
+    "complete_inventory": false
+  },
+  "cost": {
+    "actual_aws_query": true,
+    "status": "allocation_tag_not_active",
+    "actual_cost": null,
+    "complete_tco": false,
+    "comparison_authorized": false,
+    "local_vm_cost_assumed_zero": false
+  },
+  "recovery": {
+    "pod_death_alone_grants_recovery": false,
+    "default_remote_settlement_provider_registered": false,
+    "remote_sql_observer_qualified": false
+  },
+  "current_environment": {
+    "entry_source_deployment_desired_generation": 3,
+    "entry_source_deployment_last_observed_generation": 2,
+    "kube_controller_manager": "CrashLoopBackOff / leader election lost",
+    "cpu_resource_contention_observed": true,
+    "sole_root_cause_proven": false,
+    "other_session_containers_modified": false
+  },
+  "business_migration_complete": false,
+  "six_stages_complete": false,
+  "operational_qualification": false,
+  "private_receipt_sha256": {
+    "native-unit-regression-04.xml": "65994890b6b0bbcee912bfeb8bbac72287bb08c061a25327be6dda6659ed8875",
+    "aws-cost-observation-01.json": "0a012fe875fe92f086abbbc26ba54b0e9c2db84ee36af46ad89d215e693560d3",
+    "app-image-07/image.json": "4e4a7c3d0ed9dd8a23bf7aaf33fc1bfdaac493ee6d2109b00adf733d346609ab",
+    "app-image-07/scan-summary.json": "e141ce4e0638a6f10b6dac12e7b7b0b5252004b5ccca2c78130dc21f7bf0ad31",
+    "postgres-image-03/image.json": "85a5d98101dab7d65a6c91d879528318255b9d136a9796a89a1d48f4b9b231ed",
+    "postgres-image-03/scan-summary.json": "55a8a871f72bb097e2eee97601f0399cf03e879926c8d6a32d1fbf33f99d301d",
+    "dependency-facts-215156-5d71b7/facts.json": "824fd460b39b95e45b3a1ef9ef20e58bbfe80e765495b5488745326ea6d1a9dd",
+    "patched-image-runtime-01/run.json": "31d061d77abb41980c72a36ab95234dc7a017f4f25f225453288eeecf9134387",
+    "patched-image-runtime-diagnostic-02/run.json": "9d2bc71cd91a164ac9cda47e68407e964aa9a4d3657a34f6dc07fa77f06e80fb",
+    "harbor-public-boundary-01/preparation.json": "f1d9edc45fe15ac7fb51d27cd540d4214fb010d93b817c63089facc41e40bd72"
+  }
+}
