@@ -122,6 +122,8 @@ def test_contract_requirements_become_gate_obligations_not_assumptions(world):
     for name in spec["data"]["protected_sets"]:
         assert at[by_id[f"data.{name}"]["required_at"]] == "verify_final_state"
     assert at[by_id["residency.business_data"]["required_at"]] == "stage_target"
+    for category in ("business_data", "backups", "audit"):
+        assert by_id["residency." + category]["category"] == category
     assert "residency.ai_inputs" not in by_id  # empty category: nothing to place
     assert by_id["availability.write_admission_pause"]["budget_ms"] == 5000
     assert at[by_id["fence.source_writes_denied"]["required_at"]] == (

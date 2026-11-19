@@ -32,7 +32,7 @@ from sova.domain.service_contracts import MigrationProfile, ServiceContract
 from sova.domain.system_graph import ResourceKind
 
 
-COMPILER_VERSION = "sova-plan-compiler.v3"  # v3: bind discovery registration identity for change impact
+COMPILER_VERSION = "sova-plan-compiler.v4"  # v4: category-bound placement obligations
 # Target controls whose test needs the business data on the target (ADR-0003).
 DATA_BOUND_CONTROLS = frozenset({"tested_restore"})
 MAX_PLAN_BYTES = 262144
@@ -201,7 +201,7 @@ def _obligations(spec, steps, *, identity_unit=False):
     for category, zones in sorted(spec["residency"].items()):
         if zones:
             result.append(ob(f"residency.{category}", "placement_evidence",
-                             placement, allowed_zones=sorted(zones)))
+                             placement, category=category, allowed_zones=sorted(zones)))
     if "verify_return_target" in at:
         result.append(ob("failback.return_target_identity", "return_target_check",
                          "verify_return_target",

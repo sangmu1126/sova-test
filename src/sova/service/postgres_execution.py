@@ -15,13 +15,23 @@ from sova.domain.contracts import ContractError
 from sova.service.worker import Execution
 
 
-def data_measure(probes, *, other_db, scratch_db):
+def data_measure(probes, *, other_db, scratch_db, placement=None):
     """Each obligation kind to an independent probe; any data store whose
     probes offer this surface (PostgreSQL, MySQL) is measured the same way."""
     def measure(obligation, times):
         kind, oid = obligation["kind"], obligation["id"]
         if kind == "placement_evidence":
-            return probes.zone("target", set(obligation["allowed_zones"]))
+            # A database label cannot locate backups, audit records or AI inputs.
+            # The deployment supplies an independent, category-specific observer;
+            # neither missing coverage nor a legacy zone label grants a PASS.
+            category = obligation.get("category")
+            if (category not in {"business_data", "backups", "audit", "ai_inputs"}
+                    or oid != "residency." + category):
+                return False, {"probe": "placement", "reason": "category_binding_invalid"}
+            if placement is None:
+                return False, {"probe": "placement", "category": category,
+                               "reason": "category_observer_unavailable"}
+            return placement(category, frozenset(obligation["allowed_zones"]))
         if kind == "return_target_check":
             return probes.write_denied("target")
         if oid == "fence.source_writes_denied" or kind == "stale_route_probe":
@@ -78,6 +88,7 @@ def postgres_factory(adapter_id, resolve, *, cdc=False):
             target_db=d["target_db"], app_role=d["app_role"], tables=d["tables"],
             probe_insert=d["probe_insert"], writer_roles=d["writer_roles"])
         return Execution(adapter, data_measure(probes, other_db=d["other_db"],
-                                               scratch_db=d["scratch_db"]))
+                                               scratch_db=d["scratch_db"],
+                                               placement=d.get("placement")))
 
     return factory
