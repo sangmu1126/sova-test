@@ -1,6 +1,7 @@
 """Pinned HTTPS with fixed public read paths and bounded adapter-owned mutations."""
 
 import hashlib
+from datetime import UTC, datetime
 import http.client
 import os
 import socket
@@ -43,7 +44,9 @@ class KubernetesRequestRefused(ContractError):
 
 
 class KubernetesHTTPS:
-    def __init__(self, registration, *, ca_pem: bytes, token_provider):
+    def __init__(self, registration, *, ca_pem: bytes, token_provider, clock=lambda: datetime.now(UTC)):
+        if not callable(clock):
+            raise ContractError("Trusted Kubernetes request clock required")
         if hashlib.sha256(ca_pem).hexdigest() != registration.ca_digest:
             raise ContractError("Registered CA digest mismatch")
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -55,6 +58,7 @@ class KubernetesHTTPS:
         self.registration = registration
         self.context = context
         self.token_provider = token_provider
+        self.clock = clock
 
     @property
     def registration_digest(self):
@@ -62,6 +66,7 @@ class KubernetesHTTPS:
 
     def get(self, path, query, *, timeout):
         reg = self.registration
+        reg.require_current(self.clock())
         allowed = {"/api/v1/namespaces/" + reg.namespace}
         for base, plural in (
             ("/apis/apps/v1", "deployments"),
@@ -97,6 +102,7 @@ class KubernetesHTTPS:
         wait up to 15 minutes, and takes the answer as bytes (``raw``).
         """
         reg = self.registration
+        reg.require_current(self.clock())
         body_limit = (16 << 20) + 4096 if transfer else 65536
         if (
             method not in {"GET", "PATCH", "POST", "PUT", "DELETE"}
@@ -113,6 +119,9 @@ class KubernetesHTTPS:
         if type(timeout) not in (int, float) or not 0 < timeout <= (900 if transfer else 5):
             raise ContractError("Invalid read timeout")
         token = self.token_provider()
+        now = self.clock()
+        reg.require_current(now)
+        timeout = min(timeout, (reg.valid_until - now).total_seconds())
         if (
             not isinstance(token, str)
             or not 1 <= len(token) <= 16384
@@ -197,6 +206,7 @@ class KubernetesHTTPS:
                 raise ContractError("Kubernetes read deadline exceeded")
             if len(body) > limit:
                 raise ContractError("Kubernetes response limit exceeded")
+            reg.require_current(self.clock())
             return body if raw else decode_api_json(body, limit=limit)
         except ContractError:
             raise

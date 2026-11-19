@@ -343,3 +343,38 @@ def test_each_registered_address_is_tried_in_turn_and_no_other(api, monkeypatch)
     transport.get("/api/v1/namespaces/orders", {}, timeout=2)
     assert tried == ["127.0.0.1", "192.0.2.1"]
     assert set(tried) <= set(reg.approved_addresses)
+
+
+@pytest.mark.parametrize('at_end', [False, True])
+@pytest.mark.parametrize('method', ['GET', 'PATCH'])
+def test_invalid_registration_never_acquires_or_transmits_a_credential(api, at_end, method):
+    reg, ca, state = api
+    instant = reg.valid_until if at_end else reg.registered_at - timedelta(seconds=1)
+    def forbidden():
+        pytest.fail('Expired or future registration must not acquire credentials')
+    transport = KubernetesHTTPS(reg, ca_pem=ca, token_provider=forbidden, clock=lambda: instant)
+    with pytest.raises(ContractError, match='Registration'):
+        transport._request(method, '/api/v1/namespaces/orders', {}, timeout=2, body=b'[]' if method == 'PATCH' else None)
+    assert state['requests'] == []
+
+
+def test_registration_can_expire_while_the_credential_provider_runs(api):
+    reg, ca, state = api
+    current = [reg.registered_at]
+    def token():
+        current[0] = reg.valid_until
+        return 'test-token'
+    transport = KubernetesHTTPS(reg, ca_pem=ca, token_provider=token, clock=lambda: current[0])
+    with pytest.raises(ContractError, match='Registration'):
+        transport.get('/api/v1/namespaces/orders', {}, timeout=2)
+    assert state['requests'] == []
+
+
+def test_response_received_after_registration_expiry_is_not_a_valid_observation(api):
+    reg, ca, state = api
+    def clock():
+        return reg.valid_until if state['requests'] else reg.registered_at
+    transport = KubernetesHTTPS(reg, ca_pem=ca, token_provider=lambda: 'test-token', clock=clock)
+    with pytest.raises(ContractError, match='Registration'):
+        transport.get('/api/v1/namespaces/orders', {}, timeout=2)
+    assert len(state['requests']) == 1
