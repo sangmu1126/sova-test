@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tarfile
 import time
+from uuid import uuid4
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -30,7 +31,7 @@ from sova.service.directional_catalog import PACKAGE, source_identity
 
 
 INSTALL = r'''
-import base64,hashlib,io,json,os,pathlib,pwd,subprocess,sys,tarfile
+import base64,hashlib,io,json,os,pathlib,pwd,shutil,subprocess,sys,tarfile
 c=json.load(sys.stdin);os.umask(0o077)
 if pathlib.Path('/etc/machine-id').read_text().strip()!='a789f623bca040989f282881d9a21654':
  raise ValueError('Wrong VM')
@@ -40,14 +41,12 @@ f=json.loads(p.stdout)['filesystems'][0]
 if f['target']!=str(mount) or f['source']!='/dev/mapper/sova-b0be270e62':raise ValueError('LUKS mount missing')
 if (mount/'.sova-encrypted-volume').read_text().strip()!='b0be270e62':raise ValueError('Wrong run')
 root=pathlib.Path('/var/lib/sova-qualification/user-journey-b0be270e62')
-if root.is_symlink() or root.stat().st_uid!=0 or root.stat().st_mode&0o077 not in (0,0o011):
+if root.is_symlink() or root.stat().st_uid!=0 or root.stat().st_mode&0o077 not in (0,0o011,0o010):
  raise ValueError('Unexpected run-directory ownership or permissions')
-# Traversal only; no directory listing or writes. Existing secret/data files
-# keep their restrictive modes and witness storage is dedicated-user 0700.
-root.chmod(0o711)
+if not shutil.which('setfacl'):raise ValueError('Standard ACL utility required before installing witness')
 code=root/('witness-code-'+c['identity']['digest'])
-if code.exists():raise ValueError('Fresh immutable code destination required')
-code.mkdir(mode=0o755)
+if code.exists() and not c['resume']:raise ValueError('Fresh immutable code destination required')
+code.mkdir(mode=0o755,exist_ok=c['resume'])
 raw=base64.b64decode(c['archive'],validate=True)
 if hashlib.sha256(raw).hexdigest()!=c['archive_sha256']:raise ValueError('Source archive mismatch')
 with tarfile.open(fileobj=io.BytesIO(raw))as t:
@@ -57,21 +56,35 @@ with tarfile.open(fileobj=io.BytesIO(raw))as t:
   if not item.isfile() or item.name not in c['identity']['files']:raise ValueError('Only measured regular sources allowed')
   content=t.extractfile(item).read()
   if hashlib.sha256(content).hexdigest()!=c['identity']['files'][item.name]:raise ValueError('Source bytes differ')
-  p=code/item.name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(content);p.chmod(0o444)
+  p=code/item.name
+  if p.exists():
+   if p.is_symlink() or p.read_bytes()!=content:raise ValueError('Never replace a different installed source')
+  else:
+   p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(content);p.chmod(0o444)
 for p in sorted(code.rglob('*'),reverse=True):
  if p.is_dir():p.chmod(0o555)
 code.chmod(0o555)
 user='sova-witness-b0be'
-try:pwd.getpwnam(user);raise ValueError('Dedicated user already exists; do not overwrite an active endpoint')
-except KeyError:pass
-home=root/'witness-home';home.mkdir(mode=0o755);(home/'.ssh').mkdir(mode=0o755)
-subprocess.run(['useradd','--system','--user-group','--home-dir',str(home),'--shell','/bin/sh',user],check=True,capture_output=True)
+home=root/'witness-home'
+try:
+ previous=pwd.getpwnam(user)
+ if not c['resume'] or previous.pw_uid==0 or previous.pw_dir!=str(home):raise ValueError('Unexpected existing user')
+ authorized=home/'.ssh/authorized_keys'
+ if authorized.is_symlink() or not authorized.read_text().endswith(' '+c['public_key']+'\n'):raise ValueError('Existing key differs')
+except KeyError:
+ home.mkdir(mode=0o755);(home/'.ssh').mkdir(mode=0o755)
+ subprocess.run(['useradd','--system','--user-group','--home-dir',str(home),'--shell','/bin/sh',user],check=True,capture_output=True)
 account=pwd.getpwnam(user)
-storage=mount/'authority-witness';storage.mkdir(mode=0o700);os.chown(storage,account.pw_uid,account.pw_gid)
+if subprocess.check_output(['id','-G',user]).decode().strip()!=str(account.pw_gid):raise ValueError('Unexpected additional account groups')
+# Named-user traverse only, not directory listing or permission for other users.
+root.chmod(0o700)
+subprocess.run(['setfacl','-m','u:'+str(account.pw_uid)+':--x,m::--x',str(root.parent),str(root)],check=True,capture_output=True)
+home.chmod(0o755);(home/'.ssh').chmod(0o755)
+storage=mount/'authority-witness';storage.mkdir(mode=0o700,exist_ok=c['resume']);os.chown(storage,account.pw_uid,account.pw_gid)
 path=storage/'personal-qualification.log'
 command='env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH='+str(code)+' /usr/bin/python3 -m sova.adapters.ssh_authority_witness --tenant personal-qualification --path '+str(path)+' --mount-root '+str(mount)+' --mapper /dev/mapper/sova-b0be270e62'
 authorized=home/'.ssh/authorized_keys'
-authorized.write_text('restrict,command="'+command+'" '+c['public_key']+'\n');authorized.chmod(0o600)
+authorized.write_text('restrict,command="'+command+'" '+c['public_key']+'\n');authorized.chmod(0o644)
 print(json.dumps({'user':user,'uid':account.pw_uid,'gid':account.pw_gid,'code_path':str(code),
  'implementation_digest':c['identity']['digest'],'witness_path':str(path),'encrypted_mapper':f['source'],
  'forced_command':True,'key_restrict':True,'sudo_granted':False,'worm_qualified':False}))
@@ -82,6 +95,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--inputs", type=Path, required=True)
     p.add_argument("--artifacts", type=Path, required=True)
+    p.add_argument("--resume", action="store_true", help="Only reuse a matching dedicated public key and immutable source")
     a = p.parse_args()
     os.umask(0o077)
     a.artifacts.mkdir(mode=0o700, exist_ok=False)
@@ -147,7 +161,7 @@ def main():
                 info = tarfile.TarInfo(name)
                 info.size, info.mode = len(raw), 0o444
                 tar.addfile(info, io.BytesIO(raw))
-        payload = {"identity": measured, "public_key": public,
+        payload = {"identity": measured, "public_key": public, "resume": a.resume,
                    "archive": base64.b64encode(archive.getvalue()).decode(),
                    "archive_sha256": hashlib.sha256(archive.getvalue()).hexdigest()}
         remote = subprocess.run(["limactl", "shell", "--workdir=/", VM, "--", "sudo", "-n", "python3", "-c", INSTALL],
@@ -156,6 +170,7 @@ def main():
             (a.artifacts / "install-failure.txt").write_bytes(remote.stderr[-3000:])
             raise RuntimeError("Witness install failed; private diagnostic retained")
         installed = json.loads(remote.stdout)
+        (a.artifacts / "installation.json").write_text(json.dumps(installed, indent=2)+"\n")
         config = (Path.home() / ".lima/sova-rke2-target/ssh.config").read_text()
         port = int(re.search(r"^  Port ([0-9]+)$", config, re.MULTILINE)[1])
         host_key = guest("cat", "/etc/ssh/ssh_host_ed25519_key.pub").decode().split()
@@ -168,8 +183,8 @@ def main():
                         key_file=str(public_file), known_hosts=str(known))
         os.environ["SSH_AUTH_SOCK"] = str(agent_socket)
         witness = SSHAuthorityWitness(tenant_id=inputs["tenant_id"], **endpoint)
-        unit = hashlib.sha256(b"dedicated-personal-witness-probe-b0be270e62").hexdigest()
-        app = "witness-probe-b0be270e62"
+        app = "witness-probe-" + uuid4().hex
+        unit = hashlib.sha256(app.encode()).hexdigest()
         if witness.latest(app, unit) is not None:
             raise ValueError("Probe unexpectedly has history")
         witness.append(app, unit, "probe", {"epoch": 1, "test_only": True})
