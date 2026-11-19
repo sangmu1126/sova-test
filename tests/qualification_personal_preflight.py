@@ -23,6 +23,8 @@ def main():
     p.add_argument("--inputs", type=Path, required=True)
     p.add_argument("--connections", type=Path, required=True)
     p.add_argument("--artifacts", type=Path, required=True)
+    p.add_argument("--target-app-login-prepared", action="store_true",
+                   help="Expect the app LOGIN prerequisite, with actual target CONNECT/write still denied")
     args = p.parse_args()
     os.umask(0o077)
     args.artifacts.mkdir(mode=0o700, exist_ok=False)
@@ -85,7 +87,9 @@ def main():
                     "FROM pg_roles WHERE rolname IN ('orders_app','orders_batch') ORDER BY rolname").fetchall()
                 if row[0] != identity["environments"][side]["database"] or not row[2] or len(roles) != 2:
                     raise ValueError("Wrong actual database identity/TLS/writer inventory")
-                if any(any(role[2:]) or role[1] != (side == "source") for role in roles):
+                if any(any(role[2:]) or role[1] != (
+                        side == "source" or (args.target_app_login_prepared and role[0] == "orders_app"))
+                       for role in roles):
                     raise ValueError("Unexpected privilege or pre-cutover writer state")
                 report["databases"][side] = {"database": row[0], "version": row[1], "verified_tls": row[2],
                     "system_identifier": row[3], "writers": [{"role": r[0], "login": r[1]} for r in roles]}
