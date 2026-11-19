@@ -32,7 +32,9 @@ def docker(*args):
 
 
 @contextmanager
-def identity_provider(h):
+def identity_provider(h, *, startup_seconds=100):
+    if type(startup_seconds) is not int or not 30 <= startup_seconds <= 300:
+        raise ValueError("Explicit bounded local IdP cold-start budget required")
     image = os.environ.get("SOVA_TEST_JOURNEY_KEYCLOAK_IMAGE")
     if image != IMAGE:
         raise ValueError("The explicitly selected Keycloak 26.8.2 arm64 image is required")
@@ -65,7 +67,8 @@ def identity_provider(h):
             "--tmpfs", "/opt/keycloak/data:rw,size=192m,uid=1000,gid=0,mode=0700",
             "-p", f"127.0.0.1:{port}:8080", image, "start-dev")
         docker("start", container)
-        deadline = time.monotonic() + 100
+        started = time.monotonic()
+        deadline = started + startup_seconds
         with httpx.Client(timeout=2, trust_env=False) as client:
             while True:
                 try:
@@ -77,6 +80,8 @@ def identity_provider(h):
                 if time.monotonic() >= deadline:
                     raise RuntimeError("Run-owned Keycloak did not become ready")
                 time.sleep(0.5)
+        report["cold_start_seconds"] = round(time.monotonic() - started, 3)
+        report["cold_start_budget_seconds"] = startup_seconds
         server = Server(origin, ("run-admin", password))
         realm = "journey-" + uuid4().hex
         server.call("POST", "", {"realm": realm, "enabled": True,

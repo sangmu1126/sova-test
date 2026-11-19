@@ -90,7 +90,7 @@ def main():
         ("environment_profile", source.profile_id, source), ("environment_profile", target.profile_id, target))]
     api = None
     try:
-        with identity_provider(harness) as idp:
+        with identity_provider(harness, startup_seconds=300) as idp:
             with (args.artifacts / "api.log").open("xb") as log:
                 api = subprocess.Popen([sys.executable, "-m", "sova.service.main", "serve-api", "--host", "127.0.0.1", "--port", str(port)],
                     env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
