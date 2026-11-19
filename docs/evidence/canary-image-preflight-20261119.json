@@ -1,0 +1,133 @@
+{
+  "scope": "Local native ARM64 image preflight. Not registry-bound canonical security admission, actual remote runtime acceptance or migration proof.",
+  "scanner": "Trivy 0.76.2",
+  "scanner_binary_sha256": "7a15c426f963473a485a4f315e21f8e2c881269d500bf0de35da13a4421fa108",
+  "database": {
+    "Version": 2,
+    "NextUpdate": "2026-11-19T19:07:09.820302589Z",
+    "UpdatedAt": "2026-11-18T19:07:09.82030288Z",
+    "DownloadedAt": "2026-11-18T22:37:09.906451Z"
+  },
+  "all_severities": true,
+  "ignore_unfixed": false,
+  "suppressions": false,
+  "retained_failures": [
+    "Build 01: transitive OTel API missing from strict hash lock; fixed without relaxing hashes",
+    "Build 02 first invocation: archive input format rejected; no vulnerability PASS inferred"
+  ],
+  "builds": [
+    {
+      "build": "canary-image-02",
+      "source_commit": "a22c59b5f11027b6c53beea38c50174c8b0195f0",
+      "manifest_digest": "sha256:9ca5dc041d64fd40393885dbf5ed9a56e1e2a2644ad92bc6453bc98d2fd011d2",
+      "config_digest": "sha256:cbf63f7beeb5649e79c68dc0e467ee676e7fdc39860f49927a60738dfc122c24",
+      "archive_sha256": "f7cefb9070bbc0188045f74a561dfaa0a1e3ad673496783c64882cdda4b3e445",
+      "scan_report_sha256": "6126acfcfc321f0b08c57474836b1fbd35c0de719b0ab79b7c3ef2b3ab3e8da3",
+      "counts": {
+        "UNKNOWN": 10,
+        "LOW": 102,
+        "MEDIUM": 181,
+        "HIGH": 103,
+        "CRITICAL": 3
+      },
+      "scan_completed": true,
+      "preflight": "BLOCK",
+      "deployed": false
+    },
+    {
+      "build": "canary-image-03",
+      "source_commit": "58e958f7d4609796f454f6a9b1f34b6390b81490",
+      "manifest_digest": "sha256:85478f1b9af4fbcf6ec08df6f28b2339c81e271027023d5eead1018b1a6d8031",
+      "config_digest": "sha256:823f6ed4e95bc052c283635c9cb2adbb76b9efc8e7d15725e12be436d5886a89",
+      "archive_sha256": "9bf08bcd864dbabe57797eb7c7790d9b9fe5ea9f263e61bf778476b65f1dcc55",
+      "scan_report_sha256": "91b8a439442b678b0e7991b2bc2ca59eb91121dd059a154c42467edeb3e7989b",
+      "counts": {
+        "UNKNOWN": 7,
+        "LOW": 68,
+        "MEDIUM": 109,
+        "HIGH": 48,
+        "CRITICAL": 0
+      },
+      "scan_completed": true,
+      "preflight": "BLOCK",
+      "deployed": false
+    },
+    {
+      "build": "canary-image-04",
+      "source_commit": "3b0f541dde53bbdd50c14850b8497f6645ea7c13",
+      "manifest_digest": "sha256:d3d84eb033c7775774b2cf30900600790a2aabc81cd783d97c6236b8bd6d6739",
+      "config_digest": "sha256:72f734136283b67b3136b3d012ae3b3836d1fc57d497a73eb07813fd4921abfc",
+      "archive_sha256": "cbdd8a673d320ce0833be0e5564e59eff1aaa5f006cdd0e16f7aabe36d87b6da",
+      "scan_report_sha256": "2b3bc09043b342981d41fbfef66ad577df4ac09520e867bb56b5a0553e4b2030",
+      "counts": {
+        "UNKNOWN": 0,
+        "LOW": 1,
+        "MEDIUM": 11,
+        "HIGH": 16,
+        "CRITICAL": 0
+      },
+      "scan_completed": true,
+      "preflight": "BLOCK",
+      "deployed": false
+    },
+    {
+      "build": "canary-image-05",
+      "source_commit": "1ceaf1a3d97b2726455a0f50f54529bd141b7e9e",
+      "manifest_digest": "sha256:59b65987073b825f7c0ffd5316b105afbfc562b6317fa6474815683517774ef0",
+      "config_digest": "sha256:5101293637c4c33038e3af9fb2b96dc87cb66cba095718a20cd6f68b964d057c",
+      "archive_sha256": "1518fae504bcdccbb771daf260e46457818fa258c1d03f4a95286f667bfb2c33",
+      "scan_report_sha256": "4762beec701105ec343ff2ce3f0235efa66cb1cdbb0e76606b3b47e113bdeaa3",
+      "counts": {
+        "UNKNOWN": 0,
+        "LOW": 1,
+        "MEDIUM": 6,
+        "HIGH": 0,
+        "CRITICAL": 0
+      },
+      "scan_completed": true,
+      "preflight": "PASS",
+      "deployed": false
+    },
+    {
+      "build": "canary-image-06",
+      "source_commit": "18a16dfe5fd1473d7c5cbbbaf3bf406aab0682fb",
+      "manifest_digest": "sha256:f80bc08328b0f962151b949706589bd5db3a12803dfa3096fb700bd3fad5e208",
+      "config_digest": "sha256:a55f2474e93539b8614b4d580cec6dcea88dce5c24689651e11d9d08c927325a",
+      "archive_sha256": "50598fd805c9f6b6ace1d15d0db5257b3c366e060fec8ee93b4261d8a6e71f3a",
+      "scan_report_sha256": "28e68e5d0d8ff3d21353e06e391c842ea36a604e9c053f47b56a8b72d3b428a6",
+      "counts": {
+        "UNKNOWN": 0,
+        "LOW": 0,
+        "MEDIUM": 0,
+        "HIGH": 0,
+        "CRITICAL": 0
+      },
+      "scan_completed": true,
+      "preflight": "PASS",
+      "deployed": false
+    }
+  ],
+  "postgres": {
+    "source_commit": "50b660d6444e2ba67177b1e744f857f86a9c4b5d",
+    "manifest_digest": "sha256:01f80835db480f8403d638051eff0ace599264a908bad70a214b8952173363c5",
+    "config_digest": "sha256:74b98a96be7cbf26dfdfce4df6f18d283b4083761799de5200cbfc83103b452b",
+    "archive_sha256": "f98ba7dea80ef50b7ab120b82094171959ce484e50368ecbbcf9313609515eed",
+    "scan_report_sha256": "a909157e7ecd39573ee8a5f80038749381b9a3df84ef928ce99e4c0a4fef53c8",
+    "counts": {
+      "UNKNOWN": 0,
+      "LOW": 0,
+      "MEDIUM": 0,
+      "HIGH": 0,
+      "CRITICAL": 0
+    },
+    "preflight": "PASS",
+    "rejected_upstream_scan": {
+      "CRITICAL": 1,
+      "HIGH": 25,
+      "UNKNOWN": 1,
+      "MEDIUM": 31,
+      "LOW": 3
+    },
+    "change": "Run as UID70; remove unused vulnerable gosu binary. No advisory ignore or OS inventory deletion."
+  }
+}

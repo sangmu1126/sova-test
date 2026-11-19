@@ -1,0 +1,36 @@
+{
+  "run_id": "canary-image-e4f826c92c6748469640885ced71dab5",
+  "manifest_digest": "sha256:f80bc08328b0f962151b949706589bd5db3a12803dfa3096fb700bd3fad5e208",
+  "config_digest": "sha256:a55f2474e93539b8614b4d580cec6dcea88dce5c24689651e11d9d08c927325a",
+  "postgres_image": "sha256:01f80835db480f8403d638051eff0ace599264a908bad70a214b8952173363c5",
+  "source_commit": "40058161fc5885cd591afe2bc3e923b04543ab01",
+  "tests": {
+    "unauthorized_denied": true,
+    "wrong_scope_denied": true,
+    "actual_order_and_idempotent_replay": true,
+    "one_committed_business_effect_per_replayed_key": true,
+    "verified_tls_scram": true,
+    "wrong_ca_denied": true,
+    "wrong_hostname_denied": true,
+    "wrong_password_denied": true,
+    "plaintext_denied": true,
+    "other_tenant_database_denied": true,
+    "unexpected_role_membership_denied": true,
+    "writer_fenced_new_connection_denied": true,
+    "nonroot_readonly_no_capabilities": true
+  },
+  "operational_qualification": false,
+  "aws_vm_migration": false,
+  "network_internal": true,
+  "passed": true,
+  "containers_removed": true,
+  "network_removed": true,
+  "volumes_removed": true,
+  "test_driver_sha256": "79f3ca01ab38de7449a99e3878bc0bd760531b0650a4923138532bc6b6456a47",
+  "retained_failures": [
+    "acceptance-01: initialization helper failed; exact original stderr unavailable, no PASS issued",
+    "acceptance-02: socket-only temporary init server observed ready; SQL met its shutdown; all owned resources removed",
+    "acceptance-03: wait for final TCP server; 13 real checks passed; cleanup verified"
+  ],
+  "scope": "Local native ARM64 OCI application/PostgreSQL HTTP and TLS/SCRAM acceptance. Not an AWS/VM migration, canonical security admission or production qualification."
+}
