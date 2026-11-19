@@ -1,0 +1,31 @@
+{
+  "observed_at": "2026-11-19T04:48:56.553800+00:00",
+  "run_id": "b0be270e62",
+  "namespace_uid": "565b91c4-4f6e-4d06-94c6-9f8803afa6c9",
+  "service_uid": "c5565701-1035-4140-aaf1-e6442a89b2d9",
+  "registration_digest": "8fd49d5a3bc3c0fb996434e312092911fba064cb5f0fcfeb44aef8285cf9dc90",
+  "route": {
+    "selector_side": "source_orders",
+    "ready_endpoints": 1,
+    "foreign_endpoints": [],
+    "route": "source_orders",
+    "http_sides": [
+      "source_orders",
+      "source_orders",
+      "source_orders"
+    ]
+  },
+  "refusals": {
+    "secret_read": "403",
+    "other_service_read": "403",
+    "other_namespace": "403"
+  },
+  "token_lifetime_seconds": 600,
+  "traffic_changed": false,
+  "business_data_changed": false,
+  "migration_complete": false,
+  "operational_qualification": false,
+  "code_source": "6749cf7",
+  "evidence_scope": "actual personal AWS app through personal Linux VM HAProxy; no cutover",
+  "driver_sha256": "f1a04c03a25823e5112ab4d9afaf891c11e8bff44101fe745af938b3ec4d5048"
+}

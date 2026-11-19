@@ -87,3 +87,9 @@
 - 관련 설정·시작·서비스 시험: **73 통과, 실환경 조건부 18 제외**, Ruff 통과. 첫 실행의 5건 실패는 시험 실행의 PyMySQL 경로 누락이었으며, 기존 격리 의존 경로를 포함해 재실행했다. 제외를 실환경 통과로 합산하지 않는다.
 - 남은 범위: 실제 개인 환경의 원장·등록·독립 승인·자격 프로필·증거 수집·워커 설정, 데이터 권한 전환과 반대 방향 복귀. 기존 로컬 fixture 신뢰 등록·watermark를 개인 AWS 실측으로 바꾸어 표시하지 않는다.
 - 특히 현재 PG의 DB comment 기반 zone 확인은 실제 위치 증명이 아니다. 이를 근거로 사업 데이터·백업·감사 기록 위치를 모두 통과시켜서는 안 된다. 확인되지 않은 위치 통제는 차단 상태를 유지한다.
+
+#### 네이티브 실제 경로 조회와 권한 거부
+
+기준 `6749cf7`의 `observe_entry.py`로 실제 개인 VM의 API CA·namespace UID·Service UID를 대조했다. 메모리에서만 사용하는 10분짜리 전용 ServiceAccount 토큰으로 네이티브 Service 경로를 읽고 실제 HTTPS 요청 3회의 side와 비교했다. 모두 `source_orders`였다. Secret 읽기·다른 Service 읽기·다른 namespace 조회는 실제 403으로 거부됐다. [공개 검증 결과](../evidence/personal-native-entry-20261119.json).
+
+이 검증에서는 경로·SQL·앱 데이터·기존 정책을 변경하지 않았다. Service 경로의 선택적 실제 HTTP observer를 추가했으며, 다른 side·HTTP 503·외부 Endpoint가 포함된 경우 성공으로 판단하지 않는 회귀 시험을 포함했다. 관련 99개 통과, 실환경 조건부 18개 제외. 최초 sandbox 실행의 loopback bind 실패는 권한이 필요한 동일 시험을 승인된 환경에서 재실행해 확인했다. `migration_complete=false`와 `operational_qualification=false`는 유지한다.
