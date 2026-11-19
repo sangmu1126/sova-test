@@ -28,7 +28,11 @@ import hashlib,json,pathlib,subprocess
 if pathlib.Path('/var/lib/sova-journey/run-id').read_text().strip()!='b0be270e62':
  raise ValueError('Wrong dedicated source')
 base=['/usr/local/bin/nerdctl','--namespace','sova-b0be270e62']
-def call(args):return subprocess.check_output(args,stderr=subprocess.PIPE)
+def call(args):
+ p=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+ if p.returncode:
+  raise RuntimeError('Read-only projection command failed: '+p.stderr.decode(errors='replace')[:2000])
+ return p.stdout
 found=json.loads(call(base+['inspect','orders-app','orders-db']))
 containers=[]
 for c in found:
@@ -40,7 +44,7 @@ for c in found:
 program="""import json,hashlib,pathlib
 from sova.qualification.order_runtime import load_configuration
 c=load_configuration()
-files=['qualification/order_app.py','qualification/order_runtime.py','qualification/order_schema.py','qualification/requests.py','service/http_boundary.py']
+files=['qualification/order_app.py','qualification/order_runtime.py','qualification/requests.py','service/http_boundary.py']
 print(json.dumps({'tenant':c.tenant,'application':c.application,'run':c.run,'side':c.side,'role':c.role,
 'database':c.database,'image_digest':c.image_digest,'expires_at':c.expires_at.isoformat(),
 'source_hashes':{f:hashlib.sha256((pathlib.Path('/app/sova')/f).read_bytes()).hexdigest() for f in files}}))"""
