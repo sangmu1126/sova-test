@@ -82,7 +82,7 @@ subprocess.run(['setfacl','-m','u:'+str(account.pw_uid)+':--x,m::--x',str(root.p
 home.chmod(0o755);(home/'.ssh').chmod(0o755)
 storage=mount/'authority-witness';storage.mkdir(mode=0o700,exist_ok=c['resume']);os.chown(storage,account.pw_uid,account.pw_gid)
 path=storage/'personal-qualification.log'
-command='env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH='+str(code)+' /usr/bin/python3 -m sova.adapters.ssh_authority_witness --tenant personal-qualification --path '+str(path)+' --mount-root '+str(mount)+' --mapper /dev/mapper/sova-b0be270e62'
+command='env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH='+str(code)+' /usr/bin/python3 -m sova.adapters.ssh_authority_witness --tenant personal-qualification --path '+str(path)+' --mount-root '+str(mount)+' --mapper /dev/mapper/sova-b0be270e62 --valid-until '+c['expires_at']
 authorized=home/'.ssh/authorized_keys'
 authorized.write_text('restrict,command="'+command+'" '+c['public_key']+'\n');authorized.chmod(0o644)
 print(json.dumps({'user':user,'uid':account.pw_uid,'gid':account.pw_gid,'code_path':str(code),
@@ -161,7 +161,7 @@ def main():
                 info = tarfile.TarInfo(name)
                 info.size, info.mode = len(raw), 0o444
                 tar.addfile(info, io.BytesIO(raw))
-        payload = {"identity": measured, "public_key": public, "resume": a.resume,
+        payload = {"identity": measured, "public_key": public, "resume": a.resume, "expires_at": end.isoformat(),
                    "archive": base64.b64encode(archive.getvalue()).decode(),
                    "archive_sha256": hashlib.sha256(archive.getvalue()).hexdigest()}
         remote = subprocess.run(["limactl", "shell", "--workdir=/", VM, "--", "sudo", "-n", "python3", "-c", INSTALL],

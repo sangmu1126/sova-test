@@ -8,6 +8,7 @@ limitations: it is not WORM storage or independent failure-domain protection.
 """
 
 import argparse
+from datetime import UTC, datetime
 import hashlib
 import json
 import os
@@ -146,9 +147,14 @@ def main():
     p.add_argument("--path", type=Path, required=True)
     p.add_argument("--mount-root", type=Path)
     p.add_argument("--mapper")
+    p.add_argument("--valid-until")
     a = p.parse_args()
     try:
         raw = sys.stdin.buffer.read(LIMIT + 1)
+        if a.valid_until is not None:
+            until = datetime.fromisoformat(a.valid_until)
+            if until.tzinfo is None or datetime.now(UTC) >= until:
+                raise ContractError("Witness authorization window expired")
         if len(raw) > LIMIT or a.path.is_symlink() or not a.path.parent.is_dir():
             raise ContractError("Invalid witness input or fixed storage path")
         if (a.mount_root is None) != (a.mapper is None):

@@ -1,6 +1,8 @@
 """Boundary tests; these do not claim a live SSH or storage qualification."""
 
 import hashlib
+from datetime import UTC, datetime, timedelta
+import io
 import json
 import subprocess
 import sys
@@ -124,3 +126,13 @@ def test_actual_hanging_child_has_a_bounded_deadline():
     with pytest.raises(subprocess.TimeoutExpired):
         transport._exchange([sys.executable, "-c",
             "import sys,time;sys.stdin.buffer.read();time.sleep(10)"], b"{}", 1)
+
+
+def test_expired_server_window_refuses_before_creating_any_witness_file(tmp_path, monkeypatch):
+    path = tmp_path / "must-not-exist.log"
+    monkeypatch.setattr(sys, "argv", ["witness", "--tenant", "tenant", "--path", str(path),
+        "--valid-until", (datetime.now(UTC)-timedelta(seconds=1)).isoformat()])
+    payload = request(operation="append", action="claim", record={"epoch": 1})
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(canonical_json(payload).encode())))
+    assert transport.main() == 1
+    assert not path.exists()
