@@ -8,6 +8,7 @@ hardware attestation or protection against a compromised OS/administrator.
 """
 
 import hashlib
+from importlib import import_module
 import json
 from pathlib import Path
 
@@ -18,26 +19,29 @@ from sova.service.worker import AdapterCatalog
 PACKAGE = Path(__file__).resolve().parents[1]
 
 
-def source_identity(root=PACKAGE):
+def source_identity(root=None):
     """Every shipped Python/SQL file; only internal SQL compatibility links.
 
-    The package is copied into a run-owned, read-only worker snapshot before
-    launch. Caller supplied directories are only useful for build/test tooling;
-    the running catalog always measures its own installed package.
+    Deployers must use a run-owned read-only worker snapshot. The native and
+    security packages are both measured by the running catalog. An explicit
+    root is for isolated build/test tooling, not execution configuration.
     """
-    root = Path(root)
-    if root.is_symlink() or not root.is_dir():
-        raise ContractError("Real implementation package directory required")
+    roots = {"": Path(root)} if root is not None else {
+        "sova/": PACKAGE,
+        "sova_security/": Path(import_module("sova_security").__file__).resolve().parent}
     files = {}
-    for path in sorted(root.rglob("*")):
-        if path.is_symlink():
-            if (path.suffix != ".sql" or not path.resolve().is_relative_to(root.resolve())
-                    or not path.resolve().is_file()):
-                raise ContractError("Implementation source may not contain external or executable symlinks")
-        if path.is_file() and path.suffix in {".py", ".sql"}:
-            files[path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
-        if len(files) > 4096:
-            raise ContractError("Implementation package exceeds its source bound")
+    for prefix, root in roots.items():
+        if root.is_symlink() or not root.is_dir():
+            raise ContractError("Real implementation package directory required")
+        for path in sorted(root.rglob("*")):
+            if path.is_symlink():
+                if (path.suffix != ".sql" or not path.resolve().is_relative_to(root.resolve())
+                        or not path.resolve().is_file()):
+                    raise ContractError("Implementation source may not contain external or executable symlinks")
+            if path.is_file() and path.suffix in {".py", ".sql"}:
+                files[prefix + path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+            if len(files) > 4096:
+                raise ContractError("Implementation package exceeds its source bound")
     if not files:
         raise ContractError("Implementation source files required")
     document = {"version": 1, "files": files}
