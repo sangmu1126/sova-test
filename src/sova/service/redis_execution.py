@@ -47,13 +47,14 @@ from pathlib import Path
 
 from sova.adapters.redis_keyspace_handoff import RedisKeyspaceHandoffAdapter
 from sova.adapters.redis_keyspace_probes import RedisKeyspaceProbes
+from sova.adapters.tls_refusal import settings_endpoints
 from sova.domain.contracts import ContractError
 from sova.service.postgres_execution import data_measure
 from sova.service.worker import Execution
 
 _KEYS = {"servers", "prefixes", "writers", "app_user", "admin_user", "user_password_files",
          "sets", "invariants", "scratch_db", "other_prefix", "routes", "zone_of", "replicas",
-         "sentinels", "expiry_margin_seconds"}
+         "sentinels", "expiry_margin_seconds", "plaintext_ports"}
 _SERVER_KEYS = {"host", "port", "username", "password", "db", "ssl_ca", "socket_timeout",
                 "cluster"}
 
@@ -81,7 +82,7 @@ def redis_factory(adapter_id, resolve):
             app_user=d["app_user"], sets=d["sets"], invariants=d.get("invariants"),
             scratch_db=d.get("scratch_db", 15), other_prefix=d.get("other_prefix"),
             zone_of=d.get("zone_of"), replicas=d.get("replicas"),
-            expiry_margin_seconds=d.get("expiry_margin_seconds", 120))
+            expiry_margin_seconds=d.get("expiry_margin_seconds", 120), tls=d.get("tls"))
         return Execution(adapter, redis_measure(probes, scratch_db=d.get("scratch_db", 15),
                                                 other_prefix=d.get("other_prefix")))
     return factory
@@ -184,7 +185,11 @@ def redis_resolver(app, *, route_for):
         "scratch_db": entry.get("scratch_db", 15), "other_prefix": entry.get("other_prefix"),
         "replicas": replicas, "sentinel": sentinel,
         "expiry_margin_seconds": entry.get("expiry_margin_seconds", 120),
-        "zone_of": (lambda side: zones.get(side)) if zones else None}
+        "zone_of": (lambda side: zones.get(side)) if zones else None,
+        "tls": settings_endpoints({
+            side: (s["host"], s.get("port", 6379), s["ssl_ca_certs"])
+            for side, s in settings.items() if s.get("ssl_ca_certs") and not s.get("cluster")},
+            entry.get("plaintext_ports"))}
 
     def resolve(tenant_id, application_id):
         if (tenant_id, application_id) != (app["tenant_id"], app["application_id"]):

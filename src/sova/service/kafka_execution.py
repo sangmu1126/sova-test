@@ -29,13 +29,14 @@ from pathlib import Path
 
 from sova.adapters.kafka_topic_handoff import KafkaTopicHandoffAdapter
 from sova.adapters.kafka_topic_probes import KafkaTopicProbes
+from sova.adapters.tls_refusal import settings_endpoints
 from sova.domain.contracts import ContractError
 from sova.service.postgres_execution import data_measure
 from sova.service.worker import Execution
 
 _KEYS = {"clusters", "topics", "producers", "app_producer", "consumers", "groups",
          "transactional_prefixes", "principal_settings", "sets", "invariants", "other_topic",
-         "zone_of", "probe_prefix"}
+         "zone_of", "probe_prefix", "plaintext_ports"}
 SETTINGS = {"bootstrap.servers", "security.protocol", "sasl.mechanism", "sasl.username",
             "sasl.password", "ssl.ca.location", "ssl.endpoint.identification.algorithm",
             "client.id", "socket.timeout.ms", "request.timeout.ms"}
@@ -65,7 +66,7 @@ def kafka_factory(adapter_id, resolve):
             producers=d["producers"], app_producer=d["app_producer"],
             probe_prefix=d["probe_prefix"], groups=d.get("groups", ()), sets=d.get("sets"),
             invariants=d.get("invariants"),
-            other_topic=d.get("other_topic"), zone_of=d.get("zone_of"))
+            other_topic=d.get("other_topic"), zone_of=d.get("zone_of"), tls=d.get("tls"))
         return Execution(adapter, kafka_measure(probes, scratch="sova-restore",
                                                 other_topic=d.get("other_topic")))
     return factory
@@ -112,7 +113,13 @@ def kafka_resolver(app, *, route_for):
         "sets": entry.get("sets"), "invariants": entry.get("invariants"),
         "other_topic": entry.get("other_topic"), "route": route_for(app["route"]),
         "probe_prefix": entry["probe_prefix"],
-        "zone_of": (lambda side: zones.get(side)) if zones else None}
+        "zone_of": (lambda side: zones.get(side)) if zones else None,
+        # the first bootstrap broker of a TLS cluster: its listener is the cluster's
+        "tls": settings_endpoints({
+            side: (*s["bootstrap.servers"].split(",")[0].strip().rsplit(":", 1),
+                   s["ssl.ca.location"])
+            for side, s in admin.items() if s.get("ssl.ca.location")},
+            entry.get("plaintext_ports"))}
 
     def resolve(tenant_id, application_id):
         if (tenant_id, application_id) != (app["tenant_id"], app["application_id"]):

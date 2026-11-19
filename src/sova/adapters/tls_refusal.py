@@ -58,17 +58,30 @@ _READ_LIMIT = 65536
 @dataclass(frozen=True)
 class TlsEndpoint:
     """A registered TLS endpoint: where it is, the name its certificate must
-    hold, and the CA it must chain to. ``preamble`` is the protocol's step
-    before the handshake: None for TLS from the first byte, ``postgres`` for
-    PostgreSQL's SSLRequest."""
+    hold, and the CA it must chain to (``ca_pem``, or ``ca_file`` read when a
+    check runs, as the unit's own clients read it). ``preamble`` is the
+    protocol's step before the handshake: None for TLS from the first byte,
+    ``postgres`` for PostgreSQL's SSLRequest."""
 
     host: str
     port: int
     server_name: str
-    ca_pem: bytes = field(repr=False)
+    ca_pem: bytes | None = field(default=None, repr=False)
     preamble: str | None = None
     timeout_seconds: float = 5.0
     plaintext_ports: tuple[int, ...] = ()
+    ca_file: str | None = None
+
+    @property
+    def ca(self):
+        if self.ca_pem is not None:
+            return self.ca_pem
+        from pathlib import Path
+
+        found = Path(self.ca_file).read_bytes()
+        if b"BEGIN CERTIFICATE" not in found:
+            raise ContractError("The registered CA file holds no certificate")
+        return found
 
     def __post_init__(self):
         if type(self.host) is not str or not self.host or type(self.server_name) is not str \
@@ -76,8 +89,13 @@ class TlsEndpoint:
             raise ContractError("Endpoint host and server name required")
         if type(self.port) is not int or not 0 < self.port < 65536:
             raise ContractError("Endpoint port 1 to 65535 required")
-        if type(self.ca_pem) is not bytes or b"BEGIN CERTIFICATE" not in self.ca_pem:
+        if (self.ca_pem is None) == (self.ca_file is None):
+            raise ContractError("The registered CA: its certificate (PEM) or its file")
+        if self.ca_pem is not None and (type(self.ca_pem) is not bytes
+                                        or b"BEGIN CERTIFICATE" not in self.ca_pem):
             raise ContractError("The registered CA certificate (PEM) required")
+        if self.ca_file is not None and (type(self.ca_file) is not str or not self.ca_file):
+            raise ContractError("The registered CA file's path required")
         if self.preamble not in PREAMBLES:
             raise ContractError(f"Preamble one of {PREAMBLES} required")
         if type(self.timeout_seconds) not in (int, float) or not 0 < self.timeout_seconds <= 30:
@@ -89,7 +107,7 @@ class TlsEndpoint:
     def binding(self):
         """A digest naming what was checked: address, name, CA, preamble."""
         text = "|".join((self.host, str(self.port), self.server_name,
-                         hashlib.sha256(self.ca_pem).hexdigest(), str(self.preamble),
+                         hashlib.sha256(self.ca).hexdigest(), str(self.preamble),
                          ",".join(map(str, self.plaintext_ports))))
         return hashlib.sha256(text.encode()).hexdigest()
 
@@ -153,7 +171,7 @@ def handshake(endpoint, *, ca_pem=None, server_name=None):
     except (OSError, TimeoutError) as error:
         return {"outcome": "undecided", "reason": f"unreachable:{type(error).__name__}"}
     try:
-        with _context(ca_pem or endpoint.ca_pem).wrap_socket(
+        with _context(ca_pem or endpoint.ca).wrap_socket(
                 connection, server_hostname=server_name or endpoint.server_name) as tls:
             der = tls.getpeercert(binary_form=True) or b""
             return {"outcome": "verified", "tls_version": tls.version(),
@@ -280,6 +298,20 @@ def hello_plaintext(hello):
                    else "refused" if set(outcomes) == {"refused"} else "undecided")
         return {"outcome": outcome, "ports": ports}
     return attempt
+
+
+def settings_endpoints(found, plaintext_ports=None):
+    """``{side: TlsEndpoint}`` for each side a unit's settings reach over
+    verified TLS: ``found`` maps side to ``(host, port, ca_file)`` or None
+    (that side is not TLS); ``plaintext_ports`` the ports per side the service
+    may also serve in the clear."""
+    ports = plaintext_ports or {}
+    if type(ports) is not dict or set(ports) - {"source", "target"} or not all(
+            type(v) is list for v in ports.values()):
+        raise ContractError("plaintext_ports: a list of ports per side")
+    return {side: TlsEndpoint(host, int(port), host, ca_file=ca,
+                              plaintext_ports=tuple(ports.get(side, ())))
+            for side, value in found.items() if value for host, port, ca in (value,)}
 
 
 def check_tls(tls, preamble=None):

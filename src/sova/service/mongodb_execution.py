@@ -35,13 +35,14 @@ from pathlib import Path
 from sova.adapters.mongodb_change_stream import MongoChangeStreamHandoffAdapter
 from sova.adapters.mongodb_handoff import MongoDatabaseHandoffAdapter, account
 from sova.adapters.mongodb_probes import MongoDatabaseProbes
+from sova.adapters.tls_refusal import settings_endpoints
 from sova.domain.contracts import ContractError
 from sova.service.postgres_execution import data_measure
 from sova.service.worker import Execution
 
 _KEYS = {"servers", "databases", "collections", "writers", "app_user", "admin_user",
          "user_password_files", "invariants", "scratch_db", "other_db", "zone_of",
-         "catch_up_seconds"}
+         "catch_up_seconds", "plaintext_ports"}
 MODES = frozenset({"offline_copy", "change_stream"})
 _SERVER_KEYS = {"host", "port", "username", "password", "authSource", "tls_ca"}
 
@@ -70,7 +71,7 @@ def mongodb_factory(adapter_id, resolve, *, change_stream=False):
             connect=d["connect"], connect_as=d["connect_as"], databases=d["databases"],
             collections=d["collections"], writers=d["writers"], app_user=d["app_user"],
             invariants=d.get("invariants"), other_db=d.get("other_db"),
-            zone_of=d.get("zone_of"))
+            zone_of=d.get("zone_of"), tls=d.get("tls"))
         return Execution(adapter, mongodb_measure(probes, scratch=d.get("scratch_db"),
                                                   other_db=d.get("other_db")))
     return factory
@@ -126,6 +127,9 @@ def mongodb_resolver(app, *, route_for):
                                    else "", authSource=authdb, serverSelectionTimeoutMS=10000)
 
     resolved = {
+        "tls": settings_endpoints({
+            side: (s["host"], s.get("port", 27017), s["tlsCAFile"])
+            for side, s in settings.items() if s.get("tlsCAFile")}, entry.get("plaintext_ports")),
         "connect": connect, "connect_as": connect_as, "databases": dict(databases),
         "collections": tuple(entry["collections"]), "writers": tuple(entry["writers"]),
         "app_user": entry["app_user"], "admin_user": entry["admin_user"],

@@ -28,13 +28,14 @@ import ssl
 
 from sova.adapters.rabbitmq_queue_handoff import RabbitMqQueueHandoffAdapter
 from sova.adapters.rabbitmq_queue_probes import RabbitMqQueueProbes
+from sova.adapters.tls_refusal import settings_endpoints
 from sova.domain.contracts import ContractError
 from sova.service.postgres_execution import data_measure
 from sova.service.worker import Execution
 
 _KEYS = {"brokers", "vhosts", "queue", "exchange", "routing_key", "publishers",
          "app_publisher", "consumers", "user_password_files", "invariants", "other_vhost",
-         "zone_of"}
+         "zone_of", "plaintext_ports"}
 _BROKER_KEYS = {"http", "host", "port", "username", "password", "ssl_ca"}
 
 
@@ -62,7 +63,7 @@ def rabbitmq_factory(adapter_id, resolve):
             queue=d["queue"], exchange=d["exchange"], routing_key=d["routing_key"],
             publishers=d["publishers"], app_publisher=d["app_publisher"],
             invariants=d.get("invariants"), other_vhost=d.get("other_vhost"),
-            zone_of=d.get("zone_of"))
+            zone_of=d.get("zone_of"), tls=d.get("tls"))
         return Execution(adapter, rabbitmq_measure(probes, other_vhost=d.get("other_vhost")))
     return factory
 
@@ -124,6 +125,9 @@ def rabbitmq_resolver(app, *, route_for):
                                         else ""))
 
     resolved = {
+        "tls": settings_endpoints({
+            side: (s["host"], s.get("port", 5671), s["ssl_ca"])
+            for side, s in settings.items() if s.get("ssl_ca")}, entry.get("plaintext_ports")),
         "broker": broker, "connect_as": connect_as, "vhosts": dict(vhosts),
         "queue": entry["queue"], "exchange": entry["exchange"],
         "routing_key": entry["routing_key"], "publishers": tuple(entry["publishers"]),

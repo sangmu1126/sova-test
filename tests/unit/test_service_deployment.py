@@ -743,3 +743,33 @@ def test_a_secret_access_entry_that_does_not_add_up_is_refused(spec):
 
     with pytest.raises(ContractError):
         secret_access_probes(spec)
+
+
+def test_a_side_reached_over_tls_is_the_endpoint_its_refusals_are_asked_of(tmp_path):
+    """The target's server settings name a CA: that host and port are the
+    registered TLS endpoint, with the plaintext ports the entry adds; the
+    plain source has none."""
+    from mysql_pair_business import tls_material
+
+    from sova.service.catalog import catalog_from as build
+
+    ca = write(tmp_path, "valkey-ca.pem", tls_material("unit")["ca.pem"].decode())
+    tls_server = write(tmp_path, "redis-tls.json", json.dumps({
+        "host": "127.0.0.1", "port": 1, "username": "sova-admin", "password": "x",
+        "ssl_ca": ca}))
+    app = redis_application(tmp_path, **{"redis.plaintext_ports": {"target": [2]}})
+    app["redis"]["servers"] = {"source": app["redis"]["servers"]["source"],
+                               "target": tls_server}
+    catalog, close = build({"version": 1, "applications": [app]},
+                           route_for=lambda spec: FakeRoute())
+    measure = catalog.build("tenant-a", "board", "redis-keyspace", None).measure
+    close()
+    control = {"kind": "target_control_test", "id": "security.refuse_unverified_transport"}
+    passed, observation = measure(control, {})
+    assert not passed and observation["side"] == "target"
+    assert "endpoint_sha256" in observation  # asked of the registered endpoint
+    assert observation["checks"]["positive_before"]["outcome"] == "undecided"  # nothing there
+    with pytest.raises(ContractError):
+        build({"version": 1, "applications": [redis_application(
+            tmp_path, **{"redis.plaintext_ports": {"target": 2}})]},
+            route_for=lambda spec: FakeRoute())
