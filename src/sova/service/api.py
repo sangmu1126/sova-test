@@ -140,6 +140,18 @@ def create_app(plane, authenticate, *, ready=lambda: True):
                 "registered_by": found.registered_by,
                 "registered_at": found.registered_at.isoformat()}
 
+    @app.put("/v1/tenants/{tenant}/applications/{application}/verifier-requests/{request_id}")
+    def request_verifier(application: str, request_id: str, body: dict = Body(...), who=Depends(principal)):
+        return plane.request_verifier_trust(who, application, request_id, body)
+
+    @app.get("/v1/tenants/{tenant}/applications/{application}/verifier-requests/{request_id}")
+    def verifier_request(application: str, request_id: str, who=Depends(principal)):
+        return plane.verifier_trust_request(who, application, request_id)
+
+    @app.post("/v1/tenants/{tenant}/applications/{application}/verifier-requests/{request_id}/approvals")
+    def approve_verifier(application: str, request_id: str, body: dict = Body(...), who=Depends(principal)):
+        return plane.approve_verifier_trust(who, application, request_id, body)
+
     @app.post("/v1/tenants/{tenant}/attestations", status_code=201)
     def attest(body: dict = Body(...), who=Depends(principal)):
         return plane.attest(who, body)
