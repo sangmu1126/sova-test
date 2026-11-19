@@ -78,6 +78,7 @@ def test_actual_fields_are_projected_without_paths_or_authority(tmp_path):
     "change",
     [
         {"tenant_id": "other"},
+        {"passed": False},
         {"application_id": "other"},
         {"gateway_source_sha256": "b" * 64},
         {"slo_qualified": True},
@@ -215,3 +216,41 @@ def test_authentication_role_app_guard_before_reader():
         == 200
     )
     assert calls == [("tenant", "orders")]
+
+
+@pytest.mark.parametrize(
+    "available,amount,currency,estimated,reason",
+    [
+        (False, None, None, True, "estimated_zero_not_verified"),
+        (True, "0.27", "USD", True, None),
+        (True, "0", "USD", False, None),
+    ],
+)
+def test_bounded_billing_keeps_unknown_and_verified_amounts_separate(
+    tmp_path, available, amount, currency, estimated, reason
+):
+    path, _, entry = fixture(tmp_path)
+    path.write_text(
+        json.dumps(
+            dict(
+                account_id="265233844540",
+                run_id="b0be270e62",
+                complete_tco=False,
+                comparison_authorized=False,
+                available=available,
+                amount=amount,
+                currency=currency,
+                estimated=estimated,
+                observed_at=NOW.isoformat(),
+                reason=reason,
+            )
+        )
+    )
+    entry["health"] = None
+    entry["cost"] = dict(file=str(path), account_id="265233844540", run_id="b0be270e62")
+    result = OperationalReadModels([entry], clock=lambda: NOW).read("tenant", "orders")[
+        "cost"
+    ]
+    assert result["state"] == "fresh"
+    assert (result["available"], result["amount"]) == (available, amount)
+    assert result["complete_tco"] is False and result["comparison_authorized"] is False

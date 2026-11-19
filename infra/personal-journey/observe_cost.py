@@ -1,7 +1,7 @@
 """Read owned tagged AWS usage; never activates tags or changes a budget."""
 
 import argparse
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -24,8 +24,10 @@ def main():
     if account != "265233844540":
         raise ValueError("Owned personal AWS account required")
     now = datetime.now(UTC)
-    start = (now - timedelta(days=1)).date()
-    end = now.date()
+    start = date(
+        2026, 11, 19
+    )  # Actual owned run creation day, not a rolling previous day.
+    end = now.date() + timedelta(days=1)
     observation = AWSRunCostObservation(
         session.client("ce", region_name="us-east-1", config=config),
         run_id="b0be270e62",
@@ -34,6 +36,7 @@ def main():
     observation.update(
         observed_at=datetime.now(UTC).isoformat(),
         activation_is_not_billing_delivery=True,
+        billing_day_in_progress=True,
     )
     with a.artifacts.open("x") as f:
         json.dump(observation, f, indent=2)
