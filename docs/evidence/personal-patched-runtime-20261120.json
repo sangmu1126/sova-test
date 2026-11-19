@@ -1,0 +1,67 @@
+{
+  "scope": "Isolated fresh-data runtime trial on personal AWS source; not application patch promotion, migration or continuity qualification",
+  "run_id": "b0be270e62",
+  "trial_id": "sova-image-e045aead4e65",
+  "started_at": "2026-11-19T22:22:37.546542+00:00",
+  "completed_at": "2026-11-19T22:23:06.448326+00:00",
+  "source_trial_code_sha256": "58fdb16912a39eb36d4f8c75fca7e86f0a0be4dea4f1c74d6488ad1a322dbf9c",
+  "probe_sha256": "cea0f549cea040491c59d5d2529567e7d272ba64bbba65bb24fe201e58c8d188",
+  "result_sha256": "85f98ec4367a3c805a00d8e1362ce7a354d5288315a6908a424ed03823107643",
+  "checks": {
+    "verified_https_identity": true,
+    "unauthorized_denied": true,
+    "other_tenant_denied": true,
+    "actual_order_idempotent_replay": true,
+    "one_committed_business_effect": true,
+    "database_tls": true,
+    "no_admin_role": true,
+    "wrong_ca_denied": true,
+    "wrong_hostname_denied": true,
+    "wrong_password_denied": true,
+    "plaintext_without_password_denied": true,
+    "other_database_denied": true,
+    "no_external_network": true
+  },
+  "passed": true,
+  "original_unchanged": true,
+  "containers_removed": true,
+  "private_input_version_removed": true,
+  "operational_qualification": false,
+  "migration_complete": false,
+  "candidate_images": {
+    "app": {
+      "source_commit": "e196ceaad0464d39f15e1a38521f8df4fc170c60",
+      "manifest_digest": "sha256:518b6fa0e1b28ff1c7d1c055f907fa71ae8ed01db52a7af88e97bfb3db45a174",
+      "config_digest": "sha256:852c1570fac12d9bafb0397b21d7ca76a4e4412e0c21c6ed4b5c736515ceccfb",
+      "archive_sha256": "f86046449dd48d95757840e1c013bfc381ca793be3fd80cc3ee1397f49b96049",
+      "architecture": "arm64",
+      "user": "10001:10001"
+    },
+    "db": {
+      "source_commit": "553be58480262feb1215ee82bf39a40ae5b0875b",
+      "manifest_digest": "sha256:934224e0a5c2003ead54d50f897278b34aa626a4b132844fe885666da35146f7",
+      "config_digest": "sha256:7b62f1eb627c951a2fa33c892bac6c2487c46d50d1eec4bdd3079b0ae0915728",
+      "archive_sha256": "5972f0a094d44f0d9c66ac2167ff578ef7587553590e86fe71ea703b63e939ad",
+      "architecture": "arm64",
+      "user": "70:70"
+    }
+  },
+  "failed_trials_preserved": [
+    {
+      "trial": "source-image-runtime-02",
+      "result_sha256": "9135a1f556e8136142683cea3830550b85e444fb16db18ec35a62ebd4ddf7a7b",
+      "cleanup_receipt_sha256": "e77f680cb73082a278cf9c906c1a8105a9850c3427a4156f31e741ca283eaa35",
+      "input_version_deleted": true,
+      "original_unchanged": true,
+      "containers_removed": true
+    },
+    {
+      "trial": "source-image-runtime-03",
+      "result_sha256": "9219de1ce6a73a2eeb756eec1101a24b41e07f23ee9b4eceae47ccd2092f8840",
+      "cleanup_receipt_sha256": "6692c800476b895e5098a77c04906324e545987153423c7b7a8af23e2215ecf2",
+      "input_version_deleted": true,
+      "original_unchanged": true,
+      "containers_removed": true
+    }
+  ]
+}
