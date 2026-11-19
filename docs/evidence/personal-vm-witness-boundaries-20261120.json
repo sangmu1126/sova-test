@@ -1,0 +1,20 @@
+{
+  "started_at": "2026-11-19T20:30:22.847348+00:00",
+  "checks": {
+    "original_shell_command_is_replaced_by_forced_protocol": true,
+    "stdio_forward_to_kubernetes_refused": true,
+    "kubeconfig_unreadable": true,
+    "business_pgdata_unreadable": true,
+    "wrong_encrypted_mapper_refused_before_file_access": true,
+    "native_ledger_backend_reads_same_actual_record": true
+  },
+  "passed": true,
+  "business_authority_changed": false,
+  "worm_qualified": false,
+  "completed_at": "2026-11-19T20:30:26.933296+00:00",
+  "implementation_digest": "0e21a7d55d377dfa61b8a3ca3c9af4b14782cebb5f62cd2637d0e8eb57d4654e",
+  "probe_application_id": "witness-boundary-c6a74f4fbdb14e53bee850215d5f5d2f",
+  "probe_unit_digest": "ba49e285569a2764399067c01f89f86f9a66952cd5a6b26f0e3a1dd8d4d8c9d4",
+  "driver_sha256": "3169e661dcf5656c78de4a25b5a80ff3504a64f464613509f56b7ea766d5b7fb",
+  "raw_sha256": "874bd7a676b493d305fb14f2768d9a1f214f7d94542a2c9dc90a1dee6a268bd3"
+}
