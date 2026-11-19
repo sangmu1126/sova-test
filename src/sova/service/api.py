@@ -33,7 +33,7 @@ log = logging.getLogger("sova.api")
 MAX_BODY = 1_048_576
 
 
-def create_app(plane, authenticate, *, ready=lambda: True):
+def create_app(plane, authenticate, *, ready=lambda: True, operational_reads=None):
     app = FastAPI(title="Sova control plane", version="1", docs_url=None, redoc_url=None)
     app.add_middleware(RequestBodyBoundary,limit=MAX_BODY)
 
@@ -121,6 +121,10 @@ def create_app(plane, authenticate, *, ready=lambda: True):
     @app.get("/v1/tenants/{tenant}/registrations/{kind}")
     def registry_catalog(kind: str, after: str="", who=Depends(principal)):
         return plane.registry_catalog(who,kind,after)
+
+    @app.get("/v1/tenants/{tenant}/applications/{application}/operational-observations")
+    def operational_observations(application: str, who=Depends(principal)):
+        return plane.operational_observations(who, application, operational_reads)
 
     @app.get("/v1/tenants/{tenant}/applications/{application}/plans")
     def plan_catalog(application: str, after: str="", who=Depends(principal)):

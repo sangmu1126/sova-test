@@ -193,6 +193,17 @@ class ControlPlane:
         tenant = self._require(principal, *Role)
         return workspace.registrations(self.connect,tenant,kind,after)
 
+    def operational_observations(self, principal, application_id, reader):
+        tenant = self._require(principal, Role.AUDITOR)
+        identifier(application_id, "application_id")
+        if self._registrations(tenant).current("service_contract", application_id) is None:
+            raise NotFound("Register this application's contract before reading observations")
+        if reader is None:
+            from sova.service.operational_reads import OperationalReadModels
+            reader = OperationalReadModels([{"tenant_id": tenant,
+                "application_id": application_id, "health": None, "cost": None}], clock=self.clock)
+        return reader.read(tenant, application_id)
+
     def plan_catalog(self, principal, application_id, after=""):
         tenant = self._require(principal, *Role)
         return workspace.plans(self._lifecycle(tenant),application_id,after)

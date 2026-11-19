@@ -118,7 +118,11 @@ def serve_api(env=os.environ, *, host="0.0.0.0", port=8080):
         tenant_claim=config.tenant_claim, roles_claim=config.roles_claim,
         role_prefix=config.role_prefix)
     plane = ControlPlane(connect, settings=_settings(config), clock=_clock)
-    app = create_app(plane, authenticate, ready=lambda: schema_ready(connect))
+    from sova.service.operational_reads import OperationalReadModels
+    read_models = (OperationalReadModels.from_file(env["SOVA_OPERATIONAL_READ_MODELS_FILE"])
+                   if env.get("SOVA_OPERATIONAL_READ_MODELS_FILE") else None)
+    app = create_app(plane, authenticate, ready=lambda: schema_ready(connect),
+                     operational_reads=read_models)
     if env.get("SOVA_CONSOLE_ROOT"):
         from sova.service.web import mount_workspace
         from sova.service.config import _required
