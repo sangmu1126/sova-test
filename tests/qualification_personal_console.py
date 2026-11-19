@@ -105,6 +105,11 @@ def main():
     registrations = [{"kind": kind, "subject": subject, "document": encode(value)} for kind, subject, value in (
         ("service_contract", application, ServiceContract.from_document(contract)),
         ("environment_profile", source.profile_id, source), ("environment_profile", target.profile_id, target))]
+    with psycopg.connect((args.control_directory / "runtime.dsn").read_text()) as conn:
+        conn.execute("SELECT set_config('sova.tenant_id', %s, true)", (tenant,))
+        prior_heads=set(conn.execute("SELECT kind,subject_id FROM sova_control.registration_heads").fetchall())
+    intended=registry_package["registrations"] if registry_package is not None else registrations
+    expected_heads=prior_heads | {(r["kind"],r["subject"]) for r in intended}
     api = None
     try:
         with identity_provider(harness, startup_seconds=args.identity_startup_seconds,
@@ -132,8 +137,9 @@ def main():
             if registry_package is not None:
                 browser_input["registrations"] = registry_package["registrations"]
                 browser_input["attestations"] = registry_package["attestations"]
-                report["preissued_measured_qualifications"] = 2
-                report["qualified_implementation_digest"] = registry_package["implementation_digest"]
+                report["preissued_measured_qualifications"] = sum(r["kind"]=="strategy_qualification" for r in registry_package["registrations"])
+                report["observed_implementation_digest"] = registry_package["implementation_digest"]
+                report["partial_inventory"] = registry_package.get("partial_inventory",False)
             if args.case == "verifier":
                 from qualification_personal_keys import registry_proposal
 
@@ -164,9 +170,9 @@ def main():
             with psycopg.connect((args.control_directory / "runtime.dsn").read_text()) as conn:
                 conn.execute("SELECT set_config('sova.tenant_id', %s, true)", (tenant,))
                 report["registered_rows"] = conn.execute("SELECT count(*) FROM sova_control.registration_heads").fetchone()[0]
+                observed_heads=set(conn.execute("SELECT kind,subject_id FROM sova_control.registration_heads").fetchall())
                 report["plan_rows"] = conn.execute("SELECT count(*) FROM sova_control.plans").fetchone()[0]
-            expected_rows = 7 if args.case == "registry" else 3
-            if report["registered_rows"] != expected_rows or report["plan_rows"] != 0:
+            if observed_heads != expected_heads or report["registered_rows"] != len(expected_heads) or report["plan_rows"] != 0:
                 raise ValueError("Unexpected registration/plan count")
             api.terminate()
             api.wait(timeout=30)

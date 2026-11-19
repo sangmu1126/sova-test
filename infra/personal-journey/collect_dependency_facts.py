@@ -224,6 +224,33 @@ def main():
                 "SELECT oid::text,rolname,rolcanlogin,rolsuper,rolcreaterole,rolcreatedb,rolreplication,rolbypassrls "
                 "FROM pg_roles ORDER BY rolname"
             ).fetchall()
+            if len(roles) > 256:
+                raise ValueError("Role inventory exceeds the qualified collection bound")
+            # SET ROLE can expose a writer even when ordinary inherited
+            # privileges are absent. Observe the actual reachability relation.
+            assumptions = conn.execute(
+                "SELECT a.rolname,b.rolname FROM pg_roles a CROSS JOIN pg_roles b "
+                "WHERE a.rolcanlogin AND a.oid<>b.oid AND pg_has_role(a.oid,b.oid,'SET') "
+                "ORDER BY 1,2"
+            ).fetchall()
+            definers = conn.execute(
+                "SELECT n.nspname,p.proname,p.oid::text,r.rolname,md5(pg_get_functiondef(p.oid)) "
+                "FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace "
+                "JOIN pg_roles r ON r.oid=p.proowner WHERE p.prosecdef "
+                "AND n.nspname NOT IN ('pg_catalog','information_schema') ORDER BY 1,2,3"
+            ).fetchall()
+            definer_callers = conn.execute(
+                "SELECT a.rolname,p.oid::text FROM pg_roles a CROSS JOIN pg_proc p "
+                "JOIN pg_namespace n ON n.oid=p.pronamespace WHERE a.rolcanlogin AND p.prosecdef "
+                "AND n.nspname NOT IN ('pg_catalog','information_schema') "
+                "AND has_function_privilege(a.oid,p.oid,'EXECUTE') ORDER BY 1,2"
+            ).fetchall()
+            extensions = conn.execute("SELECT extname,extversion FROM pg_extension ORDER BY 1").fetchall()
+            event_triggers = conn.execute(
+                "SELECT evtname,evtevent,evtenabled FROM pg_event_trigger ORDER BY 1").fetchall()
+            foreign_tables = conn.execute(
+                "SELECT n.nspname,c.relname FROM pg_foreign_table f JOIN pg_class c ON c.oid=f.ftrelid "
+                "JOIN pg_namespace n ON n.oid=c.relnamespace ORDER BY 1,2").fetchall()
             effective = []
             for role in roles:
                 for table in ("orders", "work_items", "idempotency_results"):
@@ -279,6 +306,12 @@ def main():
             ],
             "effective_writers": effective,
             "memberships": members,
+            "login_role_assumptions": assumptions,
+            "security_definer_functions": definers,
+            "security_definer_callers": definer_callers,
+            "extensions": extensions,
+            "event_triggers": event_triggers,
+            "foreign_tables": foreign_tables,
             "tables": tables,
             "tls": list(tls),
         }
