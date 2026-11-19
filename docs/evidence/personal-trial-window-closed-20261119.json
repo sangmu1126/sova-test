@@ -1,0 +1,14 @@
+{
+  "observed_at": "2026-11-19T08:31:12+00:00",
+  "account": "265233844540",
+  "instance_id": "i-04946f0e0c0548c3b",
+  "run_id": "b0be270e62",
+  "state": "stopped",
+  "root_volume_id": "vol-0cf101c7982064b83",
+  "delete_on_termination": false,
+  "previous_canary_credentials_expired": true,
+  "additional_request_refused_before_contact": true,
+  "uid_guard_live_test": "NOT_RUN_EXPIRED_BEFORE_CONTACT",
+  "migration_complete": false,
+  "operational_qualification": false
+}

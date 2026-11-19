@@ -93,3 +93,28 @@
 기준 `6749cf7`의 `observe_entry.py`로 실제 개인 VM의 API CA·namespace UID·Service UID를 대조했다. 메모리에서만 사용하는 10분짜리 전용 ServiceAccount 토큰으로 네이티브 Service 경로를 읽고 실제 HTTPS 요청 3회의 side와 비교했다. 모두 `source_orders`였다. Secret 읽기·다른 Service 읽기·다른 namespace 조회는 실제 403으로 거부됐다. [공개 검증 결과](../evidence/personal-native-entry-20261119.json).
 
 이 검증에서는 경로·SQL·앱 데이터·기존 정책을 변경하지 않았다. Service 경로의 선택적 실제 HTTP observer를 추가했으며, 다른 side·HTTP 503·외부 Endpoint가 포함된 경우 성공으로 판단하지 않는 회귀 시험을 포함했다. 관련 99개 통과, 실환경 조건부 18개 제외. 최초 sandbox 실행의 loopback bind 실패는 권한이 필요한 동일 시험을 승인된 환경에서 재실행해 확인했다. `migration_complete=false`와 `operational_qualification=false`는 유지한다.
+
+### 개인 네이티브 등록·워커·실측 후속 결과
+
+- `6b64990` 기준 실제 개인 AWS·VM PG 17.12를 다시 관측하고, 실제 브라우저 Authorization Code + PKCE(S256)로 앱 계약·출발 프로필·목적지 프로필을 네이티브 API에 등록했다. VM 암호화 볼륨 위 별도 제어 DB에 등록 3건, 계획 0건을 확인했다. 토큰은 브라우저 영속 저장소에 남지 않았다. [결과](../evidence/personal-native-registration-20261119.json) · [실제 화면](../evidence/personal-native-registration-20261119.png).
+- 이 IdP는 실제 Keycloak을 실행한 **로컬 시험용 IdP**다. 기업 SSO·MFA·실제 두 사람의 승인을 증명하지 않는다. 두 번의 100초 시작 실패는 보존했다. 초기 Quarkus 빌드가 약 135초 걸린 로그를 확보한 뒤 별도 300초 콜드 시작 예산에서 로그인까지 확인했다. 앱 이전 SLO를 늘린 결과가 아니다. 시험 API·IdP 컨테이너는 종료·정리했다.
+- 어댑터·의존성 조사·방향별 자격이 없는 요청은 실제 네이티브 컴파일러가 `422 / Nothing registered as capability_manifest not-qualified`로 거부했다. 일반 404를 성공적인 보안 거부로 셈하지 않는다. 신뢰 등록·서명·watermark·자격을 fixture로 주입하지 않았다.
+- `35c6b35` 기준 실제 네이티브 호스트 워커와 VM 원장을 연결했다. 실제 PID 기반 소유자, health 3회, 안전 종료, 승인/효과 0건 유지를 확인했다. 런타임의 이력 삭제·마이그레이션 기록 추가·스키마 생성·업무 데이터 읽기는 **실제 SQLSTATE 42501**로 거부됐다. [검증 결과](../evidence/personal-native-host-worker-20261119.json).
+- 준비 과정의 slotted 정본 객체 직렬화 오류와 `offline` 모드 오기는 실제 시작 전에 거부됐다. 각각 `asdict`, 정본 `offline_copy` 및 실제 catalog parser 사전 검증으로 수정했고 실패 출력과 새 초안 리비전을 보존했다. 승인된 계획·업무 데이터·경로를 수정한 것은 아니다.
+- API의 OIDC 설정과 워커의 원장·증거 신원을 분리했다. 워커가 실제 사용하지 않는 가짜 IdP 주소를 요구하지 않으며, API는 여전히 실제 OIDC 설정 검증을 요구한다.
+- `a75e486`에서 선택적으로 Service UID를 고정하고, PATCH가 UID와 resourceVersion을 함께 검사하도록 했다. 자원이 같은 이름으로 재생성되거나 HTTP 표본 수집 중 바뀌면 성공으로 인정하지 않는다. 개인 워커 설정은 이 UID를 포함한다. **교체 자원·CAS 회귀는 단위 시험으로 검증했으며, 실제 잘못된 UID PATCH 시험은 자격 만료로 접속 전에 차단되어 미실행**이다. 앞선 실제 경로 조회 3회·403 검증과 합산해 live mutation guard PASS로 표시하지 않는다.
+- 최종 관련 경계 회귀: **169 통과, 실환경 조건부 18 제외**, Ruff 통과. 새 설정 분리 이후 기업 로그인·전체 데이터 전환을 다시 실측한 것으로 표시하지 않는다.
+
+### 6번: 비용·AI·관측의 실제 확인과 미완료
+
+[개인 환경 관측](../evidence/personal-environment-20261119.json)에서 공식 AWS Price List의 서울 `t4g.small` Linux/Shared 단가는 시간당 USD 0.0208이었다. 청구액이 아니며 저장소·네트워크·백업·운영·공유 비용과 로컬 VM TCO는 미확인이다. 누락을 0으로 채우거나 더 저렴한 목적지로 판정하지 않는다.
+
+Bedrock `apac.amazon.nova-lite-v1:0`의 실제 모델 리전은 서울·도쿄·오사카·뭄바이·싱가포르·시드니를 포함했다. 계정 호출 로깅 미설정은 공급자 보관·지원 접근 위치가 없다는 근거가 아니다. 모델 호출은 0회이며 위치 정책 승인은 미완료다. Harbor는 실제 실행 환경에 연결하지 않았다.
+
+기존 Collector 0.164.0은 HIGH 2·UNKNOWN 1·MEDIUM 2를 발견했다. [공식 0.165.0 릴리스](https://github.com/open-telemetry/opentelemetry-collector-releases/releases/tag/v0.165.0)의 정확한 ARM64 digest 후보도 검사했으나 HIGH 0·UNKNOWN 1·MEDIUM 1이 남았다. 두 이미지 모두 **배포 승인 BLOCK**이다. 무시 목록·심각도 제외·임의 예외를 넣지 않았고 새 Collector를 기동하지 않았다. 현재 앱에 실제 OTel SDK/Collector가 연결됐다는 근거가 아니다. [검사 기록](../evidence/collector-preflight-20261119.json).
+
+### 17:31 KST 시점과 남은 실제 경로
+
+[시험 창 종료 확인](../evidence/personal-trial-window-closed-20261119.json): 개인 AWS source는 자동 중지됐고 EBS는 연결·보존 상태이며 삭제 설정은 꺼져 있다. 원래 자격 만료를 연장하거나 검사 우회를 하지 않았다. 이미지·실제 앱·PG 연결·진입점·콘솔 등록·원장·워커 기동 근거는 해당 관측 시점의 기록이다. 현재 서비스가 가동 중이거나 데이터 이전이 끝났다는 뜻이 아니다.
+
+다음 준비 범위는 (1) 실제 source/target 프로필에 대한 방향별 기능 자격 및 검증자 신뢰 등록, (2) 모든 writer/controller를 포함한 현재 의존성·변경 수집, (3) 사업 데이터·백업·감사별 검증된 위치 근거, (4) 독립 승인과 네이티브 원장/워커를 통한 실제 권한·데이터·경로 전환 및 신규 쓰기·복귀, (5) 자격을 갖춘 관측 이미지·실제 AI/Harbor·완전한 비용 근거다. DB comment, 테스트용 신뢰·계정, 성공한 health만으로 이 빈칸을 채우지 않는다. **여섯 단계 전체는 미완료**다.

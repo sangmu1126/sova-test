@@ -1,0 +1,94 @@
+{
+  "observed_at": "2026-11-19T04:57:04.745117+00:00",
+  "candidates": [
+    {
+      "candidate": "collector-image-01",
+      "scan_schema": 2,
+      "counts": {
+        "UNKNOWN": 1,
+        "LOW": 0,
+        "MEDIUM": 2,
+        "HIGH": 2,
+        "CRITICAL": 0
+      },
+      "findings": [
+        {
+          "VulnerabilityID": "CVE-2026-116587",
+          "PkgName": "github.com/go-jose/go-jose/v4",
+          "InstalledVersion": "v4.1.5",
+          "FixedVersion": "4.1.6",
+          "Severity": "HIGH"
+        },
+        {
+          "VulnerabilityID": "GO-2026-5932",
+          "PkgName": "golang.org/x/crypto",
+          "InstalledVersion": "v0.58.0",
+          "FixedVersion": "0.58.1-0.20261009181718-2f1f834330b2",
+          "Severity": "UNKNOWN"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-78661",
+          "PkgName": "golang.org/x/net",
+          "InstalledVersion": "v0.61.0",
+          "FixedVersion": "0.62.0",
+          "Severity": "HIGH"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-97045",
+          "PkgName": "golang.org/x/net",
+          "InstalledVersion": "v0.61.0",
+          "FixedVersion": "0.62.0",
+          "Severity": "MEDIUM"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-97054",
+          "PkgName": "stdlib",
+          "InstalledVersion": "v1.26.10",
+          "FixedVersion": "1.26.11, 1.27.4",
+          "Severity": "MEDIUM"
+        }
+      ],
+      "admission": "BLOCK",
+      "deployed": false,
+      "reference": "otel/opentelemetry-collector-contrib@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b"
+    },
+    {
+      "candidate": "collector-image-02",
+      "scan_schema": 2,
+      "counts": {
+        "UNKNOWN": 1,
+        "LOW": 0,
+        "MEDIUM": 1,
+        "HIGH": 0,
+        "CRITICAL": 0
+      },
+      "findings": [
+        {
+          "VulnerabilityID": "GO-2026-5932",
+          "PkgName": "golang.org/x/crypto",
+          "InstalledVersion": "v0.58.0",
+          "FixedVersion": "0.58.1-0.20261009181718-2f1f834330b2",
+          "Severity": "UNKNOWN"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-97054",
+          "PkgName": "stdlib",
+          "InstalledVersion": "v1.27.3",
+          "FixedVersion": "1.26.11, 1.27.4",
+          "Severity": "MEDIUM"
+        }
+      ],
+      "admission": "BLOCK",
+      "deployed": false,
+      "reference": "otel/opentelemetry-collector-contrib@sha256:19b524dc61144cb50e9dccc9469605706db48e3302ddccda404a0aaf0a99a73f"
+    }
+  ],
+  "canonical_security_admission": false,
+  "scan_database": {
+    "Version": 2,
+    "NextUpdate": "2026-11-19T19:07:09.820302589Z",
+    "UpdatedAt": "2026-11-18T19:07:09.82030288Z",
+    "DownloadedAt": "2026-11-18T22:37:09.906451Z"
+  },
+  "candidate_release_source": "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/tag/v0.165.0"
+}

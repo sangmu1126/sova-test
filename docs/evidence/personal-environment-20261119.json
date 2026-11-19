@@ -1,0 +1,63 @@
+{
+  "observed_at": "2026-11-19T04:57:04.745117+00:00",
+  "run_id": "b0be270e62",
+  "source": {
+    "instance_id": "i-04946f0e0c0548c3b",
+    "state": "running",
+    "architecture": "arm64",
+    "instance_type": "t4g.small",
+    "imds": {
+      "State": "applied",
+      "HttpTokens": "required",
+      "HttpPutResponseHopLimit": 1,
+      "HttpEndpoint": "enabled",
+      "HttpProtocolIpv6": "disabled",
+      "InstanceMetadataTags": "disabled"
+    },
+    "network_inbound_rules": 0
+  },
+  "cost": {
+    "currency": "USD",
+    "compute_hourly_list_rate": {
+      "sku": "AW8AKUMZKQEQXMSZ",
+      "usd": "0.0208000000",
+      "unit": "Hrs",
+      "effective_at": "2026-11-01T00:00:00Z",
+      "source": "AWS Price List GetProducts"
+    },
+    "actual_billed_cost": null,
+    "storage": null,
+    "network": null,
+    "backup": null,
+    "operations": null,
+    "shared": null,
+    "local_vm_tco": null,
+    "cheapest_target_decision": "BLOCKED_INCOMPLETE_COMPARABLE_COSTS"
+  },
+  "ai": {
+    "invocations": 0,
+    "profiles": [
+      {
+        "id": "apac.amazon.nova-lite-v1:0",
+        "status": "ACTIVE",
+        "model_regions": [
+          "ap-northeast-1",
+          "ap-northeast-2",
+          "ap-northeast-3",
+          "ap-south-1",
+          "ap-southeast-1",
+          "ap-southeast-2"
+        ],
+        "seoul_api_is_processing_location_proof": false
+      }
+    ],
+    "all_data_phases_authenticated": false,
+    "residency_admission": "BLOCKED_UNQUALIFIED_PROVIDER_FACTS",
+    "account_logging_configuration_present": false,
+    "account_logging_destinations": [],
+    "provider_retention": "UNKNOWN_NOT_PROVEN_BY_ACCOUNT_LOGGING_SETTINGS",
+    "profile_listing_complete": true
+  },
+  "operational_qualification": false,
+  "migration_complete": false
+}

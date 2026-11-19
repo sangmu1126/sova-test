@@ -1,0 +1,60 @@
+{
+  "source_commit": "6b649908b69831694abb6fded2e2f48a3ecfe989",
+  "database_versions": {
+    "source": {
+      "version": "17.12",
+      "system_identifier": "7709720208587968539"
+    },
+    "target": {
+      "version": "17.12",
+      "system_identifier": "7709723763091251229"
+    }
+  },
+  "actual_business_mutations": false,
+  "strategy_qualification_issued": false,
+  "migration_complete": false,
+  "operational_qualification": false,
+  "identity_scope": "disposable local test IdP; not corporate SSO/MFA",
+  "api_stopped": true,
+  "identity_removed": true,
+  "browser": {
+    "pkce": 1,
+    "registrations": [
+      {
+        "kind": "service_contract",
+        "status": 200,
+        "subject_id": "orders-b0be270e62",
+        "revision": 1,
+        "digest": "35412958b1b4cf9346a9601fd24c8458259b5427d21127160a9dd0303f04a743"
+      },
+      {
+        "kind": "environment_profile",
+        "status": 200,
+        "subject_id": "aws-ec2-b0be270e62",
+        "revision": 1,
+        "digest": "5ab5ba48c8a4db72ea9fea5c8b73f20c68f21516273c114b9dc05aa02d5f60cc"
+      },
+      {
+        "kind": "environment_profile",
+        "status": 200,
+        "subject_id": "local-rke2-b0be270e62",
+        "revision": 1,
+        "digest": "ccc710ef6486929471d71d59f6851aebd0b41b6be243515cefb356776b7dab0e"
+      }
+    ],
+    "unqualified_plan_status": 422,
+    "token_persisted": false,
+    "actual_native_api": true,
+    "actual_vm_ledger": true,
+    "execution_admitted": false
+  },
+  "registered_rows": 3,
+  "plan_rows": 0,
+  "completed_at": "2026-11-19T05:06:56.779078+00:00",
+  "driver_hashes": {
+    "tests/qualification_personal_console.py": "42671d65d70c875d338131bb05b689d5febc86c0b1e9a54bb2e020d4fe413236",
+    "tests/qualification_personal_console.mjs": "59d669f55225a9dff3565b6ff1b8b85a64c782b71b943adbe126ce6b7561a739",
+    "tests/qualification_workspace_oidc.py": "a7a3fcb1ef8fcd4bc652a81396ef094c6ecc7e0a4851ae7f9d65ed4755616cfa"
+  },
+  "driver_hash_note": "These driver files match the completed frozen source 6b64990; later service configuration refactor is covered by 169 boundary tests and actual host startup evidence, not another PKCE run."
+}

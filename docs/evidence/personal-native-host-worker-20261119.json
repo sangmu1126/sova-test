@@ -1,0 +1,19 @@
+{
+  "source_commit": "35c6b3557587a8c8190a16c34e429f81c807945a",
+  "driver_sha256": "9b613b74f47404743aff8f1ac2a286091cd648335157fde36b4a9a960fdc9169",
+  "started_at": "2026-11-19T05:12:19.994457+00:00",
+  "checks": {
+    "history_delete_denied": true,
+    "migration_insert_denied": true,
+    "create_schema_denied": true,
+    "runtime_business_data_read_denied": true,
+    "actual_native_host_health": true,
+    "graceful_exit": true,
+    "no_admission_or_external_effects": true
+  },
+  "admitted": false,
+  "migration_complete": false,
+  "operational_qualification": false,
+  "owner": "host.70969.08bb1f56481e",
+  "finished_at": "2026-11-19T05:12:23.381107+00:00"
+}
