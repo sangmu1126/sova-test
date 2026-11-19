@@ -276,6 +276,10 @@ class HandoffWorker:
               ownership, lease, coordinator, record, op, obligations, recovered, execution):
         """One step: its effect (or the recovered one), its measured evidence,
         the authority advanced. Returns (record, recovered, execution, stop)."""
+        verify_execution = getattr(self.catalog, "verify_execution", None)
+        if verify_execution is not None:
+            bound = op.get("adapter") or next(item["adapter"] for item in doc["operations"] if item.get("adapter"))
+            verify_execution(tenant, application_id, bound["adapter_id"], revision)
         journal, engine = self._executor(ownership, lease)
         effect = None
         if recovered is not None and recovered[0] == record.next_operation:

@@ -169,7 +169,12 @@ def run_worker(env=os.environ, *, health_port=8081, poll_seconds=5.0):
     config, worker_config = LedgerConfig.from_env(env), WorkerConfig.from_env(env)
     if type(poll_seconds) not in (int, float) or not 0 < poll_seconds < worker_config.stall_seconds:
         raise ContractError("Worker poll_seconds must be positive and below the stall timeout")
-    catalog, close = catalog_from(worker_config.execution)
+    if worker_config.execution.get("version") == 2:
+        from sova.service.directional_catalog import catalog_v2
+
+        catalog, close = catalog_v2(worker_config.execution)
+    else:
+        catalog, close = catalog_from(worker_config.execution)
     signer = Ed25519EvidenceSigner(
         Ed25519PrivateKey.from_private_bytes(worker_config.evidence_key),
         issuer_id=config.evidence_issuer, key_id=worker_config.evidence_key_id)
