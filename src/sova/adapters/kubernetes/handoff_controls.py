@@ -78,10 +78,12 @@ class KubernetesHandoffControls(KubernetesHTTPS):
     def service(self, name):
         return self._get(self._ns("/api/v1", "services", name))
 
-    def set_service_selector(self, name, resource_version, selector):
+    def set_service_selector(self, name, resource_version, selector, *, object_uid=None):
+        operations = ([{"op": "test", "path": "/metadata/uid", "value": object_uid}]
+                      if object_uid is not None else [])
         return self._patch(self._ns("/api/v1", "services", name), resource_version,
-                           [{"op": "replace", "path": "/spec/selector",
-                             "value": _selector(selector)}])
+                           [*operations, {"op": "replace", "path": "/spec/selector",
+                                          "value": _selector(selector)}])
 
     def endpoints(self, service):
         """Every endpoint behind ``service``: (pod name or None, ready)."""
@@ -159,7 +161,7 @@ class KubernetesServiceRoute:
     """Route store: which side's pods a Service sends traffic to."""
 
     def __init__(self, controls, service, sides, *, converge_seconds=30.0,
-                 observe=None, samples=3):
+                 observe=None, samples=3, expected_service_uid=None):
         if not isinstance(controls, KubernetesHandoffControls):
             raise ContractError("Registered Kubernetes controls required")
         if type(sides) is not dict or len(sides) < 2:
@@ -171,12 +173,31 @@ class KubernetesServiceRoute:
         if observe is not None and (not callable(observe) or type(samples) is not int
                                     or not 1 <= samples <= 8):
             raise ContractError("A callable HTTP observer and 1..8 samples required")
+        if expected_service_uid is not None and (type(expected_service_uid) is not str
+                or not 1 <= len(expected_service_uid) <= 128
+                or any(c.isspace() for c in expected_service_uid)):
+            raise ContractError("An exact Service UID required")
+        self.expected_service_uid = expected_service_uid
         self.http_observe, self.samples = observe, samples
         self.converge_seconds = converge_seconds
 
+    def _service(self):
+        current = self.controls.service(self.service)
+        if self.expected_service_uid is not None and current.get("metadata", {}).get("uid") != self.expected_service_uid:
+            raise ContractError("Registered Service was replaced")
+        return current
+
+    def _select(self, current, selector):
+        if self.expected_service_uid is not None:
+            self.controls.set_service_selector(self.service, current["metadata"]["resourceVersion"],
+                                               selector, object_uid=self.expected_service_uid)
+        else:
+            self.controls.set_service_selector(self.service, current["metadata"]["resourceVersion"], selector)
+
     def observe(self):
         """What traffic can reach now, and the side that alone is behind it."""
-        selector = (self.controls.service(self.service).get("spec") or {}).get("selector")
+        current = self._service()
+        selector = (current.get("spec") or {}).get("selector")
         side = next((ref for ref, wanted in self.sides.items() if wanted == selector), None)
         endpoints = self.controls.endpoints(self.service)
         backing = self.controls.pods(self.sides[side]) if side is not None else set()
@@ -190,6 +211,11 @@ class KubernetesServiceRoute:
             observation["http_sides"] = answers
             if any(answer != decided for answer in answers):
                 observation["route"] = None
+            if self.expected_service_uid is not None:
+                after = self._service()
+                if after["metadata"].get("resourceVersion") != current["metadata"].get("resourceVersion"):
+                    observation["route"] = None
+                    observation["service_changed_during_probe"] = True
         return observation
 
     def get(self):
@@ -198,10 +224,9 @@ class KubernetesServiceRoute:
     def set(self, ref):
         if ref not in self.sides:
             raise ContractError("Unknown route side")
-        current = self.controls.service(self.service)
+        current = self._service()
         if (current.get("spec") or {}).get("selector") != self.sides[ref]:
-            self.controls.set_service_selector(
-                self.service, current["metadata"]["resourceVersion"], self.sides[ref])
+            self._select(current, self.sides[ref])
         # Traffic follows the selector only once the endpoints are rebuilt; wait,
         # bounded, so the readback that follows sees the settled route.
         deadline = time.monotonic() + self.converge_seconds
@@ -213,10 +238,9 @@ class KubernetesServiceRoute:
         """Point the Service at ``ref``, a side whose selector matches no Pod."""
         if ref not in self.sides:
             raise ContractError("Unknown route side")
-        current = self.controls.service(self.service)
+        current = self._service()
         if (current.get("spec") or {}).get("selector") != self.sides[ref]:
-            self.controls.set_service_selector(
-                self.service, current["metadata"]["resourceVersion"], self.sides[ref])
+            self._select(current, self.sides[ref])
 
     def paused(self, ref):
         """(paused, what traffic reaches): the paused side's selector, no endpoint."""

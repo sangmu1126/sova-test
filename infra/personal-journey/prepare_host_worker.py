@@ -70,7 +70,7 @@ def main():
     (args.output / "schema.sql").write_text(SCHEMA)
     route = {"kind": "kubernetes_service", "registration_file": str(args.output / "kubernetes-registration.json"),
         "token_file": str(args.output / "route.token"), "ca_file": str(args.output / "kubernetes-ca.pem"),
-        "service": "orders-entry", "sides": {
+        "service": "orders-entry", "service_uid": entry["service_uid"], "sides": {
             side + "_orders": {"sova.run": inputs["run_id"], "sova.role": "edge", "sova.side": side}
             for side in ("source", "target")}, "samples": 3,
         "probe": {"url": f"https://127.0.0.1:{entry['port']}/healthz", "header": "X-Sova-Side",

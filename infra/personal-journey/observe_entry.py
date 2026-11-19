@@ -1,7 +1,9 @@
 """Read the personal entry through native controls and fresh actual HTTPS.
 
 A bounded ServiceAccount token stays in memory. No patch, SQL mutation, exec,
-secret read or traffic switch is performed. Namespace identity is rechecked.
+secret read or traffic switch is performed by default. The explicit UID-guard
+check attempts only a deliberately failing test with the existing selector;
+resource UID, version and selector must remain unchanged. Namespace is checked.
 """
 
 import argparse
@@ -23,6 +25,7 @@ def main():
     p.add_argument("--inputs", type=Path, required=True)
     p.add_argument("--entry-connection", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--verify-uid-guard", action="store_true")
     args = p.parse_args()
     os.umask(0o077)
     identity()
@@ -54,7 +57,7 @@ def main():
         sides={"source_orders": "source", "target_orders": "target"}, ca_file=str(args.inputs / "pki/ca.pem"))
     route = KubernetesServiceRoute(controls, "orders-entry", {
         side + "_orders": {"sova.run": run, "sova.role": "edge", "sova.side": side}
-        for side in ("source", "target")}, observe=observe, samples=3)
+        for side in ("source", "target")}, observe=observe, samples=3, expected_service_uid=entry["service_uid"])
     seen = route.observe()
     if seen["route"] != "source_orders":
         raise ValueError("Actual entry is not unanimously source")
@@ -70,10 +73,30 @@ def main():
             denied[name] = "403"
         else:
             raise ValueError("Route worker has unexpected privileges")
+    uid_guard = {"requested": args.verify_uid_guard, "verified": False}
+    if args.verify_uid_guard:
+        before = controls.service("orders-entry")
+        if before["metadata"]["uid"] != entry["service_uid"]:
+            raise ValueError("Entry identity changed before negative guard test")
+        try:
+            controls.set_service_selector("orders-entry", before["metadata"]["resourceVersion"],
+                before["spec"]["selector"], object_uid="must-not-match-" + entry["service_uid"])
+        except KubernetesRequestRefused as exc:
+            if exc.status != 422:
+                raise
+            uid_guard["refused_status"] = exc.status
+        else:
+            raise ValueError("Wrong UID test was unexpectedly accepted")
+        after = controls.service("orders-entry")
+        if (after["metadata"]["uid"] != before["metadata"]["uid"]
+                or after["metadata"]["resourceVersion"] != before["metadata"]["resourceVersion"]
+                or after["spec"]["selector"] != before["spec"]["selector"]):
+            raise ValueError("Resource changed during negative guard test")
+        uid_guard["verified"] = True
     report = {"observed_at": datetime.now(UTC).isoformat(), "run_id": run,
         "namespace_uid": registration.namespace_uid, "service_uid": service["metadata"]["uid"],
         "registration_digest": registration.fingerprint, "route": seen,
-        "refusals": denied, "token_lifetime_seconds": 600,
+        "refusals": denied, "token_lifetime_seconds": 600, "uid_guard": uid_guard,
         "traffic_changed": False, "business_data_changed": False,
         "migration_complete": False, "operational_qualification": False}
     args.output.write_text(json.dumps(report, indent=2) + "\n")

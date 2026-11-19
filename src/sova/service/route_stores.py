@@ -38,7 +38,7 @@ from sova.domain.contracts import ContractError
 
 SERVICE_ACCOUNT = Path("/var/run/secrets/kubernetes.io/serviceaccount")
 _SERVICE_KEYS = {"kind", "registration_file", "token_file", "ca_file", "service", "sides",
-                 "converge_seconds", "probe", "samples"}
+                 "converge_seconds", "probe", "samples", "service_uid"}
 _GATEWAY_KEYS = {"kind", "registration_file", "token_file", "ca_file", "route", "rule",
                  "parents", "sides", "probe", "samples", "converge_seconds"}
 _PROBE_KEYS = {"url", "header", "values", "ca_file"}
@@ -84,7 +84,8 @@ def route_from(spec, *, controls_for=handoff_controls):
             raise ContractError("HTTP samples require a route probe")
         return KubernetesServiceRoute(controls_for(spec), spec["service"], spec["sides"],
                                       converge_seconds=float(spec.get("converge_seconds", 60)),
-                                      observe=observe, samples=spec.get("samples", 3))
+                                      observe=observe, samples=spec.get("samples", 3),
+                                      expected_service_uid=spec.get("service_uid"))
     if kind == "gateway_httproute":
         if set(spec) - _GATEWAY_KEYS or not {"registration_file", "route", "parents", "sides",
                                              "probe"} <= set(spec):
