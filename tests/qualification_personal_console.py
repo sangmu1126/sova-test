@@ -38,6 +38,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("inputs", "connections", "control-directory", "artifacts"):
         p.add_argument("--" + name, type=Path, required=True)
+    p.add_argument("--case", choices=("registration", "verifier"), default="registration")
     args = p.parse_args()
     os.umask(0o077)
     args.artifacts.mkdir(mode=0o700, exist_ok=False)
@@ -90,7 +91,7 @@ def main():
         ("environment_profile", source.profile_id, source), ("environment_profile", target.profile_id, target))]
     api = None
     try:
-        with identity_provider(harness, startup_seconds=300) as idp:
+        with identity_provider(harness, startup_seconds=300, security_roles=args.case == "verifier") as idp:
             with (args.artifacts / "api.log").open("xb") as log:
                 api = subprocess.Popen([sys.executable, "-m", "sova.service.main", "serve-api", "--host", "127.0.0.1", "--port", str(port)],
                     env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -111,13 +112,32 @@ def main():
                 "directory": str(args.artifacts), "tools": TOOLS, "executable": CHROME,
                 "tenant": tenant, "application": application, "registrations": registrations,
                 "source_profile": source.profile_id, "target_profile": target.profile_id}
-            run = subprocess.run([NODE, str(ROOT / "tests/qualification_personal_console.mjs")],
+            if args.case == "verifier":
+                from qualification_personal_keys import registry_proposal
+
+                proposal = registry_proposal(identity, lambda: psycopg.connect((args.control_directory / "runtime.dsn").read_text()))
+                browser_input["verifier_request"] = proposal
+                report["private_key_reference"] = proposal["private_key_reference"]
+            browser_script = "qualification_personal_verifier.mjs" if args.case == "verifier" else "qualification_personal_console.mjs"
+            run = subprocess.run([NODE, str(ROOT / "tests" / browser_script)],
                 input=json.dumps(browser_input), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
             (args.artifacts / "browser.stdout").write_text(run.stdout)
             (args.artifacts / "browser.stderr").write_text(run.stderr)
             if run.returncode:
                 raise RuntimeError("Actual browser registration failed; inspect private artifacts")
             report["browser"] = json.loads((args.artifacts / "browser.json").read_text())
+            report["identity_runtime"] = idp["report"]
+            if args.case == "verifier":
+                from sova.adapters.postgres_verifier_registry import PostgresVerifierRegistry
+
+                registry = PostgresVerifierRegistry(lambda: psycopg.connect((args.control_directory / "runtime.dsn").read_text()),
+                    tenant_id=tenant, application_id=application)
+                published = registry.latest("personal-registry-verifier-b0be270e62", "registry-v3")
+                if (published.requested_by, published.approved_by) != (idp["users"]["planner"]["subject"], idp["users"]["approver"]["subject"]):
+                    raise ValueError("Actual key publication actors differ from authenticated IdP subjects")
+                report["verifier_publication"] = {"revision": published.revision, "digest": published.fingerprint,
+                    "requested_by": published.requested_by, "approved_by": published.approved_by}
+                report["approval_scope"] = "Distinct authenticated test subjects; not proof of two independent humans"
             with psycopg.connect((args.control_directory / "runtime.dsn").read_text()) as conn:
                 conn.execute("SELECT set_config('sova.tenant_id', %s, true)", (tenant,))
                 report["registered_rows"] = conn.execute("SELECT count(*) FROM sova_control.registration_heads").fetchone()[0]
