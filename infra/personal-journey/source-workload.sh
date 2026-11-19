@@ -86,13 +86,32 @@ for attempt in {1..45}; do
   sleep 1
 done
 [[ $ready == 1 ]]
+# BEGIN TLS APP SPEC
+health_code=$(cat <<'PY'
+import http.client,json,socket,ssl
+from pathlib import Path
+c=json.loads(Path('/run/sova/config.json').read_text())
+host=c['side']+'-app.'+c['run_id']+'.sova.invalid'
+context=ssl.create_default_context(cafile='/run/sova/ca.pem')
+s=context.wrap_socket(socket.create_connection(('127.0.0.1',8080),timeout=2),server_hostname=host)
+s.sendall(('GET /healthz HTTP/1.1\r\nHost: '+host+'\r\nConnection: close\r\n\r\n').encode())
+r=http.client.HTTPResponse(s);r.begin()
+assert r.status==200 and r.getheader('x-sova-deployment')==c['deployment_digest']
+body=json.loads(r.read(2049));assert body=={'application_id':c['application_id'],'side':c['side']}
+r.close();s.close()
+PY
+)
+health_encoded=$(printf '%s' "$health_code" | base64 -w 0)
+health_command="python -c \"import base64;exec(base64.b64decode('$health_encoded'))\""
 nerdctl --namespace "$namespace" run -d --name orders-app --label "sova.run=$run_id" \
   --network "$namespace" --ip 10.246.0.20 --user 10001:10001 --read-only \
   --cap-drop ALL --security-opt no-new-privileges --memory 256m --cpus 1 --pids-limit 64 \
+  --health-cmd "$health_command" --health-interval 10s --health-timeout 3s --health-retries 3 \
   --mount "type=bind,src=$state/app,dst=/run/sova,ro" \
   "local.sova.invalid/$run_id/app@sha256:$app_manifest" \
   python -m uvicorn sova.qualification.order_runtime:create_app --factory --host 0.0.0.0 --port 8080 \
   --no-access-log --no-proxy-headers --limit-concurrency 24 --backlog 64 --timeout-keep-alive 3 \
   --timeout-graceful-shutdown 8 --no-server-header \
   --ssl-certfile /run/sova/server.pem --ssl-keyfile /run/sova/server-key.pem
+# END TLS APP SPEC
 printf '%s\n' 'Source canary processes requested; independent TLS, SQL and digest readback still required'
