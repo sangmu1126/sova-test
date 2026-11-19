@@ -15,7 +15,7 @@ from sova.domain.registry_attestation import REGISTRY_ENVIRONMENT
 from sova.ports.plans import RepositoryConflict
 from sova_security.adapters.postgres_session import ScopedPostgresSession
 
-MIGRATION = "postgres_registry_change_barrier_v1.sql"
+MIGRATION = "postgres_registry_change_bindings_v1.sql"
 COLLECTOR = "registry-transaction-outbox-v1"
 
 

@@ -74,6 +74,38 @@ def test_no_recorded_change_with_complete_feeds_allows_commands(compiled, now):
     assert impact.commands_allowed and not impact.stale_since and not impact.unknown_obligations
 
 
+def test_initial_snapshot_registration_is_not_a_resource_mutation_but_replacement_blocks(compiled, now):
+    inputs = compiled["doc"]["inputs"]
+    registered = event(compiled, ChangeKind.DEPENDENCY_SNAPSHOT, at=now+timedelta(seconds=1),
+        env="sova-contract-registry", subject=inputs["snapshot_id"], digest=inputs["snapshot_digest"])
+    assert assess(compiled, [registered], now=now+timedelta(seconds=2)).commands_allowed
+    changed = event(compiled, ChangeKind.DEPENDENCY_SNAPSHOT, at=now+timedelta(seconds=2),
+        env="sova-contract-registry", subject=inputs["snapshot_id"], digest="f"*64)
+    result = assess(compiled, [registered, changed], now=now+timedelta(seconds=3))
+    assert result.plan_stale and "PLAN_INPUT_SUPERSEDED:dependency_snapshot" in result.reasons
+
+
+def test_input_verifier_change_blocks_even_when_not_an_obligation_verifier(compiled, now):
+    changed = event(compiled, ChangeKind.VERIFIER, at=now+timedelta(seconds=1), subject="registry-attestor-1")
+    result = assess(compiled, [changed], now=now+timedelta(seconds=2))
+    assert result.plan_stale and not result.commands_allowed
+    assert "PLAN_VERIFIER_CHANGED:registry-attestor-1" in result.reasons
+
+
+def test_legacy_plan_without_discovery_identity_cannot_ignore_replacement(compiled, now):
+    doc = json.loads(compiled["revision"].canonical)
+    del doc["inputs"]["snapshot_id"]
+    from sova.domain.plan_compiler import PlanRevision
+
+    revision = PlanRevision(json.dumps(doc))
+    plan = lower_plan(revision, created_by="planner", verifiers={o["kind"]:"v-1" for o in doc["obligations"]})
+    legacy = {**compiled, "index": ImpactIndex.from_plan(revision, plan)}
+    change = event(legacy, ChangeKind.DEPENDENCY_SNAPSHOT, at=now+timedelta(seconds=1),
+        env="sova-contract-registry", subject="previously-unbound", digest="f"*64)
+    result = assess(legacy, [change], now=now+timedelta(seconds=2))
+    assert result.plan_stale and "PLAN_INPUT_UNBOUND:dependency_snapshot" in result.reasons
+
+
 def test_unit_resource_recreated_after_the_snapshot_makes_the_plan_stale(compiled, now):
     at = now + timedelta(seconds=30)
     impact = assess(compiled, [event(compiled, ChangeKind.RESOURCE, at=at, env=SOURCE,

@@ -50,11 +50,12 @@ class ChangeKind(StrEnum):
     MANIFEST = "manifest"  # registry: capability manifest revision
     QUALIFICATION = "qualification"  # registry: strategy qualification revision
     ENVIRONMENT_PROFILE = "environment_profile"  # registry: profile revision
+    DEPENDENCY_SNAPSHOT = "dependency_snapshot"  # exact registered discovery input
     UNCLASSIFIED = "unclassified"
 
 
 _REGISTRY = {ChangeKind.CONTRACT, ChangeKind.MANIFEST, ChangeKind.QUALIFICATION,
-             ChangeKind.ENVIRONMENT_PROFILE}
+             ChangeKind.ENVIRONMENT_PROFILE, ChangeKind.DEPENDENCY_SNAPSHOT}
 
 # Environments each verification kind actually observes, beyond the side of
 # the step it is due at. Unknown kinds are treated as observing every side.
@@ -222,6 +223,8 @@ class ImpactIndex:
             (f"{ChangeKind.ENVIRONMENT_PROFILE}:{doc['environments']['target']}",
              i["target_profile_digest"]),
         )
+        if i.get("snapshot_id"):
+            inputs += ((f"{ChangeKind.DEPENDENCY_SNAPSHOT}:{i['snapshot_id']}", i["snapshot_digest"]),)
         step_side = {s.step_id: sides.get(s.scope.environment_id) for s in plan.steps}
         operations, touched_by = [], {}
         for op in doc["operations"]:
@@ -349,6 +352,12 @@ def assess_impact(index, events, watermarks, *, issued, now, max_feed_lag=MAX_FE
             raise ContractError("Change event is in the future")
         side = side_of.get(event.environment_id) if event.environment_id else None
         if event.kind in _REGISTRY:
+            if (event.kind == ChangeKind.DEPENDENCY_SNAPSHOT
+                    and event.application_id == index.application_id
+                    and not any(key.startswith("dependency_snapshot:") for key, _ in index.inputs)
+                    and event.observed_at > index.snapshot_observed_at):
+                plan_stale = True
+                reasons.add("PLAN_INPUT_UNBOUND:dependency_snapshot")
             if event.kind == ChangeKind.CONTRACT:
                 if event.application_id == index.application_id:
                     registry.setdefault(f"contract:{event.application_id}", []).append(event)
@@ -412,8 +421,14 @@ def assess_impact(index, events, watermarks, *, issued, now, max_feed_lag=MAX_FE
         elif kind == ChangeKind.VERIFIER and event.subject is not None:
             subject = event.subject
             invalidate(lambda s, t, k, v: v == subject, at, f"VERIFIER_CHANGED:{subject}")
+            if at > index.snapshot_observed_at:
+                plan_stale = True
+                reasons.add(f"PLAN_VERIFIER_CHANGED:{subject}")
         elif kind == ChangeKind.VERIFIER:
             invalidate(lambda s, t, k, v: True, at, "VERIFIER_CHANGED")
+            if at > index.snapshot_observed_at:
+                plan_stale = True
+                reasons.add("PLAN_VERIFIER_CHANGED:any")
         elif kind == ChangeKind.ADAPTER and (event.subject is None
                                              or event.subject in index.adapters):
             invalidate(lambda s, t, k, v: True, at, f"ADAPTER_CHANGED:{event.subject}")

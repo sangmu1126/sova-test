@@ -21,9 +21,12 @@ import pytest
 from sova.adapters.postgres_trust_requests import PostgresTrustRequests
 from sova.adapters.postgres_verifier_registry import PostgresVerifierRegistry
 from sova.adapters.postgres_registrations import PostgresRegistrations
-from sova.adapters.registration.registry_codec import encode
+from sova.adapters.registration.registry_codec import encode, subject_of
 from sova.adapters.postgres_change_feed import PostgresChangeFeed
-from sova.domain.capability_catalog import EnvironmentProfile
+from sova.domain.capability_catalog import EnvironmentProfile, CapabilityManifest, StrategyQualification, EvidenceGrade
+from sova.domain.service_contracts import MigrationProfile
+from sova.domain.migration_units import DependencySnapshot
+from sova.domain.system_graph import SystemGraph, SystemResource, ResourceKind, Portability
 from sova.domain.change_impact import ChangeKind
 from sova.adapters.postgres_registry_checkpoint import PostgresRegistryCheckpoint
 from sova.domain.contracts import ContractError, ResourceScope
@@ -308,6 +311,41 @@ def test_runtime_cannot_rewind_a_registry_head_or_commit_one_without_history(led
             conn.execute("UPDATE sova_control.registration_heads SET revision=revision+1 WHERE subject_id=%s", (value.profile_id,))
     assert registry.current("environment_profile", value.profile_id).revision == 1
     assert len(registry.history("environment_profile", value.profile_id)) == 1
+
+
+def test_manifest_and_unit_grade_qualification_events_use_the_compilers_strategy_identity(ledger):
+    connect, tenant, application, _, _ = ledger
+    now = datetime.now(UTC)
+    manifest = CapabilityManifest("component-pg", "test-1", "a"*64, "offline-copy", "test-1",
+        ("copy_content",), (MigrationProfile.SINGLE_AUTHORITY,))
+    qualification = StrategyQualification("component-q", tenant, application, "b"*64, manifest.fingerprint,
+        "c"*64, "d"*64, MigrationProfile.SINGLE_AUTHORITY, ("copy_content",), 1, now,
+        now+timedelta(minutes=1), "component-only", "e"*64, "f"*64, "0"*64, EvidenceGrade.UNIT)
+    registry = PostgresRegistrations(connect, tenant_id=tenant)
+    for kind, value in (("capability_manifest", manifest), ("strategy_qualification", qualification)):
+        registry.register(kind, subject_of(value), encode(value), expected_revision=0, registered_by="test-registrar")
+    events = PostgresChangeFeed(connect, tenant_id=tenant).events(application_id=application,
+        environments=("sova-contract-registry",), since=now)
+    assert [(event.kind,event.subject,event.digest) for event in events] == [
+        (ChangeKind.MANIFEST,"offline-copy",manifest.fingerprint),
+        (ChangeKind.QUALIFICATION,"offline-copy",qualification.fingerprint)]
+
+
+def test_discovery_registration_event_carries_its_exact_identity_and_digest(ledger):
+    connect, tenant, application, _, _ = ledger
+    now = datetime.now(UTC)
+    graph = SystemGraph(tenant,application,1,"registration",now,now+timedelta(minutes=1),
+        (SystemResource("database","test database",ResourceScope(tenant,application,"component-env","database"),
+            ResourceKind.DATABASE,"component-only","component-only","test-1",Portability.UNKNOWN),),())
+    snapshot = DependencySnapshot("component-snapshot","a"*64,graph,(("database","component-uid"),),(),
+        ("component-only",),("not-real-discovery",),False,False)
+    PostgresRegistrations(connect, tenant_id=tenant).register("dependency_snapshot",snapshot.snapshot_id,encode(snapshot),
+        expected_revision=0, registered_by="test-registrar")
+    events = PostgresChangeFeed(connect,tenant_id=tenant).events(application_id=application,
+        environments=("sova-contract-registry",),since=now)
+    assert len(events)==1
+    assert (events[0].kind,events[0].subject,events[0].digest)==(
+        ChangeKind.DEPENDENCY_SNAPSHOT,snapshot.snapshot_id,snapshot.fingerprint)
 
 
 def test_approval_cannot_publish_a_key_other_than_the_reviewed_request_digest(ledger):

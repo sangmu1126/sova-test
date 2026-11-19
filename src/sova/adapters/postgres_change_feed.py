@@ -107,7 +107,7 @@ class PostgresChangeFeed:
             rows = conn.execute(
                 f"""SELECT {_COLUMNS} FROM sova_control.change_events
                 WHERE tenant_id=%s
-                  AND (kind IN ('contract','manifest','qualification','environment_profile')
+                  AND (kind IN ('contract','manifest','qualification','environment_profile','dependency_snapshot')
                        -- registry history at any time: the compiled revision must
                        -- still be the latest one recorded, not merely unchanged later
                        OR (observed_at>=%s

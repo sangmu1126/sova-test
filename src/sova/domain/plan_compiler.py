@@ -32,7 +32,7 @@ from sova.domain.service_contracts import MigrationProfile, ServiceContract
 from sova.domain.system_graph import ResourceKind
 
 
-COMPILER_VERSION = "sova-plan-compiler.v2"  # v2: target controls measured before the pause
+COMPILER_VERSION = "sova-plan-compiler.v3"  # v3: bind discovery registration identity for change impact
 # Target controls whose test needs the business data on the target (ADR-0003).
 DATA_BOUND_CONTROLS = frozenset({"tested_restore"})
 MAX_PLAN_BYTES = 262144
@@ -437,6 +437,7 @@ def compile_revision(
         blockers.append(_blocker("C11", "CLOCK_REGRESSION"))
     inputs = {
         "contract_digest": contract.fingerprint,
+        "snapshot_id": snapshot.snapshot_id,
         "snapshot_digest": snapshot.fingerprint,
         # Changes observed after this instant are not reflected in the plan (INV-08).
         "snapshot_observed_at": utc(snapshot.graph.observed_at).isoformat(),
