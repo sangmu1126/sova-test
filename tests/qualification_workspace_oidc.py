@@ -52,7 +52,7 @@ def identity_provider(h, *, startup_seconds=100, security_roles=False):
     origin = f"http://127.0.0.1:{port}"
     container = None
     network_created = False
-    report = {"image_id": IMAGE, "architecture": "arm64", "version": "26.8.2",
+    report = {"run_id": run, "image_id": IMAGE, "architecture": "arm64", "version": "26.8.2",
               "transport": "loopback HTTP; local test only", "operational_idp_qualified": False,
               "direct_password_grant_for_spa": False, "pkce_method": "S256"}
     try:
@@ -112,6 +112,8 @@ def identity_provider(h, *, startup_seconds=100, security_roles=False):
             mapped = [server.call("GET", f"/{realm}/roles/sova:{r}") for r in granted]
             server.call("POST", f"/{realm}/users/{uid}/role-mappings/realm", mapped)
             users[name] = {"username": name, "password": secret, "subject": uid}
+        report["administrator_token_issues"] = server.admin_token_issues
+        report["administrator_token_cached_with_server_expiry"] = True
         report["dedicated_security_roles"] = security_roles
         issuer = origin + "/realms/" + realm
         h.environment.update(SOVA_OIDC_ISSUER=issuer,
@@ -139,6 +141,8 @@ def identity_provider(h, *, startup_seconds=100, security_roles=False):
             docker("network", "rm", run)
             report["network_removed"] = run not in docker("network", "ls", "--format", "{{.Name}}").splitlines()
         env_file.unlink(missing_ok=True)
+        report["bootstrap_environment_removed"] = not env_file.exists()
+        private_file(h.directory / ("identity-" + run + ".json"), json.dumps(report, indent=2))
         artifacts = os.environ.get("SOVA_TEST_QUALIFICATION_ARTIFACTS")
         if artifacts:
             private_file(Path(artifacts) / (h.case_name + "-identity.json"), json.dumps(report, indent=2))

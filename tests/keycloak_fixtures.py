@@ -7,6 +7,7 @@ real identity provider. Every test creates its own realms.
 """
 
 import os
+import time
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -20,15 +21,31 @@ class Server:
         import httpx
 
         self.url, self.admin, self.httpx = url.rstrip("/"), admin, httpx
+        self._admin_token, self._admin_token_until = None, 0
+        self.admin_token_issues = 0
 
     def _client(self):
-        http = self.httpx.Client(timeout=15)
-        token = http.post(f"{self.url}/realms/master/protocol/openid-connect/token", data={
-            "grant_type": "password", "client_id": "admin-cli",
-            "username": self.admin[0], "password": self.admin[1]})
-        token.raise_for_status()
-        http.headers["Authorization"] = "Bearer " + token.json()["access_token"]
-        return http
+        http = self.httpx.Client(timeout=15, trust_env=False, follow_redirects=False)
+        try:
+            if self._admin_token is None or time.monotonic() >= self._admin_token_until:
+                token = http.post(f"{self.url}/realms/master/protocol/openid-connect/token", data={
+                    "grant_type": "password", "client_id": "admin-cli",
+                    "username": self.admin[0], "password": self.admin[1]})
+                token.raise_for_status()
+                body = token.json()
+                expires = body["expires_in"]
+                value = body["access_token"]
+                if (type(expires) is not int or not 5 < expires <= 3600
+                        or type(value) is not str or not 1 <= len(value) <= 16384):
+                    raise ValueError("Bounded test administrator token required")
+                self._admin_token = value
+                self._admin_token_until = time.monotonic() + expires - 5
+                self.admin_token_issues += 1
+            http.headers["Authorization"] = "Bearer " + self._admin_token
+            return http
+        except BaseException:
+            http.close()
+            raise
 
     def call(self, method, path, body=None, **params):
         http = self._client()
