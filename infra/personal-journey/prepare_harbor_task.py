@@ -45,7 +45,8 @@ def main():
         else:
             (context/"reference.py").write_bytes(reference)
             shutil.copyfile(Path(__file__).with_name("harbor_boundary_verifier.py"),context/"verify.py")
-            tail="COPY reference.py verify.py /grader/\nRUN chmod 0444 /grader/*.py\n"
+            shutil.copyfile(task/"tests/test.sh",context/"test.sh")
+            tail="COPY reference.py verify.py /grader/\nCOPY test.sh /tests/test.sh\nRUN chmod 0444 /grader/*.py && chmod 0555 /tests/test.sh\n"
         (context/"Dockerfile").write_text(base+tail+"USER 10001:10001\nWORKDIR /workspace\nCMD [\"sh\",\"-c\",\"sleep infinity\"]\n")
         hashes[name]={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in context.iterdir()}
     result={"version":1,"framework":"harbor==0.26.0","classification":"public-source-only",

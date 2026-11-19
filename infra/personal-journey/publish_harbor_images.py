@@ -32,10 +32,8 @@ def main():
     a.output.mkdir(mode=0o700, exist_ok=False)
     session = boto3.Session(profile_name="default", region_name="ap-northeast-2")
     cfg = Config(connect_timeout=5, read_timeout=15, retries={"max_attempts": 1})
-    assert (
-        session.client("sts", config=cfg).get_caller_identity()["Account"]
-        == "265233844540"
-    )
+    if session.client("sts", config=cfg).get_caller_identity()["Account"] != "265233844540":
+        raise ValueError("Wrong personal publication account")
     client = session.client("ecr", config=cfg)
     repo = client.describe_repositories(repositoryNames=["sova-journey-b0be270e62"])[
         "repositories"
