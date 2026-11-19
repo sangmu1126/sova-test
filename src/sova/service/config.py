@@ -9,7 +9,7 @@ file (a mounted Kubernetes Secret) that holds a DSN, a key or credentials.
     SOVA_OIDC_ISSUER, SOVA_OIDC_AUDIENCE, SOVA_OIDC_JWKS_URL
     SOVA_TENANT_CLAIM, SOVA_ROLES_CLAIM, SOVA_ROLE_PREFIX   (defaults below)
     SOVA_REGISTRY_VERIFIER_VERSION, SOVA_EVIDENCE_VERIFIER, SOVA_EVIDENCE_ISSUER
-    SOVA_WITNESS                   file:<path> | s3://<bucket>  (authority witness)
+    SOVA_WITNESS                   file:<path> | s3://<bucket> | ssh-file:<config path>
     SOVA_WITNESS_S3_FILE           endpoint, region and credentials for s3://
     SOVA_TENANTS                   comma-separated tenants a worker serves
     SOVA_EVIDENCE_KEY_FILE         the worker's Ed25519 evidence key (hex, 32 bytes)
@@ -90,6 +90,31 @@ class LedgerConfig:
 
     def witness_for(self):
         """tenant -> the authority witness every process of this deployment shares."""
+        if self.witness.startswith("ssh-file:"):
+            from sova.adapters.ssh_authority_witness import SSHAuthorityWitness
+            from sova.domain.json_documents import json_document
+
+            path = Path(self.witness[len("ssh-file:"):])
+            if not path.is_absolute() or path.is_symlink() or not path.is_file():
+                raise ContractError("Regular absolute witness configuration required")
+            with path.open("rb") as handle:
+                raw = handle.read(65537)
+            document = json_document(raw.decode(), 65536)
+            if (type(document) is not dict or set(document) != {"tenants"}
+                    or type(document["tenants"]) is not dict or not 1 <= len(document["tenants"]) <= 128):
+                raise ContractError("Bounded tenant-specific witness endpoints required")
+            endpoints = {}
+            for tenant, settings in document["tenants"].items():
+                if type(settings) is not dict or set(settings) != {"host", "port", "user", "key_file", "known_hosts"}:
+                    raise ContractError("Exact witness endpoint settings required")
+                endpoints[tenant] = SSHAuthorityWitness(tenant_id=tenant, **settings)
+
+            def for_tenant(tenant):
+                if tenant not in endpoints:
+                    raise ContractError("No witness endpoint for this tenant")
+                return endpoints[tenant]
+
+            return for_tenant
         if self.witness.startswith("file:"):
             from sova.adapters.file_authority_witness import FileAuthorityWitness
 
@@ -120,7 +145,7 @@ class LedgerConfig:
                 client, bucket, tenant_id=tenant,
                 retention=timedelta(seconds=int(s3.get("retention_seconds", 86400))),
                 mode=s3.get("mode", "COMPLIANCE"))
-        raise ContractError("SOVA_WITNESS is file:<path> or s3://<bucket>")
+        raise ContractError("SOVA_WITNESS is file:<path>, s3://<bucket> or ssh-file:<config path>")
 
 
 @dataclass(frozen=True)
