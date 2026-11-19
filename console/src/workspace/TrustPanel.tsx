@@ -110,7 +110,7 @@ export function TrustPanel({
       </div>
       {error && <p role="alert">{error}</p>}
       {receipt && (
-        <div className="workspace-binding">
+        <div className="workspace-trust-binding">
           <p>
             요청 digest: <code>{receipt.request_digest}</code>
           </p>

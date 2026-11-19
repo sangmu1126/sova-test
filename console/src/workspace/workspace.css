@@ -61,6 +61,29 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+.workspace-trust-binding {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.workspace-trust-binding p {
+  margin: 0;
+}
+.workspace-trust-binding pre {
+  padding: 16px;
+  border: 1px solid #d9e2f2;
+  border-radius: 9px;
+  max-height: 380px;
+  background: #f6f8fc;
+}
+.workspace-trust-binding input[type="checkbox"] {
+  display: inline-block;
+  width: auto;
+  margin-right: 8px;
+}
 .workspace-message {
   padding: 16px 22px;
   border: 1px solid #d7e3fe;
