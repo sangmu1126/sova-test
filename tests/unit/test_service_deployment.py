@@ -773,3 +773,39 @@ def test_a_side_reached_over_tls_is_the_endpoint_its_refusals_are_asked_of(tmp_p
         build({"version": 1, "applications": [redis_application(
             tmp_path, **{"redis.plaintext_ports": {"target": 2}})]},
             route_for=lambda spec: FakeRoute())
+
+
+def test_an_entry_may_add_the_reach_of_other_namespaces_beside_its_secrets(tmp_path):
+    from sova.service.network_reach import CONTROL as NETWORK
+    from sova.service.secret_access import CONTROL as SECRETS
+
+    class Check:
+        def measure(self):
+            return False, {"probe": "cross_namespace_reach_denied", "outcome": "reached"}
+
+    class Probes:
+        def cross_workload_secret_denied(self):
+            return True, {"probe": "cross_workload_secret_denied"}
+
+    catalog, close = catalog_from(
+        {"version": 1, "applications": [application(
+            tmp_path, secret_access={"x": 1}, network_reach={"y": 2})]},
+        route_for=lambda spec: FakeRoute(), secret_access_for=lambda spec: Probes(),
+        network_reach_for=lambda spec: Check())
+    measure = catalog.build("tenant-a", "orders", "postgres-offline-copy", None).measure
+    close()
+    assert measure({"kind": "target_control_test", "id": NETWORK}, {})[1]["outcome"] == \
+        "reached"
+    assert measure({"kind": "target_control_test", "id": SECRETS}, {})[0] is True
+
+
+@pytest.mark.parametrize("change", [{"outside": []}, {"run_as": [1]}, {"image": "python:3"},
+                                    {"verify": False}])
+def test_a_network_reach_entry_that_does_not_add_up_is_refused(change):
+    from sova.service.network_reach import network_reach_check
+
+    spec = {"registration_file": "x", "outside": [{"registration_file": "y"}],
+            "host": "db.orders.svc", "port": 5432, "client_labels": {"role": "c"},
+            "image": "python@sha256:" + "0" * 64, "run_as": [1, 1], **change}
+    with pytest.raises(ContractError):
+        network_reach_check(spec)

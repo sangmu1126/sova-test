@@ -67,15 +67,21 @@ def probes_from(platform, *, secrets, others):
                                   secrets=secrets, others=others)
 
 
-def with_secret_access(factory, probes):
-    """``factory`` with ``deny_cross_workload_secret_access`` measured by
-    ``probes``; every other obligation is the unit's own."""
+def with_target_controls(factory, controls):
+    """``factory`` with each obligation of ``controls`` (``{obligation id:
+    () -> (passed, observation)}``) measured by it; every other obligation is
+    the unit's own."""
     def build(*args):
         execution = factory(*args)
 
         def measure(obligation, times):
-            if obligation["id"] == CONTROL:
-                return probes.cross_workload_secret_denied()
-            return execution.measure(obligation, times)
+            found = controls.get(obligation["id"])
+            return found() if found else execution.measure(obligation, times)
         return Execution(execution.adapter, measure, close=execution.close)
     return build
+
+
+def with_secret_access(factory, probes):
+    """``factory`` with ``deny_cross_workload_secret_access`` measured by
+    ``probes``."""
+    return with_target_controls(factory, {CONTROL: probes.cross_workload_secret_denied})
