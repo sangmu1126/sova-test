@@ -27,7 +27,7 @@ from prepare_canary import artifact
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("mode", choices=("prepare", "review", "apply", "observe"))
+    p.add_argument("mode", choices=("prepare", "review", "apply", "observe", "complete-proxy"))
     p.add_argument("--inputs", type=Path, required=True)
     p.add_argument("--artifacts", type=Path, required=True)
     p.add_argument("--proxy-image", type=Path)
@@ -192,8 +192,44 @@ print(json.dumps(s))
         return
     if plan["endpoint_code_sha256"] != endpoint_hash:
         raise ValueError("Endpoint changed after review")
-    if plan["driver_sha256"] != hashlib.sha256(Path(__file__).read_bytes()).hexdigest():
+    if a.mode == "apply" and plan["driver_sha256"] != hashlib.sha256(Path(__file__).read_bytes()).hexdigest():
         raise ValueError("Driver changed after review")
+    if a.mode == "complete-proxy":
+        receipt = json.loads((a.artifacts / "apply-result.json").read_text())
+        rule_ids = {r["SecurityGroupRuleId"] for r in ec2.describe_security_group_rules(
+            Filters=[{"Name":"group-id","Values":[group_id]}])["SecurityGroupRules"] if not r["IsEgress"]}
+        if (receipt["phase"] != "target_interface_confirmed" or receipt["applied"]
+                or rule_ids != set(receipt["ingress_rule_ids"])):
+            raise ValueError("Only the recorded partial apply may be completed")
+        repair = r'''import hashlib,json,pathlib,subprocess,sys
+c=json.load(sys.stdin);root=pathlib.Path('/var/lib/sova-journey/wireguard-passthrough')
+if pathlib.Path('/var/lib/sova-journey/run-id').read_text().strip()!='b0be270e62':raise ValueError('Wrong source')
+s=json.loads(pathlib.Path('/run/sova-wireguard-b0be270e62/state.json').read_text())
+if not s['applied'] or s['public_key']!=c['source_key'] or s['proxy_image']!=c['image']:raise ValueError('Endpoint identity changed')
+if subprocess.check_output(['wg','show','sova-b0be','public-key']).decode().strip()!=s['public_key']:raise ValueError('Wrong live key')
+base=['/usr/local/bin/nerdctl','--namespace','sova-b0be270e62-vpn']
+if subprocess.run(base+['inspect','wireguard-passthrough'],capture_output=True).returncode==0:raise ValueError('Never replace an existing container')
+cfg=root/'haproxy.cfg';old=cfg.read_text()
+if hashlib.sha256(old.encode()).hexdigest()!=c['old_config_sha256']:raise ValueError('Failed configuration changed')
+new=old.replace('default_backend database\nbackend database\n','default_backend database_upstream\nbackend database_upstream\n').replace('default_backend application\nbackend application\n','default_backend application_upstream\nbackend application_upstream\n')
+if new==old:raise ValueError('Expected duplicate-name configuration missing')
+tmp=root/'haproxy.cfg.corrected';tmp.write_text(new);tmp.chmod(0o444)
+mount='type=bind,src='+str(tmp)+',dst=/usr/local/etc/haproxy/haproxy.cfg,ro'
+common=['--network','host','--read-only','--user','10001:10001','--cap-drop','ALL','--security-opt','no-new-privileges','--mount',mount]
+subprocess.run(base+['run','--rm',*common,c['image'],'haproxy','-c','-f','/usr/local/etc/haproxy/haproxy.cfg'],capture_output=True,check=True)
+cfg.rename(root/'haproxy.cfg.rejected');tmp.rename(cfg)
+common[-1]='type=bind,src='+str(cfg)+',dst=/usr/local/etc/haproxy/haproxy.cfg,ro'
+subprocess.run(base+['run','--detach','--name','wireguard-passthrough','--label','sova.run=b0be270e62','--label','sova.purpose=wireguard-passthrough','--memory','64m','--pids-limit','64','--cpus','0.25',*common,c['image'],'haproxy','-W','-db','-f','/usr/local/etc/haproxy/haproxy.cfg'],capture_output=True,check=True)
+print(json.dumps({'started':True,'config_sha256':hashlib.sha256(new.encode()).hexdigest(),'image':c['image'],'application_data_changed':False}))
+'''
+        original = ('global\n  maxconn 128\n  nbthread 1\ndefaults\n  mode tcp\n  timeout connect 3s\n  timeout client 5m\n  timeout server 5m\nfrontend database\n  bind 10.247.0.1:5432\n  default_backend database\nbackend database\n  server db 10.246.0.10:5432\nfrontend application\n  bind 10.247.0.1:8080\n  default_backend application\nbackend application\n  server app 10.246.0.20:8080\n')
+        result = source("source-complete-proxy", repair, {"source_key": plan["source"]["public_key"],
+            "image": receipt["source"]["proxy_image"], "old_config_sha256":hashlib.sha256(original.encode()).hexdigest()},90)
+        (a.artifacts / "proxy-completion.json").write_text(json.dumps({"result":result,
+            "completed_at":datetime.now(UTC).isoformat(),"program_sha256":hashlib.sha256(repair.encode()).hexdigest(),
+            "original_partial_apply_preserved":True},indent=2)+"\n")
+        print(json.dumps(result))
+        return
     if a.mode == "observe":
         observed = {side: (source("source-observe", endpoint, {**base,"side":side,"action":"observe"})
                           if side == "source" else target(endpoint, {**base,"side":side,"action":"observe"}))
@@ -265,7 +301,7 @@ with archive.open('rb')as f:
 if digest.hexdigest()!=c['sha256']:raise ValueError('Image archive changed')
 ns='sova-b0be270e62-vpn';base=['/usr/local/bin/nerdctl','--namespace',ns]
 subprocess.run(['/usr/local/bin/ctr','--namespace',ns,'images','import','--base-name','local.sova.invalid/b0be270e62/proxy','--digests',str(archive)],check=True,stdout=subprocess.DEVNULL)
-cfg=root/'haproxy.cfg';cfg.write_text('global\\n  maxconn 128\\n  nbthread 1\\ndefaults\\n  mode tcp\\n  timeout connect 3s\\n  timeout client 5m\\n  timeout server 5m\\nfrontend database\\n  bind 10.247.0.1:5432\\n  default_backend database\\nbackend database\\n  server db 10.246.0.10:5432\\nfrontend application\\n  bind 10.247.0.1:8080\\n  default_backend application\\nbackend application\\n  server app 10.246.0.20:8080\\n');cfg.chmod(0o444)
+cfg=root/'haproxy.cfg';cfg.write_text('global\\n  maxconn 128\\n  nbthread 1\\ndefaults\\n  mode tcp\\n  timeout connect 3s\\n  timeout client 5m\\n  timeout server 5m\\nfrontend database\\n  bind 10.247.0.1:5432\\n  default_backend database_upstream\\nbackend database_upstream\\n  server db 10.246.0.10:5432\\nfrontend application\\n  bind 10.247.0.1:8080\\n  default_backend application_upstream\\nbackend application_upstream\\n  server app 10.246.0.20:8080\\n');cfg.chmod(0o444)
 mount='type=bind,src='+str(cfg)+',dst=/usr/local/etc/haproxy/haproxy.cfg,ro'
 common=['--network','host','--read-only','--user','10001:10001','--cap-drop','ALL','--security-opt','no-new-privileges','--mount',mount]
 subprocess.run(base+['run','--rm',*common,c['image'],'haproxy','-c','-f','/usr/local/etc/haproxy/haproxy.cfg'],check=True,stdout=subprocess.DEVNULL)
