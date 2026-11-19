@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import socket
 import subprocess
 import time
@@ -22,9 +23,15 @@ from import_target_images import CONFIG, KUBECTL, guest, identity
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--artifacts", type=Path, required=True)
+    p.add_argument("--session-manager-plugin", type=Path)
     args = p.parse_args()
     os.umask(0o077)
     args.artifacts.mkdir(mode=0o700, exist_ok=False)
+    plugin = args.session_manager_plugin or shutil.which("session-manager-plugin")
+    if plugin is None or not Path(plugin).is_file() or not os.access(plugin, os.X_OK):
+        raise ValueError("Verified Session Manager plugin required before creating any session")
+    plugin = Path(plugin).resolve()
+    child_environment = {**os.environ, "PATH": str(plugin.parent) + os.pathsep + os.environ.get("PATH", "")}
     aws = ["aws", "--profile", "default", "--region", "ap-northeast-2"]
     caller = json.loads(subprocess.check_output(aws + ["sts", "get-caller-identity", "--output", "json"]))
     if caller["Account"] != "265233844540":
@@ -60,13 +67,15 @@ def main():
         sock.close()
     report = {"run_id": "b0be270e62", "ports": ports, "bind": "127.0.0.1",
               "ssh_host_key": fingerprint, "ssh_trust": "verified local Lima VM bootstrap; pinned new connection",
+              "ssm_plugin_sha256": hashlib.sha256(plugin.read_bytes()).hexdigest(),
+              "ssm_plugin_version": subprocess.check_output([str(plugin), "--version"], text=True, timeout=5).strip(),
               "children": [], "ready": False, "operational_qualification": False}
     children = []
 
     def start(name, command):
         with (args.artifacts / (name + ".log")).open("xb") as log:
             child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log,
-                                     stderr=subprocess.STDOUT, start_new_session=True)
+                                     stderr=subprocess.STDOUT, start_new_session=True, env=child_environment)
         children.append(child)
         report["children"].append({"name": name, "pid": child.pid})
         (args.artifacts / "connections.json").write_text(json.dumps(report, indent=2) + "\n")
