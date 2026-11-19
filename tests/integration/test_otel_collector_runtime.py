@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 import ipaddress
 import json
 import os
+import re
 import secrets
 import ssl
 import subprocess
@@ -124,6 +125,9 @@ def test_real_collector_tls_auth_scope_and_minimal_projection(tmp_path):
     from sova.adapters.otlp_projection import project_otlp
     from sova.domain.contracts import ResourceScope
 
+    candidate = os.environ.get("SOVA_TEST_COLLECTOR_IMAGE", COLLECTOR_IMAGE)
+    assert re.fullmatch(r"(?:[a-z0-9./_-]+@)?sha256:[0-9a-f]{64}", candidate), (
+        "Qualification requires an immutable candidate image, never a tag")
     certificates(tmp_path / "tls")
     tokens = tmp_path / "secrets"
     tokens.mkdir(mode=0o700)
@@ -251,7 +255,7 @@ def test_real_collector_tls_auth_scope_and_minimal_projection(tmp_path):
             "run",
             "--rm",
             *common,
-            COLLECTOR_IMAGE,
+            candidate,
             "validate",
             "--config=/config.json",
             check=False,
@@ -269,7 +273,7 @@ def test_real_collector_tls_auth_scope_and_minimal_projection(tmp_path):
             "--publish",
             "127.0.0.1::4319",
             *common,
-            COLLECTOR_IMAGE,
+            candidate,
             "--config=/config.json",
         )
         ports = json.loads(docker("inspect", name).stdout)[0]["NetworkSettings"][
