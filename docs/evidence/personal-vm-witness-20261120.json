@@ -1,0 +1,23 @@
+{
+  "user": "sova-witness-b0be",
+  "uid": 999,
+  "gid": 988,
+  "code_path": "/var/lib/sova-qualification/user-journey-b0be270e62/witness-code-0e21a7d55d377dfa61b8a3ca3c9af4b14782cebb5f62cd2637d0e8eb57d4654e",
+  "implementation_digest": "0e21a7d55d377dfa61b8a3ca3c9af4b14782cebb5f62cd2637d0e8eb57d4654e",
+  "witness_path": "/var/lib/sova-qualification/user-journey-b0be270e62/mounted/authority-witness/personal-qualification.log",
+  "encrypted_mapper": "/dev/mapper/sova-b0be270e62",
+  "forced_command": true,
+  "key_restrict": true,
+  "sudo_granted": false,
+  "worm_qualified": false,
+  "checks": {
+    "actual_append_and_fresh_readback": true,
+    "cross_tenant_refused": true
+  },
+  "host_key_fingerprint": "SHA256:L4P4WpzRQHmIPETcJ9Es0+4z+Ch5IAKGtgoi1hVhU0Q",
+  "key_expires_at": "2026-11-20T01:20:00+00:00",
+  "private_key_written_to_file": false,
+  "application_authority_changed": false,
+  "completed_at": "2026-11-19T20:26:40.444645+00:00",
+  "identity_key_storage": "Dedicated macOS Keychain item and expiring private agent; no private key file"
+}
