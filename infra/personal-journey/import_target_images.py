@@ -24,7 +24,7 @@ CLUSTER = "9de35591-57a3-4759-bd73-6340e2de0b61"
 
 def guest(*args):
     return subprocess.check_output(["limactl", "shell", "--workdir=/", VM, "--", "sudo", "-n", *args],
-                                   stderr=subprocess.PIPE)
+                                   stderr=subprocess.PIPE, timeout=60)
 
 
 def identity():
