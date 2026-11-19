@@ -44,6 +44,7 @@ def main():
     def request(side, method, path, body=None, override=None):
         host = identity["environments"][side]["application_host"]
         context = ssl.create_default_context(cafile=str(ca))
+        context.verify_flags |= ssl.VERIFY_X509_STRICT
         raw = socket.create_connection(("127.0.0.1", links["ports"][side + "_app"]), timeout=5)
         verified = context.wrap_socket(raw, server_hostname=host)
         conn = http.client.HTTPSConnection(host, timeout=5, context=context)
