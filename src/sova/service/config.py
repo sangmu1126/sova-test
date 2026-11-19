@@ -62,14 +62,14 @@ def _seconds(name, default, env):
 
 
 @dataclass(frozen=True)
-class ServiceConfig:
+class LedgerConfig:
+    """Control ledger credentials shared by workers and the authenticated API.
+
+    Workers do not issue/accept user tokens and need no invented IdP URL.
+    Their database and evidence identities are still required.
+    """
+
     database_url: str
-    issuer: str
-    audience: str
-    jwks_url: str
-    tenant_claim: str
-    roles_claim: str
-    role_prefix: str
     registry_verifier_version: str
     evidence_verifier: str
     evidence_issuer: str
@@ -79,17 +79,8 @@ class ServiceConfig:
     @classmethod
     def from_env(cls, env=os.environ):
         witness = _required("SOVA_WITNESS", env)
-        issuer, jwks = _required("SOVA_OIDC_ISSUER", env), _required("SOVA_OIDC_JWKS_URL", env)
-        if not oidc_url(issuer) or not oidc_url(jwks):
-            raise ContractError("The JWKS must be fetched over HTTPS")
         return cls(
             database_url=_secret("SOVA_DATABASE_URL_FILE", env),
-            issuer=issuer,
-            audience=_required("SOVA_OIDC_AUDIENCE", env),
-            jwks_url=jwks,
-            tenant_claim=env.get("SOVA_TENANT_CLAIM", "sova_tenant"),
-            roles_claim=env.get("SOVA_ROLES_CLAIM", "realm_access.roles"),
-            role_prefix=env.get("SOVA_ROLE_PREFIX", "sova:"),
             registry_verifier_version=_required("SOVA_REGISTRY_VERIFIER_VERSION", env),
             evidence_verifier=_required("SOVA_EVIDENCE_VERIFIER", env),
             evidence_issuer=_required("SOVA_EVIDENCE_ISSUER", env),
@@ -130,6 +121,28 @@ class ServiceConfig:
                 retention=timedelta(seconds=int(s3.get("retention_seconds", 86400))),
                 mode=s3.get("mode", "COMPLIANCE"))
         raise ContractError("SOVA_WITNESS is file:<path> or s3://<bucket>")
+
+
+@dataclass(frozen=True)
+class ServiceConfig(LedgerConfig):
+    issuer: str
+    audience: str
+    jwks_url: str
+    tenant_claim: str
+    roles_claim: str
+    role_prefix: str
+
+    @classmethod
+    def from_env(cls, env=os.environ):
+        issuer, jwks = _required("SOVA_OIDC_ISSUER", env), _required("SOVA_OIDC_JWKS_URL", env)
+        if not oidc_url(issuer) or not oidc_url(jwks):
+            raise ContractError("The JWKS must be fetched over HTTPS")
+        ledger = LedgerConfig.from_env(env)
+        return cls(**vars(ledger), issuer=issuer,
+                   audience=_required("SOVA_OIDC_AUDIENCE", env), jwks_url=jwks,
+                   tenant_claim=env.get("SOVA_TENANT_CLAIM", "sova_tenant"),
+                   roles_claim=env.get("SOVA_ROLES_CLAIM", "realm_access.roles"),
+                   role_prefix=env.get("SOVA_ROLE_PREFIX", "sova:"))
 
 
 @dataclass(frozen=True)

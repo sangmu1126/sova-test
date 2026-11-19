@@ -8,7 +8,7 @@ from test_service_deployment import worker_env
 
 from sova.domain.contracts import ContractError
 from sova.service import main
-from sova.service.config import ServiceConfig, WorkerConfig
+from sova.service.config import LedgerConfig, ServiceConfig, WorkerConfig
 
 
 def host_env(tmp_path, **extra):
@@ -44,7 +44,7 @@ def test_real_startup_path_uses_native_worker_without_pod_observation(tmp_path, 
 
     seen = {}
     config = SimpleNamespace(evidence_issuer="personal-qualification")
-    monkeypatch.setattr(ServiceConfig, "from_env", lambda env: config)
+    monkeypatch.setattr(LedgerConfig, "from_env", lambda env: config)
     monkeypatch.setattr(catalog, "catalog_from", lambda execution: ("native-catalog", lambda: seen.update(closed=True)))
     monkeypatch.setattr(main, "_connect", lambda config: "real-configured-connect")
     monkeypatch.setattr(main, "_settings", lambda config: "native-settings")
@@ -76,3 +76,12 @@ def test_real_startup_path_uses_native_worker_without_pod_observation(tmp_path, 
     assert seen["owner_id"].startswith(f"host.{os.getpid()}.")
     assert seen["health_bind"] == "127.0.0.1"
     assert seen["closed"] and seen["health_stopped"]
+
+
+def test_worker_does_not_need_a_fictional_identity_provider_but_api_still_does(tmp_path):
+    env = host_env(tmp_path)
+    for name in ("SOVA_OIDC_ISSUER", "SOVA_OIDC_AUDIENCE", "SOVA_OIDC_JWKS_URL"):
+        env.pop(name)
+    assert LedgerConfig.from_env(env).database_url
+    with pytest.raises(ContractError, match="SOVA_OIDC_ISSUER"):
+        ServiceConfig.from_env(env)
