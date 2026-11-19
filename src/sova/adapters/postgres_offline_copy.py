@@ -313,9 +313,15 @@ class PostgresOfflineCopyAdapter:
         target = self._can_write("target", (self.app_role,))
         source = self._can_write("source")
         connect = self._can_connect("target", (self.app_role,))[self.app_role]
-        return connect and all(target.values()) and not any(source.values()), {
+        # A database grant does not override a cluster role's NOLOGIN. Never
+        # change that global role attribute here: it may affect other databases.
+        with self.connect(self.target_db) as conn:
+            role = conn.execute("SELECT rolcanlogin FROM pg_roles WHERE rolname=%s",
+                                (self.app_role,)).fetchone()
+        login = role is not None and role[0] is True
+        return connect and login and all(target.values()) and not any(source.values()), {
             "target_writable": target, "source_writable": source,
-            "target_connectable": connect}
+            "target_connectable": connect, "target_role_login": login}
 
     def _commit_route(self):
         self.route.set(self.target_db)
