@@ -228,6 +228,22 @@ print(json.dumps(result))
             report["network_internal"] = json.loads(docker("network", "inspect", network))[0]["Internal"]
             passed = all(report["tests"].values()) and report["network_internal"]
     finally:
+        if not passed:
+            # Preserve bounded private startup evidence BEFORE removing the
+            # owned containers. Never dump Env/Args/credentials into a report.
+            for name in attempted:
+                try:
+                    actual = json.loads(docker("inspect", name))[0]
+                except RuntimeError:
+                    continue
+                if actual["Config"].get("Labels", {}).get("sova.qualification") != run:
+                    raise RuntimeError("Diagnostic target ownership changed")
+                state = actual.get("State", {})
+                projection = {key: state.get(key) for key in ("Status", "Running", "ExitCode", "OOMKilled", "StartedAt", "FinishedAt")}
+                (args.artifacts / (name + "-state.json")).write_text(json.dumps(projection, indent=2)+"\n")
+                logs = subprocess.run(["docker", "logs", "--tail", "100", name],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+                (args.artifacts / (name + "-private.log")).write_bytes(logs.stdout[-65536:])
         # Only exact names whose labels prove this disposable run owns them.
         for name in reversed(attempted):
             try:
