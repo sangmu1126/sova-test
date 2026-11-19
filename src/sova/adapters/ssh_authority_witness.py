@@ -144,15 +144,29 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--tenant", required=True)
     p.add_argument("--path", type=Path, required=True)
+    p.add_argument("--mount-root", type=Path)
+    p.add_argument("--mapper")
     a = p.parse_args()
     try:
         raw = sys.stdin.buffer.read(LIMIT + 1)
         if len(raw) > LIMIT or a.path.is_symlink() or not a.path.parent.is_dir():
             raise ContractError("Invalid witness input or fixed storage path")
+        if (a.mount_root is None) != (a.mapper is None):
+            raise ContractError("Mount root and mapper must be bound together")
+        if a.mount_root is not None:
+            if (not a.mount_root.is_absolute() or a.mount_root.resolve() != a.mount_root
+                    or not a.path.resolve().is_relative_to(a.mount_root)):
+                raise ContractError("Witness must stay within its registered mount")
+            mount = subprocess.run(["findmnt", "-J", "-T", str(a.path.parent)],
+                                   capture_output=True, check=True, timeout=3)
+            filesystems = json_document(mount.stdout.decode(), 16384)["filesystems"]
+            if (len(filesystems) != 1 or filesystems[0]["target"] != str(a.mount_root)
+                    or filesystems[0]["source"] != a.mapper):
+                raise ContractError("Registered encrypted mount is unavailable")
         document = json_document(raw.decode(), LIMIT)
         result = handle(document, FileAuthorityWitness(a.path, tenant_id=a.tenant))
         print(json.dumps(result, separators=(",", ":")))
-    except (ContractError, ValueError, OSError):
+    except (ContractError, ValueError, OSError, KeyError, subprocess.SubprocessError):
         print("witness_request_refused", file=sys.stderr)
         return 1
     return 0
