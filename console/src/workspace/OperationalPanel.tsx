@@ -171,7 +171,7 @@ export function OperationalPanel({
                 관측 시각: {value.health.observed_at} · 유효 기한:{" "}
                 {value.health.valid_until}
               </p>
-              <table>
+              <table className="workspace-observations-table">
                 <thead>
                   <tr>
                     <th>환경</th>
