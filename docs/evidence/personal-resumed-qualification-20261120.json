@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "trial_expires_at": "2026-11-20T01:20:00+00:00",
+  "scope": "personal AWS account to this Mac Lima/RKE2; no team resources",
+  "renewal_is_key_rotation": false,
+  "preflight": {
+    "observed_at": "2026-11-19T18:29:54.784603+00:00",
+    "checks": {
+      "source_verified_database_and_writer_scope": true,
+      "source_verified_https_identity": true,
+      "target_verified_database_and_writer_scope": true,
+      "target_verified_https_identity": true,
+      "independent_database_systems": true,
+      "source_unauthorized_denied": true,
+      "target_writer_still_fenced": true,
+      "source_actual_request_replay_and_lookup": true,
+      "source_business_effect_count": true,
+      "source_wrong_hostname_denied": true,
+      "source_plaintext_without_password_denied": true,
+      "target_business_effect_count": true,
+      "target_wrong_hostname_denied": true,
+      "target_plaintext_without_password_denied": true
+    },
+    "databases": {
+      "source": {
+        "database": "source_orders",
+        "version": "17.12",
+        "verified_tls": true,
+        "system_identifier": "7709720208587968539",
+        "writers": [
+          {
+            "role": "orders_app",
+            "login": true
+          },
+          {
+            "role": "orders_batch",
+            "login": true
+          }
+        ],
+        "business_counts": [
+          1,
+          1,
+          1
+        ]
+      },
+      "target": {
+        "database": "target_orders",
+        "version": "17.12",
+        "verified_tls": true,
+        "system_identifier": "7709723763091251229",
+        "writers": [
+          {
+            "role": "orders_app",
+            "login": false
+          },
+          {
+            "role": "orders_batch",
+            "login": false
+          }
+        ],
+        "business_counts": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "passed": true,
+    "migration_complete": false
+  },
+  "entry": {
+    "observed_at": "2026-11-19T18:38:00.877007+00:00",
+    "route": {
+      "selector_side": "source_orders",
+      "ready_endpoints": 1,
+      "foreign_endpoints": [],
+      "route": "source_orders",
+      "http_sides": [
+        "source_orders",
+        "source_orders",
+        "source_orders"
+      ]
+    },
+    "refusals": {
+      "secret_read": "403",
+      "other_service_read": "403",
+      "other_namespace": "403"
+    },
+    "uid_guard": {
+      "requested": true,
+      "verified": true,
+      "refused_status": 422
+    },
+    "traffic_changed": false,
+    "business_data_changed": false
+  },
+  "strategy_trial_01": {
+    "passed": false,
+    "steps": [],
+    "trial_writers_disabled": true,
+    "checks": {
+      "original_app_data_privileges_and_entry_unchanged": true
+    },
+    "completed_at": "2026-11-19T19:00:34.854880+00:00",
+    "failure": "Kubernetes TLS connection closed during initial read-only entry observation; no copy or original route change"
+  },
+  "raw_hashes": {
+    "physical-preflight-03/run.json": "b40a47b0f32d6071e43316520fb2c8accdeff4578ee30e7948c21861631d7a13",
+    "native-entry-observation-03.json": "5f1f5d2505d7cf5566e87c5f10f9632157ba218b9fc897632a520ed826b0bc3b",
+    "physical-strategy-trial-01/trial.json": "98c1c53fc0f9116c7f80839f69642a4a9aab4f6ff65d0e13357024dd999244f5",
+    "trust-component-tests-04.xml": "ed79089f28a3b024082c55bb2b87c94abf43f35b6d8e5351225304e155a6592d",
+    "native-key-unit-03.xml": "7651b397109931e4d5898c3470c0cd413a4fabfcc20909859adf17e37789427e"
+  },
+  "operational_qualification": false,
+  "six_stages_complete": false,
+  "verifier_component": {
+    "tests": 9,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "native_unit": {
+    "tests": 81,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 18
+  }
+}
