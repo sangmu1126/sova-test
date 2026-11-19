@@ -78,6 +78,9 @@ def test_source_identity_includes_sql_and_rejects_symlinks(tmp_path):
     assert set(first["files"]) == {"one.py", "two.sql"}
     (tmp_path / "two.sql").write_text("changed")
     assert source_identity(tmp_path)["digest"] != first["digest"]
+    before_policy = source_identity(tmp_path)["digest"]
+    (tmp_path / "policy.json").write_text('{"enforced":true}')
+    assert source_identity(tmp_path)["digest"] != before_policy
     (tmp_path / "compat.sql").symlink_to(tmp_path / "two.sql")
     assert source_identity(tmp_path)["files"]["compat.sql"] == source_identity(tmp_path)["files"]["two.sql"]
     (tmp_path / "link.py").symlink_to(tmp_path / "one.py")

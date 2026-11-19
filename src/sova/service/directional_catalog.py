@@ -20,7 +20,7 @@ PACKAGE = Path(__file__).resolve().parents[1]
 
 
 def source_identity(root=None):
-    """Every shipped Python/SQL file; only internal SQL compatibility links.
+    """Every shipped non-bytecode file; internal SQL compatibility links only.
 
     Deployers must use a run-owned read-only worker snapshot. The native and
     security packages are both measured by the running catalog. An explicit
@@ -29,7 +29,7 @@ def source_identity(root=None):
     roots = {"": Path(root)} if root is not None else {
         "sova/": PACKAGE,
         "sova_security/": Path(import_module("sova_security").__file__).resolve().parent}
-    files = {}
+    files, total = {}, 0
     for prefix, root in roots.items():
         if root.is_symlink() or not root.is_dir():
             raise ContractError("Real implementation package directory required")
@@ -38,8 +38,14 @@ def source_identity(root=None):
                 if (path.suffix != ".sql" or not path.resolve().is_relative_to(root.resolve())
                         or not path.resolve().is_file()):
                     raise ContractError("Implementation source may not contain external or executable symlinks")
-            if path.is_file() and path.suffix in {".py", ".sql"}:
-                files[prefix + path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+            if "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
+                continue
+            if path.is_file():
+                data = path.read_bytes()
+                total += len(data)
+                if total > 32 << 20:
+                    raise ContractError("Implementation package exceeds its byte bound")
+                files[prefix + path.relative_to(root).as_posix()] = hashlib.sha256(data).hexdigest()
             if len(files) > 4096:
                 raise ContractError("Implementation package exceeds its source bound")
     if not files:

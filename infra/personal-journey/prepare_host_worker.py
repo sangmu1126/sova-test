@@ -8,10 +8,12 @@ import argparse
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 import hashlib
+from importlib import import_module
 import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 
 from import_target_images import CONFIG, KUBECTL, guest, identity as verify_vm
 from sova.domain.discovery import KubernetesReadRegistration
@@ -88,6 +90,21 @@ def main():
     reverse = {**common, "environment_pair": {"source": "local-rke2-b0be270e62", "target": "aws-ec2-b0be270e62"},
         "source_db": "target_orders", "target_db": "source_orders", "scratch_db": "scratch_source", "other_db": "other_source"}
     implementation = source_identity()
+    snapshot = args.output / "implementation" / "src"
+    snapshot.mkdir(parents=True)
+    native_source = Path(__file__).resolve().parents[2] / "src/sova"
+    security_source = Path(import_module("sova_security").__file__).resolve().parent
+    for name, source in (("sova", native_source), ("sova_security", security_source)):
+        shutil.copytree(source, snapshot / name, symlinks=False,
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"))
+        measured = source_identity(snapshot / name)
+        expected = {path[len(name) + 1:]: value for path, value in implementation["files"].items()
+                    if path.startswith(name + "/")}
+        if measured["files"] != expected:
+            raise ValueError("Worker snapshot differs from the measured source package")
+    for path in sorted(snapshot.rglob("*"), reverse=True):
+        path.chmod(0o500 if path.is_dir() else 0o400)
+    snapshot.chmod(0o500)
     (args.output / "implementation-identity.json").write_text(json.dumps(implementation, indent=2))
     catalog = {"version": 2, "implementation_digest": implementation["digest"], "applications": [forward, reverse]}
 
@@ -101,7 +118,8 @@ def main():
         "SOVA_EVIDENCE_ISSUER": "personal-handoff-producer", "SOVA_WITNESS": "file:" + str(args.control_directory / "witness"),
         "SOVA_TENANTS": inputs["tenant_id"], "SOVA_WORKER_IDENTITY": "host",
         "SOVA_EVIDENCE_KEY_FILE": str(args.output / "evidence.key"), "SOVA_EVIDENCE_KEY_ID": "worker-b0be270e62",
-        "SOVA_EXECUTION_FILE": str(args.output / "execution.json")}
+        "SOVA_EXECUTION_FILE": str(args.output / "execution.json"),
+        "PYTHONPATH": str(snapshot), "PYTHONDONTWRITEBYTECODE": "1"}
     (args.output / "environment.json").write_text(json.dumps(environment, indent=2))
     print(json.dumps({"database_connections_verified": len(databases), "route_token_seconds": 600,
         "identity": "actual host process", "catalog_version": 2, "directions": 2,
