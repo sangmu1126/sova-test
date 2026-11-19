@@ -231,11 +231,9 @@ def crashed_mid_step(h, business, tmp_path, owner):
                      " - interval '1 second' WHERE application_id=%s", (h["app"],))
 
 
-def test_a_worker_lost_during_a_step_is_replaced_only_on_proof_it_is_gone(
+def test_a_gone_pod_without_remote_settlement_cannot_recover_an_inflight_effect(
         postgres_database, now, business, tmp_path):
-    """Worker B finds A's step in flight; without proof that A's pod is gone it
-    does nothing, with it it reconciles the step by readback (never re-runs
-    it) and finishes the handoff."""
+    """Pod death alone never settles requests already received remotely."""
     h = admitted(postgres_database, now, business, witness_dir=tmp_path)
     pod_a, pod_b = str(uuid4()), str(uuid4())
     crashed_mid_step(h, business, tmp_path, f"worker-a-0.{pod_a}.{uuid4().hex[:12]}")
@@ -248,16 +246,15 @@ def test_a_worker_lost_during_a_step_is_replaced_only_on_proof_it_is_gone(
         pod_running=lambda name, uid: False if (name, uid) == ("worker-a-0", pod_a)
         else None, clock=h["clock"], this_owner=owner_b)
     record = worker(h, owner_b, quiescence=gone).drive(h["tenant"], h["app"], h["unit"])
-    assert record.state == HandoffState.HANDOFF_COMPLETE, (record.reason, record.held_from)
-    assert h["route"].get() == business["names"]["tgt"]
+    assert record is None
+    assert h["route"].get() == business["names"]["src"]
 
 
-def test_a_worker_restarted_in_its_own_pod_recovers_its_step(
+def test_same_pod_restart_without_remote_settlement_does_not_recover_a_step(
         postgres_database, now, business, tmp_path):
     """The container restarts in place: same pod, so the API says it runs. The
-    new process knows the holder was an earlier instance of its own pod (the
-    kubelet starts a container only after the last one stopped) and recovers;
-    any other worker still sees a running pod and keeps out."""
+    new process knows its predecessor stopped, but that does not settle its
+    remote requests. Neither the new instance nor another pod may recover."""
     h = admitted(postgres_database, now, business, witness_dir=tmp_path)
     pod = str(uuid4())
     crashed_mid_step(h, business, tmp_path, f"worker-a-0.{pod}.{uuid4().hex[:12]}")
@@ -270,5 +267,5 @@ def test_a_worker_restarted_in_its_own_pod_recovers_its_step(
     record = worker(h, again, quiescence=KubernetesWorkerQuiescence(
         pod_running=running, clock=h["clock"], this_owner=again)).drive(
         h["tenant"], h["app"], h["unit"])
-    assert record.state == HandoffState.HANDOFF_COMPLETE, (record.reason, record.held_from)
-    assert h["route"].get() == business["names"]["tgt"]
+    assert record is None
+    assert h["route"].get() == business["names"]["src"]

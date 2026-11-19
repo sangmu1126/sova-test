@@ -181,6 +181,8 @@ def run_worker(env=os.environ, *, health_port=8081, poll_seconds=5.0):
     owner = worker_config.owner_id
     # A dead local process does not prove its remote DB request has settled.
     # Host workers therefore retain the existing manual UNKNOWN/hold path.
+    # Kubernetes Pod termination also cannot settle remote requests.
+    # Without a registered remote-settlement observer no proof is issued.
     quiescence = None
     if worker_config.identity_mode == "kubernetes":
         quiescence = KubernetesWorkerQuiescence(

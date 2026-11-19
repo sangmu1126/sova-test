@@ -8,16 +8,20 @@ process start), and the proof is issued only when
 
 * the database says the old lease has expired, and either
 * the Kubernetes API says no pod with that name and UID is running (gone,
-  replaced by a pod with another UID, or terminated): its containers have
-  stopped, so no request from it can still arrive; or
+  replaced by a pod with another UID, or terminated); or
 * the old owner is an earlier instance in this very pod. A pod runs one
   worker process, and the kubelet starts a container again only after the
   previous one has stopped, so while this process runs its predecessor
   cannot. (Without this a worker restarted in place could never recover its
   own step: its pod is running.)
 
-Anything uncertain (the API unreachable, the pod still running, an owner ID
-that names no pod) issues nothing; the handoff stays in recovery for a
+In either case a separately registered observer must also prove that every
+remote request from the old owner has settled. Process/container death does
+not cancel a SQL request that the database has already received, nor settle
+requests retained by a transport or relay. Without that observer, including
+the default deployed configuration, no recovery proof is issued.
+
+Anything uncertain issues nothing; the handoff stays in recovery for a
 person. A proof is authenticated only by the instance that issued it and
 only within its short validity.
 """
@@ -47,24 +51,38 @@ def pod_owner(owner_id):
 
 
 class KubernetesWorkerQuiescence:
-    def __init__(self, *, pod_running, clock, validity=timedelta(minutes=2), this_owner=None):
+    def __init__(self, *, pod_running, clock, validity=timedelta(minutes=2), this_owner=None,
+                 requests_settled=None):
         """``pod_running(name, uid)``: True if that pod runs, False if it
         certainly does not, None when it cannot be told. ``this_owner`` is the
-        owner ID of the worker using this verifier (its own pod and instance)."""
+        owner ID of the worker using this verifier (its own pod and instance).
+        ``requests_settled`` is a trusted observer of ALL remote channels. It
+        returns the exact bool True only after the old owner's transports and
+        remote effects are settled; absent/unknown/failed observations hold.
+        A pg_stat_activity count or an application_name alone is insufficient.
+        """
         if not callable(pod_running) or not callable(clock):
             raise ContractError("Pod state and trusted clock required")
+        if requests_settled is not None and not callable(requests_settled):
+            raise ContractError("Registered remote request settlement observer required")
+        if not isinstance(validity, timedelta) or not timedelta(0) < validity <= timedelta(minutes=2):
+            raise ContractError("Recovery proof validity must be positive and at most two minutes")
         self.pod_running, self.clock, self.validity = pod_running, clock, validity
+        self.requests_settled = requests_settled
         self.this = pod_owner(this_owner) if this_owner is not None else None
         if this_owner is not None and (self.this is None or self.this[2] is None):
             raise ContractError("This worker's owner ID must name its pod and instance")
         self._issued = {}
 
     def prove(self, lifecycle, tenant, application_id, operation, pending):
+        if self.requests_settled is None:
+            return None
         with lifecycle.transaction() as conn:
             row = conn.execute(
                 """SELECT owner_id, epoch, valid_until, clock_timestamp()
-                FROM sova_control.app_execution WHERE tenant_id=%s AND application_id=%s""",
-                (tenant, application_id)).fetchone()
+                FROM sova_control.app_execution WHERE tenant_id=%s AND application_id=%s
+                AND operation_id=%s""",
+                (tenant, application_id, operation)).fetchone()
         if row is None or row[0] is None:
             return None
         owner, epoch, until, now = row
@@ -79,8 +97,19 @@ class KubernetesWorkerQuiescence:
             state = "not running"
         else:
             return None
+        bound_pending = pending_digest(pending)
+        try:
+            settled = self.requests_settled(tenant_id=tenant, application_id=application_id,
+                operation_id=operation, owner_id=owner, epoch=epoch,
+                pending_digest=bound_pending)
+        except Exception:  # noqa: BLE001 - uncertainty cannot authorize recovery
+            return None
+        if settled is not True:
+            return None
         observation = {"owner_id": owner, "pod": state, "lease_until": until.isoformat(),
-                       "checked_at": now.isoformat(), "epoch": epoch}
+                       "checked_at": now.isoformat(), "epoch": epoch,
+                       "operation_id": operation, "pending_digest": bound_pending,
+                       "remote_requests_settled": True}
         digest = hashlib.sha256(json.dumps(observation, sort_keys=True).encode()).hexdigest()
         proof = QuiescenceProof(tenant, application_id, operation, epoch, pending_digest(pending),
                                 digest, now, now + self.validity)
@@ -90,7 +119,7 @@ class KubernetesWorkerQuiescence:
     def authenticate(self, proof):
         if self._issued.get(proof.artifact_digest) != proof:
             raise ContractError("Quiescence proof not issued here")
-        if utc(self.clock()) > proof.valid_until:
+        if utc(self.clock()) >= proof.valid_until:
             raise ContractError("Quiescence proof expired")
 
 
