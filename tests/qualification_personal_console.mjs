@@ -44,10 +44,11 @@ try{
  await page.getByLabel('목적지 환경',{exact:true}).selectOption(c.target_profile);
  if(!authorization)throw Error('Actual authenticated API request missing');
  // The native API must not create a plan from connectivity alone.
- const denied=await context.request.post(c.origin+'/v1/tenants/'+c.tenant+'/applications/'+c.application+'/plans',{
+ const denied=await context.request.post(c.origin+'/v1/tenants/'+c.tenant+'/plans',{
   headers:{authorization},data:{service_id:c.application,snapshot_id:'not-observed',source_profile:c.source_profile,
    target_profile:c.target_profile,manifest:'not-qualified',qualification:'not-qualified',nodes:['orders'],rows:1000}});
- if(![400,404].includes(denied.status()))throw Error('Missing actual qualification was not refused');
+ const refusal=await denied.json();
+ if(denied.status()!==422||refusal.error!=='Nothing registered as capability_manifest not-qualified')throw Error('Native compiler prerequisite refusal missing');
  const storage=await page.evaluate(()=>({local:Object.entries(localStorage),session:Object.entries(sessionStorage)}));
  if([...storage.local,...storage.session].some(([k,v])=>/access_token|refresh_token|id_token/.test(v)||k.startsWith('oidc.user:')))throw Error('Persistent bearer detected');
  await page.screenshot({path:join(c.directory,'actual-personal-registration.png'),fullPage:true});
