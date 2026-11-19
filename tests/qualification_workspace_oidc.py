@@ -17,7 +17,7 @@ from uuid import uuid4
 
 import httpx
 from keycloak_fixtures import Server
-from qualification_runtime import private_file
+from qualification_private_files import private_file
 
 IMAGE = "sha256:923a431c08971d49727a857e64870d8d63b5bf294a730e5dde729b5138c26c9e"
 CLIENT = "sova-workspace"
