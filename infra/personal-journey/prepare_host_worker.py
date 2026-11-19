@@ -76,11 +76,16 @@ def main():
         "probe": {"url": f"https://127.0.0.1:{entry['port']}/healthz", "header": "X-Sova-Side",
             "values": {"source_orders": "source", "target_orders": "target"}, "ca_file": str(args.inputs / "pki/ca.pem")}}
     catalog = {"version": 1, "applications": [{"tenant_id": inputs["tenant_id"], "application_id": inputs["application_id"],
-        "adapter_id": "pg-personal-offline-v1", "engine": "postgresql", "mode": "offline", "databases": databases,
+        "adapter_id": "pg-personal-offline-v1", "engine": "postgresql", "mode": "offline_copy", "databases": databases,
         "database_role_password_files": passwords, "source_db": "source_orders", "target_db": "target_orders",
         "scratch_db": "scratch_orders", "other_db": "other_target", "app_role": "orders_app",
         "writer_roles": ["orders_app", "orders_batch"], "tables": [list(row) for row in TABLES],
         "schema_sql_file": str(args.output / "schema.sql"), "probe_insert": PROBE_INSERT, "route": route}]}
+    from sova.service.catalog import catalog_from
+
+    # Validate using the same parser the real worker uses, before publishing env.
+    _, close = catalog_from(catalog)
+    close()
     (args.output / "execution.json").write_text(json.dumps(catalog))
     (args.output / "evidence.key").write_text(secrets.token_hex(32))
     environment = {"SOVA_DATABASE_URL_FILE": str(args.control_directory / "runtime.dsn"),
