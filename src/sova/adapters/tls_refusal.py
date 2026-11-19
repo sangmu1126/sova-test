@@ -120,9 +120,12 @@ def _connect(endpoint):
     if endpoint.preamble == "postgres":
         connection.sendall(_POSTGRES_SSL_REQUEST)
         answer = connection.recv(1)
-        if answer != b"S":
+        if answer == b"N":
             connection.close()
-            raise _NoTls("server declined TLS" if answer == b"N" else "no SSLRequest answer")
+            raise _NoTls("server declined TLS")
+        if answer != b"S":  # closed or garbled: nothing was declined
+            connection.close()
+            raise ConnectionError("no answer to the SSLRequest")
     return connection
 
 

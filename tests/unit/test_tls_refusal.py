@@ -265,3 +265,22 @@ def test_refusals_after_the_endpoint_stopped_verifying_are_undecided(monkeypatch
     assert not passed and observation["outcome"] == "undecided"
     endpoint = scripted(monkeypatch, [VERIFIED, WRONG_CA, WRONG_HOST, VERIFIED])
     assert transport_refusals(endpoint, plaintext=REFUSED_PLAIN)[0]
+
+
+def test_a_connection_closed_before_the_ssl_request_is_answered_is_undecided(serve, tls):
+    """What a port-forward does while nothing listens behind it: the server
+    declined nothing, so nothing is refused."""
+    listener = socket.create_server(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+
+    def close_at_once():
+        connection, _ = listener.accept()
+        connection.recv(8)
+        connection.close()
+    threading.Thread(target=close_at_once, daemon=True).start()
+    try:
+        found = handshake(TlsEndpoint("127.0.0.1", port, "localhost", tls[0],
+                                      preamble="postgres", timeout_seconds=3))
+    finally:
+        listener.close()
+    assert found["outcome"] == "undecided"

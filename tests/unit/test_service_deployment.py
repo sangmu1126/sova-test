@@ -663,3 +663,42 @@ def test_a_resume_token_is_read_for_its_cluster_time():
     for bad in ({"_data": "8265"}, {"_data": "C3" + "0" * 30}, {"_data": "82zz" + "0" * 30},
                 {"_data": 7}, {}, None, "826578A1B200000003"):
         assert token_time(bad) is None, bad
+
+
+def test_a_postgres_target_may_register_its_tls_endpoint_for_transport_refusals(tmp_path):
+    from mysql_pair_business import tls_material
+
+    ca = write(tmp_path, "pg-ca.pem", tls_material("unit")["ca.pem"].decode())
+    endpoint = {"host": "10.0.0.5", "port": 5432, "server_name": "orders-db", "ca_file": ca}
+    catalog, close = catalog_from(
+        {"version": 1, "applications": [application(tmp_path,
+                                                    tls_endpoints={"tgt": endpoint})]},
+        route_for=lambda spec: FakeRoute())
+    execution = catalog.build("tenant-a", "orders", "postgres-offline-copy", None)
+    close()
+    assert execution.adapter.adapter_id == "postgres-offline-copy"
+    for bad in ({"elsewhere": endpoint}, {"tgt": {**endpoint, "verify": False}},
+                {"tgt": {k: v for k, v in endpoint.items() if k != "ca_file"}}):
+        with pytest.raises(ContractError):
+            catalog_from({"version": 1, "applications": [application(tmp_path,
+                                                                      tls_endpoints=bad)]},
+                         route_for=lambda spec: FakeRoute())
+    with pytest.raises(ContractError):  # MySQL units do not take one yet
+        catalog_from({"version": 1, "applications": [mysql_application(
+            tmp_path, tls_endpoints={"tgt": endpoint})]}, route_for=lambda spec: FakeRoute())
+
+
+def test_controls_a_units_probes_cannot_measure_fail_rather_than_pass():
+    from sova.service.postgres_execution import data_measure
+
+    class Probes:
+        def transport_refusals(self, side):
+            return True, {"probe": "transport_refusals", "side": side}
+
+    measure = data_measure(Probes(), other_db="other", scratch_db="scratch")
+    passed, observation = measure({"kind": "target_control_test",
+                                   "id": "security.refuse_unverified_transport"}, {})
+    assert passed and observation["side"] == "target"
+    passed, observation = measure({"kind": "target_control_test",
+                                   "id": "security.deny_anonymous_data_access"}, {})
+    assert not passed and "cannot be measured" in observation["reason"]

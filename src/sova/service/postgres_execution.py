@@ -15,6 +15,10 @@ from sova.domain.contracts import ContractError
 from sova.service.worker import Execution
 
 
+_OPTIONAL = {"security.deny_anonymous_data_access": "anonymous_denied",
+             "security.refuse_unverified_transport": "transport_refusals"}
+
+
 def data_measure(probes, *, other_db, scratch_db):
     """Each obligation kind to an independent probe; any data store whose
     probes offer this surface (PostgreSQL, MySQL) is measured the same way."""
@@ -34,6 +38,12 @@ def data_measure(probes, *, other_db, scratch_db):
             return probes.cross_tenant_denied(other_db)
         if oid == "security.verified_transport_encryption":
             return probes.transport_encrypted("target")
+        if oid in _OPTIONAL:  # controls only some units' probes can measure
+            name = _OPTIONAL[oid]
+            if not callable(getattr(probes, name, None)):
+                return False, {"probe": "none", "reason": f"{oid} cannot be measured "
+                                                          "for this unit"}
+            return getattr(probes, name)("target")
         if kind == "restore_drill" or oid == "security.tested_restore":
             return probes.restore_drill(scratch_db)
         if kind == "authority_readback":
@@ -76,7 +86,8 @@ def postgres_factory(adapter_id, resolve, *, cdc=False):
         probes = PostgresHandoffProbes(
             connect_as=d["connect_as"], admin_connect=d["connect"], source_db=d["source_db"],
             target_db=d["target_db"], app_role=d["app_role"], tables=d["tables"],
-            probe_insert=d["probe_insert"], writer_roles=d["writer_roles"])
+            probe_insert=d["probe_insert"], writer_roles=d["writer_roles"],
+            tls=d.get("tls"))
         return Execution(adapter, data_measure(probes, other_db=d["other_db"],
                                                scratch_db=d["scratch_db"]))
 

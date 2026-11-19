@@ -15,7 +15,11 @@ form. Each probe returns ``(passed, observation)``; the
 observation is what a signed evidence record's artifact digest is taken over.
 
 These probes measure a local reference profile. Transport encryption is
-reported as observed (``ssl`` on the server), not assumed.
+reported as observed (``ssl`` on the server), not assumed. When a side's TLS
+endpoint is registered (``tls``), ``transport_refusals`` asks the server to
+refuse a wrong CA, a wrong host name and a startup message in the clear
+(``sova.adapters.tls_refusal``); a server with TLS on that still takes
+plaintext fails it.
 """
 
 import hashlib
@@ -24,6 +28,7 @@ import psycopg
 from psycopg import sql
 
 from sova.adapters.postgres_digest import table_digest
+from sova.adapters.tls_refusal import TlsEndpoint, postgres_plaintext, transport_refusals
 from sova.domain.contracts import ContractError, canonical_json
 
 
@@ -33,9 +38,14 @@ def artifact_digest(observation):
 
 class PostgresHandoffProbes:
     def __init__(self, *, connect_as, admin_connect, source_db, target_db, app_role, tables,
-                 probe_insert, writer_roles=None):
+                 probe_insert, writer_roles=None, tls=None):
         if not callable(connect_as) or not callable(admin_connect):
             raise ContractError("Application-role and administrative connections required")
+        tls = dict(tls or {})
+        if set(tls) - {"source", "target"} or not all(
+                isinstance(e, TlsEndpoint) and e.preamble == "postgres" for e in tls.values()):
+            raise ContractError("tls: a PostgreSQL TlsEndpoint per side")
+        self.tls = tls
         self.connect_as, self.admin_connect = connect_as, admin_connect
         self.source_db, self.target_db, self.app_role = source_db, target_db, app_role
         self.tables, self.probe_insert = tables, probe_insert
@@ -173,6 +183,18 @@ class PostgresHandoffProbes:
         return verified, {"probe": "transport_encrypted", "encrypted": encrypted,
                           "tls_version": row[1] if encrypted else None,
                           "client_verification": mode}
+
+    def transport_refusals(self, which):
+        """The side's server refuses a wrong CA, a wrong host name, and the
+        application role's startup message in the clear (stopped before any
+        password is asked for)."""
+        endpoint = self.tls.get(which)
+        if endpoint is None:
+            return False, {"probe": "transport_refusals", "side": which,
+                           "reason": "no TLS endpoint registered"}
+        passed, observation = transport_refusals(
+            endpoint, plaintext=postgres_plaintext(self.app_role, self._db(which)))
+        return passed, {**observation, "side": which}
 
     def cross_tenant_denied(self, other_db):
         """The application role cannot connect to another tenant's database: its

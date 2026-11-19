@@ -17,6 +17,9 @@ execution file holds only their paths.
                                                                #   replication
         "databases": {"<db>": {"dsn_file": "<admin connection, no database>"}, ...},
         "zone_of": {"<db>": "<zone label>"},                   # MySQL: where each runs
+        "tls_endpoints": {"<db>": {"host": "...", "port": 5432,  # PostgreSQL, optional:
+                                   "server_name": "...",         #   what transport
+                                   "ca_file": "..."}},           #   refusals ask
         "role_password_files": {"<role>": "<path>"},          # optional
         "source_db": "...", "target_db": "...", "scratch_db": "...", "other_db": "...",
         "app_role": "...", "writer_roles": ["...", ...],
@@ -51,9 +54,9 @@ ENGINES = {"postgresql": set(MODES), "mysql": {"offline_copy", "replication"}}
 _APP_KEYS = {"tenant_id", "application_id", "adapter_id", "engine", "mode", "databases",
              "role_password_files", "source_db", "target_db", "scratch_db", "other_db",
              "app_role", "writer_roles", "tables", "schema_sql_file", "probe_insert",
-             "source_conninfo_file", "route", "zone_of", "replication"}
+             "source_conninfo_file", "route", "zone_of", "replication", "tls_endpoints"}
 _REQUIRED = _APP_KEYS - {"role_password_files", "source_conninfo_file", "engine", "zone_of",
-                         "replication"}
+                         "replication", "tls_endpoints"}
 _REPLICATION_KEYS = {"source_endpoint", "account", "password_file", "tls", "ca_path",
                      "snapshot"}
 _UNIT_ENGINES = {  # engines whose entries carry their own keys (see each module)
@@ -120,6 +123,8 @@ def application_resolver(app, *, route_for=kubernetes_route):
     zones = app.get("zone_of") or {}
     if type(zones) is not dict or not all(type(v) is str for v in zones.values()):
         raise ContractError("zone_of maps databases to zone labels")
+    tls = _tls_endpoints(app.get("tls_endpoints"), databases, engine,
+                         sides={"source": app["source_db"], "target": app["target_db"]})
     route = route_for(app["route"])
     if engine == "mysql":
         admin, close, connect_as = _mysql_connections(databases, passwords)
@@ -135,7 +140,7 @@ def application_resolver(app, *, route_for=kubernetes_route):
         "zone_of": (lambda database: zones.get(database)) if zones else None,
         "source_conninfo": (_read(app["source_conninfo_file"])
                             if app.get("source_conninfo_file") else None),
-        "replication": _replication(app.get("replication"))}
+        "replication": _replication(app.get("replication")), "tls": tls}
 
     def resolve(tenant_id, application_id):
         if (tenant_id, application_id) != (app["tenant_id"], app["application_id"]):
@@ -143,6 +148,26 @@ def application_resolver(app, *, route_for=kubernetes_route):
         return resolved
 
     return resolve, close
+
+
+def _tls_endpoints(spec, databases, engine, *, sides):
+    """Each side's registered TLS endpoint (PostgreSQL), keyed by side."""
+    from sova.adapters.tls_refusal import TlsEndpoint
+
+    if spec is None:
+        return {}
+    if engine != "postgresql" or type(spec) is not dict or set(spec) - set(databases):
+        raise ContractError("tls_endpoints: PostgreSQL databases of this entry only")
+    endpoints = {}
+    for side, database in sides.items():
+        entry = spec.get(database)
+        if entry is None:
+            continue
+        if type(entry) is not dict or set(entry) != {"host", "port", "server_name", "ca_file"}:
+            raise ContractError("A TLS endpoint: host, port, server_name and ca_file")
+        endpoints[side] = TlsEndpoint(entry["host"], entry["port"], entry["server_name"],
+                                      Path(entry["ca_file"]).read_bytes(), preamble="postgres")
+    return endpoints
 
 
 def _replication(spec):
