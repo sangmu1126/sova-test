@@ -58,7 +58,7 @@ jobs:
       - name: Read the pinned security producer
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          repository: Softbank-Hackathon-Finals/security
+          repository: sangmu1126/security
           ref: ${{ env.SECURITY_COMMIT }}
           path: .local-notes/security-source
           persist-credentials: false
@@ -121,7 +121,7 @@ jobs:
         if: matrix.runtime == 'process'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          repository: Softbank-Hackathon-Finals/platform
+          repository: sangmu1126/platform
           ref: 0795f65e24f58e43545b16b97757efcc0923fd4a
           path: .local-notes/t28-platform
           persist-credentials: false
@@ -141,7 +141,7 @@ jobs:
         if: matrix.runtime == 'process'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          repository: Softbank-Hackathon-Finals/platform
+          repository: sangmu1126/platform
           ref: 42811da4cf19ce941491d4794ab49790881dc409
           path: .local-notes/t28-platform
           persist-credentials: false
