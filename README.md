@@ -100,6 +100,16 @@ docs/                    설계·실행 안내·검증 기록
 node --test demo/response_scenarios/*.test.mjs
 ```
 
+개인 개발 CI는 Sova 자체 `uv.lock`을 사용한다. `integration/security/manifest.json`의 생산자 SHA, `pyproject.toml`의 git source와 lock의 SHA가 모두 일치해야 한다. producer의 시험 환경만 설치하면 Sova의 MySQL·관측 등 의존성이 빠질 수 있다. CI와 같은 uv 0.13.6 및 고정 생산자 checkout을 준비한 경우의 단위 검사는 다음과 같다.
+
+```sh
+uv sync --locked --group ci --extra dev --extra service --extra observability \
+  --no-install-project --no-install-package sova-security --no-build
+PYTHONPATH="src:.local-notes/security-source/src" .venv/bin/python -m pytest -q tests/unit -rs
+```
+
+`.local-notes/security-source`는 위 manifest의 정확한 SHA로 checkout한 개인 `sangmu1126/security`여야 한다. 검증 matrix는 Python 3.11·3.14이며, 단위 CI 통과를 실제 DB·클러스터 이전 완료로 해석하지 않는다.
+
 실제 PostgreSQL 시험은 별도 격리 DB와 `SOVA_TEST_POSTGRES_DSN`이 필요하다. 운영 DB를 지정하지 않는다. 실제 클러스터 시험은 별도 등록·권한·자원과 효과를 요구하며 기본 단위 시험으로 대체하지 않는다. [PostgreSQL 시험 조건](docs/postgres-execution.md)
 
 Sky에서 확인한 동작, 팀 platform의 검증, 개인 대응 실행기의 검증을 합산하지 않는다. 실제 접속 주소·토큰·개인키·kubeconfig·DB·실행 상태는 공개 문서나 저장소에 올리지 않는다.

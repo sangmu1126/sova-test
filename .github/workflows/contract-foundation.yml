@@ -47,14 +47,29 @@ jobs:
         with:
           version: '0.13.6'
           enable-cache: false
-      - name: Prepare the producer's locked test dependencies
-        working-directory: .local-notes/security-source
-        run: uv sync --locked --extra dev --extra platform-test --no-install-project --no-build --python '${{ matrix.python }}'
+      - name: Prepare the consumer's locked test dependencies
+        run: >-
+          uv sync --locked --group ci --extra dev --extra service --extra observability
+          --no-install-project --no-install-package sova-security --no-build
+          --python '${{ matrix.python }}'
+      - name: Verify that lock and imported producer match the immutable contract
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, tomllib
+          source = json.loads(pathlib.Path('integration/security/manifest.json').read_text())['qualified_package_source']
+          project = tomllib.loads(pathlib.Path('pyproject.toml').read_text())
+          locked = tomllib.loads(pathlib.Path('uv.lock').read_text())
+          assert project['tool']['uv']['sources']['sova-security'] == {
+              'git': 'https://github.com/sangmu1126/security.git', 'rev': source}
+          producer = [p for p in locked['package'] if p['name'] == 'sova-security']
+          assert len(producer) == 1 and producer[0]['source'] == {
+              'git': f'https://github.com/sangmu1126/security.git?rev={source}#{source}'}
+          PY
       - name: Check domain layering and acceptance boundaries without cloud credentials
         env:
           PYTHONPATH: '${{ github.workspace }}/src:${{ github.workspace }}/.local-notes/security-source/src'
         run: |
-          PYTHON="$PWD/.local-notes/security-source/.venv/bin/python"
+          PYTHON="$PWD/.venv/bin/python"
           "$PYTHON" -m ruff check src tests
           "$PYTHON" -m pytest -q tests/unit -rs
           "$PYTHON" - <<'PY'

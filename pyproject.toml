@@ -57,3 +57,10 @@ select = ["E4", "E7", "E9", "F"]
 "demo/graph_demo.py" = ["E402"]
 "demo/security_console.py" = ["E402"]
 "demo/relocation_server.py" = ["E402"]
+
+# CI imports this exact producer checkout; never resolve sova-security by name alone.
+[tool.uv.sources]
+sova-security = { git = "https://github.com/sangmu1126/security.git", rev = "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf" }
+
+[dependency-groups]
+ci = ["sova-security[dev,platform-test]==0.11.1"]
