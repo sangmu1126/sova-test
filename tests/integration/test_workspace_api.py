@@ -115,15 +115,20 @@ def test_workspace_catalog_is_bounded_and_paginated_without_duplicates(api):
     assert len({r["subject_id"] for r in first["items"] + second["items"]}) == 25
 
 
-def test_workspace_does_not_hide_a_broken_registry_head(api, postgres_database):
+def test_workspace_cannot_publish_a_head_without_immutable_history(api, postgres_database):
     register(api["client"], api["issuer"], api["tenant"], api["world"]["source"])
-    with psycopg.connect(postgres_database[0]) as conn:
-        conn.execute(
-            "UPDATE sova_control.registration_heads SET revision=revision+1 WHERE tenant_id=%s",
-            (api["tenant"],),
-        )
+    # The current DB barrier rejects corruption at commit, even for this test's
+    # migration owner. Do not disable triggers to force an obsolete fixture.
+    with pytest.raises(psycopg.errors.RaiseException, match="lacks matching immutable history"):
+        with psycopg.connect(postgres_database[0]) as conn:
+            conn.execute("SELECT set_config('sova.tenant_id',%s,true)", (api["tenant"],))
+            conn.execute(
+                "UPDATE sova_control.registration_heads SET revision=revision+1 WHERE tenant_id=%s",
+                (api["tenant"],),
+            )
     r = api["client"].get(
         f"/v1/tenants/{api['tenant']}/registrations/environment_profile",
         headers=api["issuer"].token(api["tenant"], "auditor"),
     )
-    assert r.status_code == 422
+    assert r.status_code == 200
+    assert r.json()["items"][0]["revision"] == 1
