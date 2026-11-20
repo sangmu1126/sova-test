@@ -13,6 +13,7 @@ import {
 import { api, initialize, login, logout, currentConfig } from "./auth";
 import type { Identity } from "./auth";
 import { OperationalPanel } from "./OperationalPanel";
+import { ChangeHistory } from "./ChangeHistory";
 import { checkedBlockers, PlanBlockers } from "./PlanBlockers";
 import type { PlanBlocker } from "./PlanBlockers";
 import { TrustPanel } from "./TrustPanel";
@@ -961,10 +962,17 @@ export function WorkspaceApp() {
                 </section>
               )}
               {tab === "operational" && (
-                <OperationalPanel
-                  application={application}
-                  identity={identity}
-                />
+                <>
+                  <OperationalPanel
+                    application={application}
+                    identity={identity}
+                  />
+                  <ChangeHistory
+                    key={`${identity.tenant_id}:${identity.subject}:${application}`}
+                    application={application}
+                    identity={identity}
+                  />
+                </>
               )}
               {tab === "observe" &&
                 (fresh ? (
