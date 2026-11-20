@@ -7,7 +7,16 @@ import tarfile
 
 import pytest
 
-from scan_built_image import bind_config
+import importlib.util
+from pathlib import Path
+
+_SPEC = importlib.util.spec_from_file_location(
+    "personal_operator_scan_built_image",
+    Path(__file__).resolve().parents[2] / "infra/personal-journey/scan_built_image.py",
+)
+_MODULE = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_MODULE)
+bind_config = _MODULE.bind_config
 
 
 def fixture(tmp_path):
