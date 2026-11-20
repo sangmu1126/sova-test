@@ -44,9 +44,13 @@ def main():
         raise ValueError("Current owned trial required")
     identity()
     applied = json.loads((a.wireguard / "apply-result.json").read_text())
-    proxy = json.loads((a.wireguard / "proxy-completion.json").read_text())
-    if applied["phase"] != "target_interface_confirmed" or not proxy["result"]["started"]:
-        raise ValueError("Expected explicitly completed data connection required")
+    if applied.get("phase") == "network_created_not_app_migrated":
+        if applied.get("applied") is not True or applied.get("passthrough", {}).get("started") is not True:
+            raise ValueError("Completed endpoint and proxy receipt required")
+    else:
+        proxy = json.loads((a.wireguard / "proxy-completion.json").read_text())
+        if applied["phase"] != "target_interface_confirmed" or not proxy["result"]["started"]:
+            raise ValueError("Expected explicitly completed data connection required")
     state = json.loads(guest("cat", "/run/sova-wireguard-b0be270e62/state.json"))
     live_key = guest("wg", "show", "sova-b0be", "public-key").decode().strip()
     if not state["applied"] or state["public_key"] != applied["target"]["public_key"] or live_key != state["public_key"]:

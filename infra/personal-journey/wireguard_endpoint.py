@@ -49,6 +49,19 @@ def identity(side):
         raise ValueError("Exact side required")
 
 
+def expired_archive_suffix(state, side, now):
+    """Only a completed automatic cleanup may be reconciled for a new window."""
+    until = datetime.fromisoformat(state["expires_at"])
+    removed = datetime.fromisoformat(state["removed_at"])
+    if (side not in ("source", "target") or state.get("run_id") != RUN or state.get("side") != side
+            or state.get("applied") is not False or state.get("private_key_persistent") is not False
+            or until.tzinfo is None or removed.tzinfo is None or not until <= removed <= now):
+        raise ValueError("Only an expired, removed, owned endpoint may be archived")
+    if len(base64.b64decode(state["public_key"], validate=True)) != 32:
+        raise ValueError("Expired public endpoint identity required")
+    return "-expired-" + str(int(until.timestamp()))
+
+
 def main():
     os.umask(0o077)
     data = json.load(sys.stdin)
@@ -60,8 +73,16 @@ def main():
     key = ROOT / "private.key"
     state = ROOT / "state.json"
     if action == "prepare":
-        if call("ip", "link", "show", INTERFACE, check=False).returncode == 0 or ROOT.exists():
-            raise ValueError("Existing endpoint requires explicit reconciliation")
+        if call("ip", "link", "show", INTERFACE, check=False).returncode == 0:
+            raise ValueError("Existing live endpoint requires explicit reconciliation")
+        if ROOT.exists():
+            if ROOT.is_symlink() or ROOT.stat().st_uid != 0 or ROOT.stat().st_mode & 0o077 or {p.name for p in ROOT.iterdir()} != {"state.json"} or state.is_symlink():
+                raise ValueError("Never archive a staged key or unknown endpoint file")
+            suffix = expired_archive_suffix(json.loads(state.read_text()), side, datetime.now(UTC))
+            archived = ROOT.with_name(ROOT.name + suffix)
+            if archived.exists():
+                raise ValueError("Preserve the existing expired endpoint archive")
+            ROOT.rename(archived)
         root_mount = json.loads(call("findmnt", "-J", "-T", "/run").stdout)["filesystems"][0]
         if root_mount["fstype"] != "tmpfs":
             raise ValueError("Key staging must be tmpfs")
@@ -147,6 +168,7 @@ def main():
                       default_route_added=False, business_data_changed=False)
         if side == "source":
             result["proxy_image"] = image
+            result["proxy_container"] = "wireguard-passthrough-" + str(int(until.timestamp()))
         state.write_text(json.dumps(result)+"\n")
     elif action == "observe":
         result = json.loads(state.read_text())
@@ -158,7 +180,8 @@ def main():
                   "key_file_exists": key.exists()}
     elif action == "remove":
         result = json.loads(state.read_text())
-        if result.get("run_id") != RUN or result.get("side") != side or not result.get("applied"):
+        if (result.get("run_id") != RUN or result.get("side") != side or not result.get("applied")
+                or result.get("expires_at") != until.isoformat()):
             raise ValueError("Only a completed, owned endpoint may be removed")
         if (call("wg", "show", INTERFACE, "public-key").stdout.decode().strip() != result["public_key"]
                 or call("wg", "show", INTERFACE, "peers").stdout.decode().split() != [result["peer_public_key"]]):
@@ -177,7 +200,10 @@ def main():
             # No app/DB container is stopped. This new, no-volume connector has
             # a separate namespace and immutable identity.
             base = ["/usr/local/bin/nerdctl", "--namespace", "sova-b0be270e62-vpn"]
-            found = call(*base, "inspect", "wireguard-passthrough", check=False)
+            name = result.get("proxy_container", "wireguard-passthrough")
+            if name != "wireguard-passthrough" and name != "wireguard-passthrough-" + str(int(until.timestamp())):
+                raise ValueError("Connector name differs from this expiry generation")
+            found = call(*base, "inspect", name, check=False)
             if found.returncode == 0:
                 container = json.loads(found.stdout)[0]
                 labels = container["Config"].get("Labels", {})
@@ -185,7 +211,7 @@ def main():
                         or container["Config"]["Image"] != result["proxy_image"]):
                     raise ValueError("Passthrough identity changed; do not stop it")
                 if container["State"].get("Running"):
-                    call(*base, "stop", "--time", "5", "wireguard-passthrough")
+                    call(*base, "stop", "--time", "5", name)
         result.update(applied=False, removed_at=datetime.now(UTC).isoformat())
         state.write_text(json.dumps(result)+"\n")
     else:

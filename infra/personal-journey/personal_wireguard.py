@@ -153,7 +153,7 @@ sys.stdin=__import__('io').StringIO(json.dumps(c))
         target_state = target(target_install, {**base, "side": "target", "action": "prepare"}, 150)
         plan = {"run_id": inputs["run_id"], "source_instance": instance["InstanceId"],
                 "source_ip": source_ip, "client_ip": peer_ip, "source_group_id": group_id,
-                "expires_at": until.isoformat(), "endpoint_code_sha256": endpoint_hash,
+                "expires_at": until.isoformat(), "transport_generation": 2, "endpoint_code_sha256": endpoint_hash,
                 "source": source_state, "target": target_state, "proxy": proxy,
                 "artifact_bucket": bucket, "artifact_key": key, "applied": False,
                 "public_ingress": {"protocol": "udp", "port": 51820, "cidr": peer_ip+"/32"},
@@ -255,15 +255,24 @@ if side=='source':
 else:
  if pathlib.Path('/etc/machine-id').read_text().strip()!='a789f623bca040989f282881d9a21654':raise ValueError('Wrong VM')
  root=pathlib.Path('/var/lib/sova-qualification/user-journey-b0be270e62')
-path=root/'wireguard-expiry.py'
-if path.exists():raise ValueError('Never replace an existing expiry job')
+legacy=root/'wireguard-expiry.py'
+if legacy.exists():
+ if legacy.is_symlink() or legacy.stat().st_uid!=0 or legacy.stat().st_mode&0o022:raise ValueError('Unexpected legacy expiry file')
+ for unit in ('sova-wg-b0be-expiry.timer','sova-wg-b0be-expiry.service'):
+  if subprocess.run(['systemctl','is-active','--quiet',unit]).returncode==0:raise ValueError('Legacy expiry job still active')
+ archived=root/'wireguard-expiry.legacy-202611200120.py'
+ if archived.exists():raise ValueError('Preserve existing legacy expiry archive')
+ legacy.rename(archived)
+generation=str(int(datetime.datetime.fromisoformat(c['expires_at']).timestamp()))
+path=root/('wireguard-expiry-'+generation+'.py')
+if path.exists():raise ValueError('Never replace an existing expiry generation')
 request=json.dumps({'side':side,'action':'remove','expires_at':c['expires_at']})
 wrapper='import io,sys;sys.stdin=io.StringIO('+repr(request)+');exec('+repr(c['endpoint'])+')'
 with path.open('x')as f:f.write(wrapper)
 path.chmod(0o500)
 deadline=datetime.datetime.fromisoformat(c['expires_at']).astimezone(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
-subprocess.run(['systemd-run','--unit=sova-wg-b0be-expiry','--on-calendar='+deadline,'--timer-property=AccuracySec=1s','--property=Type=oneshot','/usr/bin/python3',str(path)],stdout=subprocess.DEVNULL,check=True,timeout=10)
-print(json.dumps({'timer':'sova-wg-b0be-expiry.timer','deadline':c['expires_at'],'only_owned_link_removed':True}))
+subprocess.run(['systemd-run','--unit=sova-wg-b0be-expiry-'+generation,'--on-calendar='+deadline,'--timer-property=AccuracySec=1s','--property=Type=oneshot','/usr/bin/python3',str(path)],stdout=subprocess.DEVNULL,check=True,timeout=10)
+print(json.dumps({'timer':'sova-wg-b0be-expiry-'+generation+'.timer','deadline':c['expires_at'],'only_owned_link_removed':True}))
 """
     before["expiry"]={}
     for side in ("source","target"):
@@ -289,7 +298,9 @@ print(json.dumps({'timer':'sova-wg-b0be-expiry.timer','deadline':c['expires_at']
     proxy_code = """import hashlib,json,pathlib,subprocess,sys
 c=json.load(sys.stdin)
 if pathlib.Path('/var/lib/sova-journey/run-id').read_text().strip()!='b0be270e62':raise ValueError('Wrong source')
-root=pathlib.Path('/var/lib/sova-journey/wireguard-passthrough');root.mkdir(mode=0o700,exist_ok=False)
+generation=str(int(__import__('datetime').datetime.fromisoformat(c['expires_at']).timestamp()))
+name='wireguard-passthrough-'+generation
+root=pathlib.Path('/var/lib/sova-journey')/name;root.mkdir(mode=0o700,exist_ok=False)
 archive=root/'proxy.oci.tar'
 subprocess.run(['aws','s3','cp','s3://'+c['bucket']+'/'+c['key'],str(archive),'--region','ap-northeast-2','--only-show-errors'],check=True)
 digest=hashlib.sha256()
@@ -305,13 +316,13 @@ cfg=root/'haproxy.cfg';cfg.write_text('global\\n  maxconn 128\\n  nbthread 1\\nd
 mount='type=bind,src='+str(cfg)+',dst=/usr/local/etc/haproxy/haproxy.cfg,ro'
 common=['--network','host','--read-only','--user','10001:10001','--cap-drop','ALL','--security-opt','no-new-privileges','--mount',mount]
 subprocess.run(base+['run','--rm',*common,c['image'],'haproxy','-c','-f','/usr/local/etc/haproxy/haproxy.cfg'],check=True,stdout=subprocess.DEVNULL)
-subprocess.run(base+['run','--detach','--name','wireguard-passthrough','--label','sova.run=b0be270e62','--label','sova.purpose=wireguard-passthrough',
+subprocess.run(base+['run','--detach','--name',name,'--label','sova.run=b0be270e62','--label','sova.purpose=wireguard-passthrough',
  '--network','host','--read-only','--user','10001:10001','--cap-drop','ALL','--security-opt','no-new-privileges',
  '--memory','64m','--pids-limit','64','--cpus','0.25','--mount',mount,c['image'],'haproxy','-W','-db','-f','/usr/local/etc/haproxy/haproxy.cfg'],check=True,stdout=subprocess.DEVNULL)
-print(json.dumps({'started':True,'image':c['image'],'public_tcp_listener':False,'tls_terminated':False,'data_ports':[5432,8080]}))
+print(json.dumps({'started':True,'container':name,'image':c['image'],'public_tcp_listener':False,'tls_terminated':False,'data_ports':[5432,8080]}))
 """
     before["passthrough"]=source("source-passthrough",proxy_code,{"bucket":plan["artifact_bucket"],"key":plan["artifact_key"],
-        "sha256":plan["proxy"]["archive_sha256"],"image":proxy_ref},120)
+        "sha256":plan["proxy"]["archive_sha256"],"image":proxy_ref,"expires_at":until.isoformat()},120)
     before.update(phase="network_created_not_app_migrated",applied=True,completed_at=datetime.now(UTC).isoformat())
     receipt.write_text(json.dumps(before,indent=2)+"\n")
     print(json.dumps({"network_created":True,"application_route_changed":False,"next":"actual TLS, denials, expiry and reconnect qualification"}))
