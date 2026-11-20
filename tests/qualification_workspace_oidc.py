@@ -167,7 +167,16 @@ def identity_provider(h, *, startup_seconds=100, security_roles=False):
             (h.directory / "keycloak-state.json").write_text(json.dumps({
                 key: state.get(key) for key in ("Status", "Running", "OOMKilled", "ExitCode", "Error", "StartedAt", "FinishedAt")
             }, indent=2))
-            (h.directory / "keycloak.log").write_text(docker("logs", "--tail", "120", container))
+            runtime_log = docker("logs", "--tail", "120", container)
+            (h.directory / "keycloak.log").write_text(runtime_log)
+            artifacts = os.environ.get("SOVA_TEST_QUALIFICATION_ARTIFACTS")
+            if artifacts:
+                # Pytest may remove temporary directories in a later run. Keep
+                # run-owned diagnostics private, without inspect Env or stdin.
+                private_file(Path(artifacts) / (h.case_name + "-identity-state.json"),
+                             json.dumps({key: state.get(key) for key in (
+                                 "Status", "Running", "OOMKilled", "ExitCode", "StartedAt", "FinishedAt")}))
+                private_file(Path(artifacts) / (h.case_name + "-identity-runtime.log"), runtime_log)
             # ID and immutable run label, not a broad name glob, establish ownership.
             info = json.loads(docker("inspect", container))[0]
             if info["Config"]["Labels"].get("sova.journey") != run:

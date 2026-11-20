@@ -164,7 +164,7 @@ def main():
     parser.add_argument("--security-source", type=Path, required=True)
     parser.add_argument("--pool-source", type=Path, help="Private pinned psycopg_pool source for pool suite only")
     parser.add_argument("--artifacts", type=Path, required=True, help="New private output directory")
-    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap", "clocks", "backpressure", "restore", "timing", "profile", "pool", "pool-lifecycle", "settlement", "journey"), default="requests",
+    parser.add_argument("--suite", choices=("requests", "service", "runtime", "worker", "startup", "pods", "pod-http", "authority", "bootstrap", "clocks", "backpressure", "restore", "timing", "profile", "pool", "pool-lifecycle", "settlement", "journey", "history"), default="requests",
                         help="MQ-02, service, runtime API, or worker process/fault qualification checks")
     parser.add_argument("--http-mode", choices=("cold_deferred", "prepared_deferred", "prepared_bounded", "ready_deferred", "ready_bounded", "ready_backpressure"))
     parser.add_argument("--browser-tools", type=Path)
@@ -174,7 +174,7 @@ def main():
     args = parser.parse_args()
     browser_options = (args.browser_tools, args.browser_executable, args.browser_node)
     if any(browser_options):
-        if not all(browser_options) or args.suite not in ('settlement', 'journey'):
+        if not all(browser_options) or args.suite not in ('settlement', 'journey', 'history'):
             parser.error('Browser options must be supplied together for settlement or journey')
         if (not all(p.is_absolute() for p in browser_options)
                 or not args.browser_executable.is_file() or not args.browser_node.is_file()
@@ -183,6 +183,9 @@ def main():
     if args.suite == 'journey':
         if not all(browser_options) or args.keycloak_image != 'sha256:923a431c08971d49727a857e64870d8d63b5bf294a730e5dde729b5138c26c9e':
             parser.error('Journey requires explicit browser tools and the pinned native Keycloak image')
+    elif args.suite == 'history':
+        if not all(browser_options) or args.keycloak_image != 'sha256:9ff9180b6120c45f43f3bb4b9706eaf5fc250115581ee7c5cee067500f727e5c':
+            parser.error('History requires explicit browser tools and the pinned optimized Keycloak image')
     elif args.keycloak_image:
         parser.error('Identity container is used only by the journey suite')
     if args.http_mode and args.suite != "pod-http":
@@ -198,7 +201,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     args.artifacts.mkdir(parents=True, mode=0o700, exist_ok=False)
     run = {"requests": "mq02-", "service": "mq03-", "runtime": "mq03-runtime-",
-           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-", "bootstrap": "database-bootstrap-", "clocks": "clock-observation-", "backpressure": "lookup-backpressure-", "restore": "restore-snapshot-", "timing": "cutover-timing-", "profile": "worker-profile-", "pool": "control-pool-", "pool-lifecycle": "pool-lifecycle-", "settlement": "effect-settlement-", "journey": "workspace-journey-"}[args.suite] + uuid4().hex
+           "worker": "mq04-worker-", "startup": "worker-startup-", "pods": "worker-pods-", "pod-http": "worker-http-", "authority": "authority-read-", "bootstrap": "database-bootstrap-", "clocks": "clock-observation-", "backpressure": "lookup-backpressure-", "restore": "restore-snapshot-", "timing": "cutover-timing-", "profile": "worker-profile-", "pool": "control-pool-", "pool-lifecycle": "pool-lifecycle-", "settlement": "effect-settlement-", "journey": "workspace-journey-", "history": "change-history-"}[args.suite] + uuid4().hex
     container, network = "sova-" + run, "sova-network-" + run
     report = {"run_id": run, "image_id": args.image, "shared_environment_used": False,
               "qualification_issued": False, "network_created": False, "container_created": False,
@@ -350,6 +353,24 @@ def main():
             measured_sources.extend(sorted((root/'console/dist').rglob('*.*')))
             report['browser_driver_lock_sha256'] = hashlib.sha256((args.browser_tools/'package-lock.json').read_bytes()).hexdigest()
             report['browser_executable_sha256'] = hashlib.sha256(args.browser_executable.read_bytes()).hexdigest()
+    if args.suite == 'history':
+        tests = ['tests/integration/test_workspace_change_history.py',
+                 'tests/integration/test_workspace_change_history_browser.py',
+                 'tests/unit/test_change_history_cursor.py']
+        measured_sources.extend([*(root / test for test in tests),
+            root / 'tests/qualification_change_history_browser.mjs',
+            root / 'tests/integration/test_workspace_api.py',
+            root / 'tests/integration/test_service_api.py',
+            root / 'tests/integration/test_service_control_plane.py',
+            root / 'tests/qualification_workspace_oidc.py',
+            root / 'tests/qualification_imported_identity.py',
+            root / 'tests/qualification_runtime.py', root / 'tests/qualification_service.py',
+            root / 'tests/postgres_fixtures.py', root / 'tests/postgres_business.py',
+            *sorted((root / 'src/sova').rglob('*.py')),
+            *sorted((root / 'console/src/workspace').glob('*.*')),
+            *sorted((root / 'console/dist').rglob('*.*'))])
+        report['browser_driver_lock_sha256'] = hashlib.sha256((args.browser_tools/'package-lock.json').read_bytes()).hexdigest()
+        report['browser_executable_sha256'] = hashlib.sha256(args.browser_executable.read_bytes()).hexdigest()
     if args.suite == 'journey':
         tests = ['tests/integration/test_workspace_user_journey.py']
         measured_sources.extend([root / tests[0], root / 'tests/qualification_workspace_oidc.py',
@@ -444,6 +465,8 @@ def main():
                            SOVA_TEST_RECOVERY_BROWSER_NODE=str(args.browser_node))
             if args.keycloak_image:
                 env['SOVA_TEST_JOURNEY_KEYCLOAK_IMAGE'] = args.keycloak_image
+            if args.suite == 'history':
+                env['SOVA_TEST_JOURNEY_IDENTITY_SETUP'] = 'realm-import'
             if args.suite in ("pods", "pod-http"):
                 env.update(SOVA_TEST_QUALIFICATION_RUN=run,
                            SOVA_TEST_QUALIFICATION_DOCKER_NETWORK=network,
