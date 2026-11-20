@@ -18,3 +18,12 @@ AMI는 [AWS의 공용 SSM 파라미터](https://docs.aws.amazon.com/AWSEC2/lates
 - root EBS는 암호화하고 인스턴스 종료 시 자동 삭제하지 않는다. EBS·이미지·산출물·Secret은 보존 비용이 발생한다.
 - 버킷·ECR은 강제 삭제하지 않는다. 원본 데이터 보존·신규 쓰기 대조·복귀 증거를 확인한 뒤 실행 ID를 검증해 별도 정리한다.
 - 단일 EC2·단일 로컬 VM은 이전 경로 시험 환경이다. HA·금융 운영 인증·인터넷 공개 서비스의 무중단 자격은 이 구성만으로 충족되지 않는다.
+
+
+## 종류별 저장 위치 관측
+
+`collect_placement_facts.py`는 이 경로의 고정된 소유 EC2/EBS와 VM/클러스터/namespace만 읽는다. 만료되지 않은 private 입력과 실제 TLS 연결 파일을 `--inputs`, `--connections`로 지정하고, 아직 없는 전용 출력 폴더를 `--artifacts`로 지정한다. AWS `default`의 실제 계정과 태그를 확인하며, SSM에서는 고정된 읽기 전용 projection만 실행한다. VM에서는 조회·파일 해시 계산만 수행한다. 앱·데이터·권한·경로·worker 설정은 변경하지 않는다.
+
+DB의 실제 data directory와 컨테이너 mount, 원본 NVMe serial/EBS attachment, 목적지 Pod/PVC/PV/LUKS를 각각 대조한다. 보관 백업과 authority witness는 별도 파일·장치·SHA를 확인한다. 다른 장치·재생성된 namespace·다른 DB·바뀐 백업은 거부한다. 실제 파일의 크기·변경과 수집 코드의 변경도 검사한다.
+
+이 결과는 독립 검증자나 실행 gate에 바로 넣는 PASS 문서가 아니다. 모든 사본·로그 수신처·국가 위치·AI 처리·보관 기간·복구가 확인된 것이 아니므로 `residency_obligation_satisfied`와 `migration_authorized`는 false로 남는다. [실제 측정과 한계](../../docs/evidence/personal-category-placement-20261120.json).

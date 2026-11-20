@@ -255,3 +255,5 @@
 - 잘못된 EBS/장치/클러스터/namespace/PVC 상태, 백업 바꿔치기, 감사 기록의 다른 장치, 다른 DB system ID·평문·다른 data directory를 거부하는 단위 시험 21개가 통과했다. 실제 읽기 관측도 완료했다. 코드 SHA와 관측 시각을 보존했다. 앱 데이터·원장·경로·자격은 변경하지 않았다.
 - 이 관측은 등록한 세 종류의 자산 연결을 확인한다. 모든 사본·로그 수신처·국가 위치·AI 처리 경로·보관 기간·운영 복구를 증명하지 않는다. `all_copies_enumerated`, `geographic_residency_verified`, `residency_obligation_satisfied`, `migration_authorized`는 모두 false다. 실행 게이트에 PASS로 주입하거나 계약의 allowed zone을 낮추지 않았다.
 - 원격 CI의 소비자 lock 커밋 `0d1ab6e`는 Python 3.11·3.14 각각 **1,365개 통과·제외 0개**, 콘솔 **77개·타입·빌드·포맷 통과**다. [실제 CI](https://github.com/sangmu1126/sova-test/actions/runs/44730675419). 새 위치 수집기는 뒤 커밋의 CI에서 따로 확인한다.
+
+- 위치 수집기를 포함한 최종 코드 `bea359a`의 [원격 CI](https://github.com/sangmu1126/sova-test/actions/runs/44731343605)는 Python 3.11·3.14 각각 **1,386개 통과·제외 0개**, 콘솔 77개와 타입·빌드·포맷 통과다. [구조화한 CI 근거](../evidence/personal-locked-ci-20261120.json)에 첫 실패·lock·scanner·환경 구분을 보존했다. native 실행 소스 지문 `5ad880ee…`는 바뀌지 않았으며 CI·위치 수집을 원래 앱의 실제 계획/이전 완료로 세지 않는다.

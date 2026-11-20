@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "code_commit": "bea359aa5a44060adaba173f99609050fed73c18",
+  "ci_url": "https://github.com/sangmu1126/sova-test/actions/runs/44731343605",
+  "workflow": "contract-foundation",
+  "remote": {
+    "python_311": {
+      "passed": 1386,
+      "skipped": 0,
+      "warnings": 1
+    },
+    "python_314": {
+      "passed": 1386,
+      "skipped": 0,
+      "warnings": 1
+    },
+    "console": {
+      "passed": 77,
+      "typecheck": true,
+      "production_bundle": true,
+      "format_check": true
+    }
+  },
+  "local_clean_locked_environment": {
+    "python": "3.12.16",
+    "passed": 1365,
+    "skipped": 0,
+    "warnings": 1,
+    "excludes_later_placement_tests": true
+  },
+  "placement_boundary_tests": {
+    "passed": 21,
+    "fixtures": "synthetic refusal contracts; live observation is separate"
+  },
+  "lock": {
+    "path": "uv.lock",
+    "sha256": "89cca83f70c9295ff2ff0304a8e7022cb691df79bc7562c4802688bbe07663a6",
+    "producer_sha": "27e6e85514a7cbb3e43d216464b72d9bd78f3fcf",
+    "uv": "0.13.6",
+    "no_build": true,
+    "producer_import": "exact separate source checkout; not installed by package name"
+  },
+  "scan": {
+    "scanner": "Trivy 0.76.2",
+    "target": "uv.lock",
+    "vulnerabilities": 0,
+    "secrets": 0,
+    "database_updated_at": "2026-11-19T19:04:59.970326968Z",
+    "raw_report_sha256": "bf44e600f47eebe2e784f3b855645e65a3f718cd2c72457c06f3f4bd5bd492bd"
+  },
+  "first_failure": {
+    "ci_url": "https://github.com/sangmu1126/sova-test/actions/runs/44729661296",
+    "python_311_failed": 5,
+    "cause": "consumer PyMySQL absent in producer-only environment",
+    "test_removed_or_new_skip": false
+  },
+  "operational_qualification": false,
+  "business_migration_complete": false,
+  "actual_model_calls_deferred": true
+}
