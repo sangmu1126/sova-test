@@ -18,7 +18,7 @@ import boto3
 from botocore.config import Config
 import psycopg
 from psycopg import sql
-from psycopg.conninfo import make_conninfo
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from sova.adapters.aws_cloudtrail_collector import AwsCloudTrailCollector
 from sova.adapters.kubernetes.https import private_text
@@ -62,6 +62,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("inputs", "connections", "control_directory", "artifacts"):
         p.add_argument("--" + name.replace("_", "-"), type=Path, required=True)
+    p.add_argument("--collector-directory", type=Path, required=True,
+                   help="Already-qualified append-only observer credential; host audit reads stay separate")
     a = p.parse_args()
     os.umask(0o077)
     a.artifacts.mkdir(mode=0o700, exist_ok=False)
@@ -94,15 +96,20 @@ def main():
             return list(c.execute("SELECT (SELECT count(*) FROM orders),(SELECT count(*) FROM work_items),(SELECT count(*) FROM idempotency_results)").fetchone())
 
     dsn = private_text(a.control_directory / "runtime.dsn")
+    observer_dsn = private_text(a.collector_directory / "observer.dsn")
+    settings = conninfo_to_dict(observer_dsn)
+    if settings.get("dbname") != "sj_control_" + RUN or settings.get("user") != "sj_observe_" + RUN or settings.get("sslmode") != "verify-full":
+        raise ValueError("Exact already-qualified observation-only role required")
 
     def connect():
-        return psycopg.connect(dsn, connect_timeout=5, options="-c statement_timeout=5000 -c lock_timeout=1000")
+        return psycopg.connect(observer_dsn, connect_timeout=5, options="-c statement_timeout=5000 -c lock_timeout=1000")
 
     tenant, app = identity["tenant_id"], identity["application_id"]
     feed = PostgresChangeFeed(connect, tenant_id=tenant)
+    audit_feed = PostgresChangeFeed(lambda: psycopg.connect(dsn, connect_timeout=5), tenant_id=tenant)
 
     def counts():
-        with feed.transaction() as c:
+        with audit_feed.transaction() as c:
             row = c.execute("SELECT current_database(),current_user,(SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid())").fetchone()
             if row != ("sj_control_" + RUN, "sj_runtime_" + RUN, True):
                 raise ValueError("Wrong verified native runtime ledger")
@@ -119,7 +126,8 @@ def main():
     report = {"version": 1, "started_at": started.isoformat(), "run_id": RUN,
               "scratch_database": database, "scratch_retained": True, "checks": {},
               "original_plan_admitted": False, "migration_complete": False,
-              "complete_feed_qualified": False, "watermark_advanced": False}
+              "complete_feed_qualified": False, "watermark_advanced": False,
+              "collector_uses_dedicated_role": bool(a.collector_directory)}
     output = a.artifacts / "result.json"
 
     def save():
@@ -170,12 +178,16 @@ def main():
                 tenant_id=tenant, application_id=app, collector_id="personal-durable-cloudtrail-v2",
                 resources=resources, lookback=timedelta(hours=8))
 
-        cloud = aws_collector().poll()
-        report["checks"]["actual_registered_aws_history_appended"] = bool(cloud)
+        live_collector = aws_collector()
+        cloud = live_collector.poll()
+        # A previously committed observation is still an actual current AWS
+        # lookup, but must never be reported as a new append after restart.
+        observed_cloud = tuple(live_collector.seen.values())
+        report["checks"]["actual_registered_aws_history_observed"] = bool(observed_cloud)
         replay = aws_collector().poll()
         report["checks"]["restarted_aws_collector_does_not_reemit_stored_bindings"] = not ({e.event_id for e in cloud} & {e.event_id for e in replay})
         actual = restarted.events(application_id=app, environments=(SOURCE,), since=started - timedelta(hours=8))
-        report["checks"]["aws_events_persisted_after_collector_restart"] = all(e in actual for e in cloud) and bool(cloud)
+        report["checks"]["aws_events_persisted_after_collector_restart"] = all(e in actual for e in observed_cloud) and bool(observed_cloud)
         assessment = diagnostic_impact(restarted, tenant=tenant, app=app, since=started, scratch_uid=scratch_uid)
         report["diagnostic_impact"] = assessment.document
         report["diagnostic_is_not_an_admitted_or_compiled_plan"] = True
@@ -183,7 +195,9 @@ def main():
         report["checks"]["actual_schema_change_invalidates_diagnostic_structure"] = assessment.plan_stale
         after_marks = restarted.watermarks((SOURCE, TARGET))
         report["checks"]["no_environment_barrier_created"] = after_marks == before_marks == ()
-        report["events"] = [{"id": e.event_id, "kind": str(e.kind), "environment": e.environment_id, "subject": e.subject, "observed_at": e.observed_at.isoformat()} for e in (*events, *cloud, *replay)]
+        report["new_cloud_events"] = len(cloud)
+        report["existing_cloud_events_read_from_actual_aws"] = len(observed_cloud) - len(cloud)
+        report["events"] = [{"id": e.event_id, "kind": str(e.kind), "environment": e.environment_id, "subject": e.subject, "observed_at": e.observed_at.isoformat()} for e in (*events, *observed_cloud, *replay)]
         report["passed"] = all(report["checks"].values())
     finally:
         report["original_counts_after"] = original()
