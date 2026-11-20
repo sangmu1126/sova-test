@@ -91,6 +91,11 @@ def test_each_topic_probe_fails_on_what_it_measures(kafka_business, other_topic)
                   p.cross_tenant_denied, lambda: p.restore_drill("sova-restore")):
         passed, observation = check()
         assert passed, observation
+    # The drill's scratch copy of the business data is gone from the target (#43).
+    assert observation["scratch_removed"]
+    from confluent_kafka.admin import AdminClient
+    listed = AdminClient(p.config("target")).list_topics(timeout=10).topics
+    assert observation["scratch_topic"] not in listed
     world.tamper_target()  # a forged record on the target
     assert not p.content_equal("orders")[0]
     passed, invariant = p.invariant("ORDER-02")

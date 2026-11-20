@@ -90,24 +90,35 @@ def test_a_ca_that_does_not_vouch_for_the_source_keeps_the_sync_from_starting(
 def test_a_server_offering_tls_takes_plaintext_until_it_requires_secure_transport(
         mysql_pair_business):
     """TLS offered is not plaintext refused: the login without TLS goes on to
-    authentication. With ``require_secure_transport`` the server answers 3159
-    before any password is asked for."""
+    authentication. MySQL checks ``require_secure_transport`` only after
+    authentication succeeds (measured: with it on, a login without password
+    still gets a method switch), so the server's own view decides."""
     b = mysql_pair_business
     admin = dict(b["admins"]["target"])
     check = endpoint(admin["port"], b["ca_file"], preamble="mysql")
+    # PyMySQL's own arguments only: an ``ssl`` dict beside ``ssl_*`` ones is
+    # rebuilt from them and loses the CA (defect #5). The administrator reads
+    # the server's view over TLS, as the worker does.
+    secured = dict(admin, ssl_ca=b["ca_file"], ssl_verify_cert=True,
+                   ssl_verify_identity=True)
+    p = probes(b, lambda database: b["pymysql"].connect(**secured, autocommit=False))
     user = b["app"].rsplit("@", 1)[0]
-    passed, observation = transport_refusals(check, plaintext=mysql_plaintext(user))
+
+    def view():
+        return p._tls_required("target")
+    passed, observation = transport_refusals(check, plaintext=mysql_plaintext(
+        user, server_view=view))
     assert not passed and observation["accepted"] == ["plaintext"], summary(observation)
     assert identity_held(observation), summary(observation)
-    secured = dict(admin, ssl={"ca": b["ca_file"]}, ssl_verify_cert=True,
-                   ssl_verify_identity=True)
     with b["pymysql"].connect(**admin) as conn, conn.cursor() as cur:
         cur.execute("SET GLOBAL require_secure_transport = ON")
     try:
-        passed, observation = transport_refusals(check, plaintext=mysql_plaintext(user))
+        passed, observation = transport_refusals(check, plaintext=mysql_plaintext(
+            user, server_view=view))
     finally:  # only a TLS session may switch it back now
         with b["pymysql"].connect(**secured) as conn, conn.cursor() as cur:
             cur.execute("SET GLOBAL require_secure_transport = OFF")
     assert passed, summary(observation)
-    assert observation["checks"]["plaintext"]["reason"] == "server_requires_tls"
+    assert observation["checks"]["plaintext"]["reason"] == \
+        "server_requires_tls_after_authentication"
 

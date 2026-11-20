@@ -183,12 +183,29 @@ class MySqlHandoffProbes:
                                   "label": label, "allowed": sorted(allowed),
                                   "source": "provider" if self.zone_of else "none"}
 
+    def _tls_required(self, which):
+        """The server's own view: whether it requires secure transport of every
+        connection, or of the application account."""
+        user, host = self.app_account.rsplit("@", 1)
+        conn = self.admin_connect(self._db(which))
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT @@global.require_secure_transport")
+                everyone = bool(int(cur.fetchone()[0]))
+                cur.execute("SELECT ssl_type FROM mysql.user WHERE user = %s AND host = %s",
+                            (user, host))
+                found = cur.fetchone()
+        finally:
+            conn.close()
+        return {"require_secure_transport": everyone,
+                "account_requires_tls": bool(found and found[0])}
+
     def transport_refusals(self, which):
         """The side's registered TLS endpoint refuses a wrong CA, a wrong host
         name, and the application account's login without TLS (no password
-        sent)."""
-        return side_refusals(self.tls, which,
-                             mysql_plaintext(self.app_account.rsplit("@", 1)[0]))
+        sent; where authentication would go on, the server's own view)."""
+        return side_refusals(self.tls, which, mysql_plaintext(
+            self.app_account.rsplit("@", 1)[0], server_view=lambda: self._tls_required(which)))
 
     def transport_encrypted(self, which):
         conn = self.admin_connect(self._db(which))

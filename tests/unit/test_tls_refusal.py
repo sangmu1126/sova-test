@@ -336,10 +336,19 @@ def test_mysql_tls_after_the_greeting_and_its_secure_transport_rule(tls, serve):
     assert observation["checks"]["plaintext"]["reason"] == "server_requires_tls"
     login = [b for b in strict.received if b"orders_app" in b][0]
     assert login.endswith(b"orders_app\0\0mysql_native_password\0")  # no password
-    passed, observation = transport_refusals(serve("mysql-optional").endpoint(
-        tls[0], preamble="mysql"), plaintext=mysql_plaintext("orders_app"))
+    optional = serve("mysql-optional").endpoint(tls[0], preamble="mysql")
+    passed, observation = transport_refusals(optional, plaintext=mysql_plaintext("orders_app"))
     assert not passed and observation["accepted"] == ["plaintext"]
-    assert observation["checks"]["plaintext"]["reason"] == "authenticated_in_the_clear"
+    assert observation["checks"]["plaintext"]["reason"] == \
+        "authentication_proceeds_in_the_clear"
+    # MySQL refuses insecure transport only after authentication: the server's
+    # own view decides when the login merely goes on.
+    for view, refused in (({"require_secure_transport": True}, True),
+                          ({"account_requires_tls": True}, True),
+                          ({"require_secure_transport": False}, False)):
+        passed, observation = transport_refusals(
+            optional, plaintext=mysql_plaintext("orders_app", server_view=lambda v=view: v))
+        assert passed is refused, observation["checks"]["plaintext"]
 
 
 def test_a_mysql_server_offering_no_tls_is_not_verified(tls, serve):

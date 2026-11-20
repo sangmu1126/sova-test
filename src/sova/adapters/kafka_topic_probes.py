@@ -413,6 +413,16 @@ class KafkaTopicProbes:
                 equal = restored is not None and {p: [r[1:] for r in rs]
                                                   for p, rs in restored.items()} == strip
         finally:
-            admin.delete_topics([scratch])
-        return equal, {"probe": "restore_drill", "scratch_topic": scratch,
-                       "records": sum(len(r) for r in records.values())}
+            # The admin client's calls are asynchronous: unless their results
+            # are awaited, the client may be gone before the request is sent,
+            # and the copy of the business data stays on the target (#43).
+            removed = True
+            try:
+                for future in admin.delete_topics(
+                        [scratch], operation_timeout=self.timeout).values():
+                    future.result(timeout=self.timeout + 5)
+            except Exception:  # noqa: BLE001 - reported, and the drill does not pass
+                removed = False
+        return equal and removed, {"probe": "restore_drill", "scratch_topic": scratch,
+                                   "scratch_removed": removed,
+                                   "records": sum(len(r) for r in records.values())}

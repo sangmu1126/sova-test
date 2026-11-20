@@ -382,11 +382,16 @@ def side_refusals(tls, side, plaintext):
     return passed, {**observation, "side": side}
 
 
-def mysql_plaintext(user):
-    """A MySQL login as ``user`` without TLS and with an empty password. A
-    server requiring secure transport answers 3159; one that goes on to
-    authenticate in the clear (access denied, a method switch, or OK) serves
-    plaintext. No password is sent."""
+def mysql_plaintext(user, *, server_view=None):
+    """A MySQL login as ``user`` without TLS and with an empty password. No
+    password is sent, so the login never completes - and MySQL checks
+    ``require_secure_transport`` and an account's ``REQUIRE SSL`` only once
+    authentication succeeds (measured: with it on, the login still gets a
+    method switch). So the attempt decides only a refusal before
+    authentication (3159, a closed connection) or a login without password
+    (OK). When authentication merely goes on, the server's own view
+    decides (``server_view()``: ``require_secure_transport``,
+    ``account_requires_tls``); without it that counts as served."""
     def attempt(endpoint):
         try:
             connection = socket.create_connection((endpoint.host, endpoint.port),
@@ -407,16 +412,23 @@ def mysql_plaintext(user):
             return {"outcome": "undecided", "reason": f"exchange_failed:{type(error).__name__}"}
         finally:
             connection.close()
+        if answer[:1] == b"\x00":
+            return {"outcome": "served", "reason": "logged_in_without_password"}
         if answer[:1] == b"\xff":
             code = int.from_bytes(answer[1:3], "little")
             if code == _MYSQL_SECURE_TRANSPORT_REQUIRED:
                 return {"outcome": "refused", "reason": "server_requires_tls", "code": code}
-            if code == 1045:
-                return {"outcome": "served", "reason": "authenticated_in_the_clear", "code": code}
-            return {"outcome": "undecided", "reason": f"server_error:{code}"}
-        if answer[:1] in (b"\x00", b"\x01", b"\xfe"):
-            return {"outcome": "served", "reason": "authentication_continued"}
-        return {"outcome": "undecided", "reason": "unexpected_answer"}
+            if code != 1045:
+                return {"outcome": "undecided", "reason": f"server_error:{code}"}
+        elif answer[:1] not in (b"\x01", b"\xfe"):
+            return {"outcome": "undecided", "reason": "unexpected_answer"}
+        if server_view is None:
+            return {"outcome": "served", "reason": "authentication_proceeds_in_the_clear"}
+        view = server_view()
+        if view.get("require_secure_transport") or view.get("account_requires_tls"):
+            return {"outcome": "refused", "reason": "server_requires_tls_after_authentication",
+                    "server_view": view}
+        return {"outcome": "served", "reason": "authenticates_in_the_clear", "server_view": view}
     return attempt
 
 
