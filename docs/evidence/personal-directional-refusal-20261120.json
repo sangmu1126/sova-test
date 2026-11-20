@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "scope": "Actual dedicated AWS/VM conformance DBs and separate Service; not original app migration",
+  "started_at": "2026-11-20T12:58:52.443185+00:00",
+  "completed_at": "2026-11-20T13:02:00.617045+00:00",
+  "implementation_digest": "acc368a20daa6643ae336a4792d142cbe0d61d6a345617a746e276f7b69faad5",
+  "passed": false,
+  "completed_steps": 14,
+  "expected_steps": 15,
+  "error": {
+    "phase": "reverse commit_route independent readback",
+    "api": "GET EndpointSlices",
+    "exception": "BrokenPipeError -> Kubernetes secure request failed"
+  },
+  "checks": {
+    "nologin_is_not_activation": true,
+    "forward_content_and_sequence_equal": true,
+    "original_app_data_privileges_and_entry_unchanged": true
+  },
+  "original_data_privileges_and_entry_unchanged": true,
+  "trial_writers_disabled": true,
+  "api_stopped": true,
+  "identity_removed": true,
+  "new_strategy_qualification_issued": false,
+  "old_5ad880ee_qualification_valid_for_this_code": false,
+  "business_migration_complete": false,
+  "vm_readonly_diagnostic": {
+    "rke2": {
+      "returncode": 0,
+      "stdout": "active\n",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "memory": {
+      "returncode": 0,
+      "stdout": "               total        used        free      shared  buff/cache   available\nMem:            5910        2341         305         158        3619        3568\nSwap:              0           0           0\n",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "cpu": {
+      "returncode": 0,
+      "stdout": "33.41 35.94 26.16 40/946 252550\n",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "api": {
+      "returncode": 1,
+      "stdout": "",
+      "stderr_sha256": "e85898605216aa54397d28ca7c33334daa832f0073ad8ab63d9ca71984d70926"
+    }
+  },
+  "raw_receipts": [
+    {
+      "path": "readiness-ui-v4-03/readiness/strategy-trial/trial.json",
+      "sha256": "d6e04ea75ff1191020612579d18cb469d075fa1c6b362f7846694f92a66da514"
+    },
+    {
+      "path": "readiness-ui-v4-03/result.json",
+      "sha256": "899e37e13ce20f151642a8be5c7b6680c2c480b32cd85c06edb19b032a823c87"
+    },
+    {
+      "path": "readiness-ui-v4-03/readiness/directional-trial.stderr",
+      "sha256": "50084fcbf3be59c461b87cc4902d49c481d533c024ccceb9e5d11c0c9437e50a"
+    }
+  ]
+}

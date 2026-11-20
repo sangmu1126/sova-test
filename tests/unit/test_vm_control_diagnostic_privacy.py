@@ -3,6 +3,8 @@
 from datetime import UTC, datetime, timedelta
 import importlib.util
 import json
+import os
+import stat
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -31,12 +33,18 @@ def test_failed_remote_projection_does_not_echo_or_persist_partial_token(tmp_pat
     monkeypatch.setattr(module.subprocess, "run", failed)
     monkeypatch.setattr("sys.argv", ["connect_vm_control_api", "--inputs", str(inputs),
                                     "--known-hosts", str(tmp_path / "known_hosts"), "--output", str(output)])
-    with pytest.raises(RuntimeError) as error:
-        module.main()
+    previous_mask = os.umask(0o077)
+    try:
+        with pytest.raises(RuntimeError) as error:
+            module.main()
+    finally:
+        os.umask(previous_mask)
     captured = capsys.readouterr()
     assert partial.decode() not in str(error.value) + captured.out + captured.err
     assert all(partial not in p.read_bytes() for p in output.iterdir())
     assert not (output / "route.token").exists()
     assert (output / "private-projection.stderr").read_bytes() == b"synthetic API refusal"
+    assert stat.S_IMODE((output / "private-projection.stderr").stat().st_mode) == 0o600
+    assert stat.S_IMODE(output.stat().st_mode) == 0o700
     metadata = json.loads((output / "projection-refusal.json").read_text())
     assert metadata["ready"] is False and metadata["stdout_retained"] is False

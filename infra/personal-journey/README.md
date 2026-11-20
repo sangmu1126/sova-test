@@ -27,3 +27,14 @@ AMI는 [AWS의 공용 SSM 파라미터](https://docs.aws.amazon.com/AWSEC2/lates
 DB의 실제 data directory와 컨테이너 mount, 원본 NVMe serial/EBS attachment, 목적지 Pod/PVC/PV/LUKS를 각각 대조한다. 보관 백업과 authority witness는 별도 파일·장치·SHA를 확인한다. 다른 장치·재생성된 namespace·다른 DB·바뀐 백업은 거부한다. 실제 파일의 크기·변경과 수집 코드의 변경도 검사한다.
 
 이 결과는 독립 검증자나 실행 gate에 바로 넣는 PASS 문서가 아니다. 모든 사본·로그 수신처·국가 위치·AI 처리·보관 기간·복구가 확인된 것이 아니므로 `residency_obligation_satisfied`와 `migration_authorized`는 false로 남는다. [실제 측정과 한계](../../docs/evidence/personal-category-placement-20261120.json).
+
+
+## 부분 변경 관측의 영속 저장
+
+`prepare_observer_role.py`는 기존 강제 RLS의 소유 control DB에 **새 관측 역할 하나**를 만든다. 기존 역할을 재사용·초기화하거나 권한을 넓히지 않는다. private 입력·연결 파일과 새 출력 폴더가 필요하다. 정확한 DB system ID와 기존 RLS를 먼저 검사하며, 비밀번호를 출력하지 않는다. 이 역할에만 적용되는 restrictive 정책이 tenant/app/source/수집기/종류/기한을 고정한다. watermark·registry 주장·계획/효과·자체 변경 원인 주장·업무 DB 접근은 허용하지 않는다. 검증 실패 시 새 역할의 LOGIN을 닫고 원문은 보존한다.
+
+`qualify_durable_change_observers.py`는 `--collector-directory`의 검증된 전용 역할을 필수로 사용한다. 운영자용 `--control-directory`는 전후 계획/작업/효과 조회에만 따로 사용한다. 새 scratch DB에서 실제 스키마 변경을 만들고 실제 AWS 이력과 함께 저장·재조회한다. **운영자 인수 하네스**이므로 scratch 생성용 source 관리자 자격도 사용하며, 일반 수집 서비스 배포를 뜻하지 않는다. 역할 생성 후의 인수 검사이며 운영 자동 실행 명령으로 노출하지 않는다.
+
+`qualify_observer_expiry.py`는 기존 기한이 20분 이내일 때만 시작한다. 실제 TLS 세션에서 사전 관측 조회를 positive control로 확인한 뒤, 시계나 기한을 바꾸지 않고 기존 연결의 기한 이후 읽기/추가 거부를 시험한다. INSERT는 항상 rollback한다. 비밀번호 만료만으로 기존 연결이 닫힌다고 가정하지 않는다.
+
+관측의 저장과 모든 변경의 수집 보증은 별개다. 이 도구들은 환경 watermark나 실제 이전 PASS를 발행하지 않는다. [실제 권한·저장·실패 기록](../../docs/development/personal-change-feed-integration-2026-11-20.md).
