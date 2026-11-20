@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "scope": "Personal public-source Harbor 0.26.0 container boundary and independent verifier; not actual model or production provider qualification",
+  "actual_model_called": false,
+  "production_admitted": false,
+  "promotion_approved": false,
+  "upstream_framework_files_modified": false,
+  "upstream_extension": "custom environment import path",
+  "environment_extension": "harbor_provider:InspectedDockerEnvironment",
+  "helper_image": {
+    "observed_at": "2026-11-19T23:57:31.001732+00:00",
+    "actual_image_id": "sha256:a53697aac3b133f389ed93fb43ddf2f1d173c74422a01a965f1e428c395b62e2",
+    "counts": {
+      "UNKNOWN": 0,
+      "LOW": 0,
+      "MEDIUM": 0,
+      "HIGH": 0,
+      "CRITICAL": 0
+    },
+    "entrypoint": null,
+    "kernel_probe_and_network_sidecar_same_image": true,
+    "source_rebuild_receipt_sha256": "b13711cee580ffe58970405d4a1b6be0bad29d95442999677a474818f368ce7c",
+    "provider_qualified": false
+  },
+  "upstream_source": {
+    "repository": "https://github.com/go-gost/gost",
+    "tag": "v3.3.3",
+    "commit": "3d514c57230bfa524aa89087da5580b314f1cd36",
+    "module_versions": {
+      "golang.org/x/crypto": {
+        "Version": "v0.59.0",
+        "Time": "2026-11-11T07:23:42Z",
+        "Origin": {
+          "VCS": "git",
+          "URL": "https://go.googlesource.com/crypto",
+          "Hash": "6c966a7517bfc4fa0f268afb1fe663013ed932a5",
+          "Ref": "refs/tags/v0.59.0"
+        }
+      },
+      "golang.org/x/net": {
+        "Version": "v0.63.0",
+        "Time": "2026-11-17T18:09:36Z",
+        "Origin": {
+          "VCS": "git",
+          "URL": "https://go.googlesource.com/net",
+          "Hash": "e573c118f8a9bddf68306f814cd38dbe11bf7b10",
+          "Ref": "refs/tags/v0.63.0"
+        }
+      }
+    }
+  },
+  "network_boundary": {
+    "scope": "actual public-source Harbor container boundary probe; not penetration test or VM isolation",
+    "uid": 10001,
+    "interfaces": [
+      {
+        "name": "lo",
+        "flags": 9,
+        "operstate": "unknown"
+      },
+      {
+        "name": "tunl0",
+        "flags": 128,
+        "operstate": "down"
+      },
+      {
+        "name": "gre0",
+        "flags": 128,
+        "operstate": "down"
+      },
+      {
+        "name": "gretap0",
+        "flags": 4098,
+        "operstate": "down"
+      },
+      {
+        "name": "erspan0",
+        "flags": 4098,
+        "operstate": "down"
+      },
+      {
+        "name": "ip_vti0",
+        "flags": 128,
+        "operstate": "down"
+      },
+      {
+        "name": "ip6_vti0",
+        "flags": 128,
+        "operstate": "down"
+      },
+      {
+        "name": "sit0",
+        "flags": 128,
+        "operstate": "down"
+      },
+      {
+        "name": "ip6tnl0",
+        "flags": 128,
+        "operstate": "down"
+      },
+      {
+        "name": "ip6gre0",
+        "flags": 128,
+        "operstate": "down"
+      }
+    ],
+    "non_loopback_interfaces_up": false,
+    "ipv4_routes": [],
+    "effective_capabilities": 0,
+    "no_new_privileges": true,
+    "docker_socket_present": false,
+    "cloud_or_model_credentials_present": false,
+    "loopback_positive_control": true,
+    "actual_connections": [
+      {
+        "target": "169.254.169.254",
+        "port": 80,
+        "errno": 101,
+        "no_route": true
+      },
+      {
+        "target": "1.1.1.1",
+        "port": 443,
+        "errno": 101,
+        "no_route": true
+      }
+    ],
+    "passed": true
+  },
+  "independent_verifier": {
+    "passed": true,
+    "checks": {
+      "exact_limit": true,
+      "aggregate_limit": true,
+      "single_chunk_limit": true,
+      "declared_limit": true,
+      "duplicate_length": true,
+      "invalid_length": true,
+      "length_mismatch": true,
+      "deadline": true,
+      "disconnect": true,
+      "websocket_passthrough": true
+    },
+    "candidate_sha256": "f89d565412889ff8a92319231d35e8ce86e5561fe52649576d8d61a89e29d648",
+    "candidate_executed": true,
+    "operational_qualification": false
+  },
+  "oracle_reward": 1.0,
+  "exception": null,
+  "previous_failure_preserved": "Trial 06 incorrectly required the interface list to contain only lo. Inactive kernel tunnel placeholders were DOWN and real connections already returned ENETUNREACH; revised test requires no UP external links, no routes and real denial. Original task bytes restored and verified against the original binding.",
+  "previous_import_failure_preserved": true,
+  "helper_binding_unit_tests": 10,
+  "raw_sha256": {
+    "harbor-helper-runtime-02/result.json": "0f9da796151ce6ee7ee1b20c727c0170dadd70db723f00c3aff723b2753837e8",
+    "harbor-helper-runtime-02/scan.json": "45a4bd2a1cff9aedfc5c3926a402ac82b248c96ee653c4160f448e0f1adc93d9",
+    "harbor-gost-rebuild-01/upstream.json": "c895c3e501833255164a4620aa0066c55710e72a5f154c081330501616cc4844",
+    "harbor-gost-rebuild-01/result.json": "b13711cee580ffe58970405d4a1b6be0bad29d95442999677a474818f368ce7c",
+    "harbor-execution-04/qualified-binding-02.json": "a6fa882950d39c5b3160da784c16fabf63837cdf85b01862486cfda530c9e0c4",
+    "harbor-execution-04/oracle-run-03.json": "0284b8d4760df4ec9eb7f8de5ece7066e4bd03cb9c3a2dfdac9463408a65ca8e",
+    "harbor-execution-04/jobs/sova-public-boundary-20261120-07/task-02__8ntL5wC/result.json": "63d27f49d93e4ec5e11bfbb5b57f159c5bf6dbb8701d84397bfd3c537d2c1682",
+    "harbor-execution-04/jobs/sova-public-boundary-20261120-07/task-02__8ntL5wC/agent/oracle.txt": "01446c56d0ee828278c1d808571ed939bca61d1e293cfcce3fae2904c8576852",
+    "harbor-execution-04/jobs/sova-public-boundary-20261120-07/task-02__8ntL5wC/verifier/result.json": "d7b740ec384f2b90b2ed5787be013d936b1e5aecf1139ccb7316612c7833d751"
+  },
+  "remaining": [
+    "Actual model invocation is explicitly on hold",
+    "No claim of VM/microVM isolation or complete penetration test",
+    "Container runtime and host compromise remain outside this limited qualification",
+    "No automatic production image promotion or application patch deployment"
+  ]
+}

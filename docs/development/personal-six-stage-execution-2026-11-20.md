@@ -152,3 +152,24 @@
 - 공식 GOST 후보: https://github.com/go-gost/gost/releases/tag/v3.3.3
 
 6단계 전체 완료는 아니다. 완전한 writer/controller 조사·외부 변경 수집 보증, 항목별 위치 관측, 실행 검증자 신뢰 인수, 원래 앱의 native 승인/이전/신규 쓰기/복귀/연속성, 실제 AI 실행과 전체 공급자 격리, 앱 내부 OTel/운영 backend/TCO는 별도로 남아 있다. 모델 호출은 이전 보류 때문에 자동 승인 검토가 거절했고, 현재 일회성 공개 소스 시험 승인 답변을 기다린다. 이를 우회하지 않는다.
+
+
+### 18:03 KST 재개 · 사용자 보류와 시험 창 구분
+
+사용자는 실제 모델 호출과 제어기 우선순위 변경을 계속 보류했다. 다른 세션 컨테이너의 사용 여부도 미확정이므로 중지·제한하지 않는다. 재개 시각의 CPU는 이전 약 660%와 달리 두 컨테이너 합계 약 81%로 읽혔으며 다른 세션 작업 완료를 의미하지 않는다.
+
+- 이전 10:20 시험 창은 실제 종료됐다. 개인 EC2는 stopped, 기존 암호화 EBS는 그대로였다. 소유 VM은 실행 중이며 샌드박스 안의 Broken 표시는 boot-session sysctl 접근 제한 때문이었다. 외부 읽기 확인에서는 Running이었다.
+- 새 창은 **오늘 22:20 KST**까지다. 키·비밀번호·이미지·업무 데이터를 보존하고 새 인증서/앱 만료를 명시했다. source 갱신은 데이터 각 1건 유지, target의 v3→v4 Secret 교체 2개가 성공했다. 실제 원장 계획·작업·효과 0개를 먼저 검사했다. CA 개인 키는 재사용했으므로 키 회전이라고 하지 않는다.
+- 새 `caffeinate -di -t28800` PID 6971을 시작했고 화면/잠자기 방지 assertion을 확인했다. 이 assertion은 외부 종료·절전·입력 대기 없이 작업이 계속된다는 보증이 아니다. 이전 만료 후 시간을 무중단 작업 시간으로 계산하지 않는다.
+- 옛 VPN은 VM에서 10:20:01에 인터페이스·private key를 정리했고 공개 상태만 남았다. EC2 재기동 후에도 인터페이스·전용 iptables 흔적은 없었고 연결 컨테이너는 stopped였다. 과거 계획과 완전히 일치하는 만료 UDP /32 규칙 1개만 회수하고 0개 readback을 확인했다. 옛 자료·컨테이너·이미지·데이터는 삭제하지 않았다.
+- 새 VPN 준비는 만료/제거가 확인된 공개 상태만 별도 보존한다. 시간대별 타이머·연결 컨테이너 이름과 정확한 만료 binding으로 이전 타이머가 새 연결에 작용하지 않도록 한다. 실제 변경 전 새 proposal과 코드 SHA를 다시 고정한다.
+
+### 18:11–18:20 · 실제 Harbor 컨테이너 경계와 별도 verifier
+
+[검증 근거](../evidence/personal-harbor-boundary-20261120.json)
+
+- 공식 GOST v3.3.3 고정 commit에서 Go 1.27.4, x/crypto v0.59.0, x/net v0.63.0을 사용하고 Go 모듈 무결성 검사를 통과했다. 고정 Alpine base와 vendor 보안 버전으로 만든 helper `a53697aa…`는 전체 심각도 0건이다. 코드·go.mod·go.sum·원본 scan의 SHA를 보존했다.
+- 설치된 Harbor wheel은 수정하지 않았다. 공개 custom environment 인터페이스에서 고정 helper만 선택하고 커널 probe도 같은 검사된 이미지로 실행한다. private config·scan/hash/DB 기한·실제 이미지/레이어를 재검사한다. public 또는 allowlist로의 확대는 이 개인 자격 범위에서 거부한다.
+- 실제 guest UID 10001, effective capabilities 0, no-new-privileges, Docker socket/클라우드·모델 키 부재, loopback TCP positive control, 외부 활성 링크/IPv4 경로 부재를 확인했다. metadata IP와 외부 HTTPS IP로의 실제 TCP 연결은 ENETUNREACH였다. 악성코드 침투시험이나 VM 격리를 수행했다고 하지 않는다.
+- 별도 verifier는 검토한 패치만 실행하고 10개 동작 시험 통과, Harbor reward 1.0과 exception 없음까지 확인했다. **Oracle의 정해진 패치 시험이며 실제 AI 모델/에이전트 판정은 아니다.** 운영 승격·앱 패치 배포는 수행하지 않았다.
+- 첫 실행의 의존성 경로 누락과, 두 번째 실행에서 DOWN 상태인 커널 터널 placeholder까지 실패로 본 시험 오류를 보존했다. 기존 task 원문은 이전 hash와 대조해 복원했고 새 task 복사본에서 조건을 바로잡았다. CLI exit 0만으로 PASS 처리하지 않았다.
