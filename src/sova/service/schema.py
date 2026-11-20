@@ -52,6 +52,7 @@ MIGRATIONS = (
     "postgres_registry_change_outbox_v1.sql",
     "postgres_registry_change_barrier_v1.sql",
     "postgres_registry_change_bindings_v1.sql",
+    "postgres_verifier_grant_impact_v1.sql",
 )
 # (table, columns) the runtime role may UPDATE; None means the whole row.
 RUNTIME_UPDATES = (
