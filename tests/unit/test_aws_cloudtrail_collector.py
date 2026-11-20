@@ -123,3 +123,106 @@ def test_partial_history_is_bounded_without_advancing_or_dropping_events():
     with pytest.raises(ContractError, match="bound"):
         c.poll()
     assert feed.advanced == [] and feed.recorded == []
+
+
+def test_one_aws_event_invalidates_every_registered_resource_binding():
+    history, feed, now = History(), Feed(), [T0]
+    at = T0 - timedelta(minutes=1)
+    history.add("ModifyDBInstance", "orders-bucket", at, event_id="shared-event")
+    history.add("ModifyDBInstance", "orders-db", at, event_id="shared-event")
+    c = collector(history, feed, now)
+    events = c.poll()
+    assert {e.subject for e in events} == {"uid-bucket", "uid-db"}
+    assert len({e.event_id for e in events}) == 2
+    assert c.poll() == () and len(feed.recorded) == 2
+    assert feed.advanced == []
+
+
+def test_one_aws_event_preserves_both_environment_scopes():
+    history, feed = History(), Feed()
+    at = T0 - timedelta(minutes=1)
+    for resource in ("source-resource", "target-resource"):
+        history.add("ModifyDBInstance", resource, at, event_id="shared-event")
+    c = AwsCloudTrailCollector(
+        feed, cloudtrail=history, clock=lambda: T0, tenant_id="tenant-a",
+        application_id="orders", collector_id="collector",
+        resources={"source-resource": ("aws-source", "uid-source"),
+                   "target-resource": ("aws-target", "uid-target")})
+    assert {(e.environment_id, e.subject) for e in c.poll()} == {
+        ("aws-source", "uid-source"), ("aws-target", "uid-target")}
+
+
+def test_aliases_for_the_same_physical_binding_are_not_duplicate_changes():
+    history, feed = History(), Feed()
+    for alias in ("resource-name", "resource-alias"):
+        history.add("ModifyDBInstance", alias, T0 - timedelta(minutes=1), event_id="shared-event")
+    c = AwsCloudTrailCollector(
+        feed, cloudtrail=history, clock=lambda: T0, tenant_id="tenant-a",
+        application_id="orders", collector_id="collector",
+        resources={name: ("aws-source", "uid-source")
+                   for name in ("resource-name", "resource-alias")})
+    assert len(c.poll()) == 1 and len(feed.recorded) == 1
+
+
+def test_restart_replay_of_a_durable_event_is_not_reported_as_new():
+    class DurableFeed(Feed):
+        def record(self, event, *, collector_id):
+            if event in self.recorded:
+                return False
+            self.recorded.append(event)
+            return True
+
+    history, feed, now = History(), DurableFeed(), [T0]
+    history.add("PutBucketPolicy", "orders-bucket", T0 - timedelta(minutes=1))
+    first = collector(history, feed, now)
+    assert len(first.poll()) == 1
+    restarted = collector(history, feed, now)
+    assert restarted.poll() == ()
+    assert len(feed.recorded) == 1 and feed.advanced == []
+
+
+def test_changed_binding_on_replay_is_refused_without_a_watermark():
+    history, feed, now = History(), Feed(), [T0]
+    history.add("PutBucketPolicy", "orders-bucket", T0 - timedelta(minutes=1))
+    c = collector(history, feed, now)
+    assert len(c.poll()) == 1
+    history.events[0]["EventName"] = "CreateBucket"
+    with pytest.raises(ContractError, match="binding changed"):
+        c.poll()
+    assert len(feed.recorded) == 1 and feed.advanced == []
+
+
+def test_a_failed_durable_append_can_be_retried_without_losing_the_binding():
+    class BrokenOnce(Feed):
+        def record(self, event, *, collector_id):
+            if not hasattr(self, "failed"):
+                self.failed = True
+                raise ConnectionError("test append failure")
+            self.recorded.append(event)
+            return True
+
+    history, feed, now = History(), BrokenOnce(), [T0]
+    history.add("PutBucketPolicy", "orders-bucket", T0 - timedelta(minutes=1))
+    c = collector(history, feed, now)
+    with pytest.raises(ConnectionError):
+        c.poll()
+    assert c.seen == {}
+    assert len(c.poll()) == 1 and len(feed.recorded) == 1 and feed.advanced == []
+
+
+def test_committed_append_with_lost_reply_is_recovered_without_a_second_event():
+    class ReplyLost(Feed):
+        def record(self, event, *, collector_id):
+            if event in self.recorded:
+                return False
+            self.recorded.append(event)
+            raise ConnectionError("test response lost after durable commit")
+
+    history, feed, now = History(), ReplyLost(), [T0]
+    history.add("PutBucketPolicy", "orders-bucket", T0 - timedelta(minutes=1))
+    first = collector(history, feed, now)
+    with pytest.raises(ConnectionError):
+        first.poll()
+    assert first.seen == {} and len(feed.recorded) == 1
+    assert collector(history, feed, now).poll() == ()
+    assert len(feed.recorded) == 1 and feed.advanced == []

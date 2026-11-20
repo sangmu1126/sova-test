@@ -8,6 +8,7 @@ invalidation; absent events never mean that the environment was unchanged.
 """
 
 from datetime import timedelta
+import hashlib
 import json
 
 from sova.domain.change_impact import ChangeEvent, ChangeKind
@@ -62,7 +63,9 @@ class AwsCloudTrailCollector:
         self.resources = dict(resources)
         self.delivery_lag, self.lookback = delivery_lag, lookback
         self.marks = {}
-        self.seen = {}  # event ID -> event time, for events after the watermark
+        # One provider event may affect multiple registered resources, even in
+        # different environments. Dedupe the binding, never the provider ID alone.
+        self.seen = {}
 
     def _since(self, environment, now):
         if environment not in self.marks:
@@ -87,16 +90,23 @@ class AwsCloudTrailCollector:
                         continue
                     if json.loads(event.get("CloudTrailEvent") or "{}").get("errorCode"):
                         continue  # AWS refused the call: nothing changed
-                    if event["EventId"] in self.seen:
-                        continue  # looked at again because it is after the watermark
+                    binding = (event["EventId"], environment, uid)
+                    binding_digest = hashlib.sha256(json.dumps(
+                        binding, separators=(",", ":"), ensure_ascii=True,
+                    ).encode()).hexdigest()
                     change = ChangeEvent(
-                        f"{self.collector_id}:cloudtrail:{event['EventId']}", self.tenant_id,
+                        f"{self.collector_id}:cloudtrail-v2:{binding_digest}", self.tenant_id,
                         self.application_id, classify(event["EventName"]), environment, uid,
                         None, event["EventTime"], cause)
+                    if binding in self.seen:
+                        if self.seen[binding] != change:
+                            raise ContractError("CloudTrail event binding changed on replay")
+                        continue
                     if len(self.seen) >= 10000:
                         raise ContractError("Partial observation history exceeds its bound; coverage remains unknown")
-                    self.feed.record(change, collector_id=self.collector_id)
-                    self.seen[event["EventId"]] = change.observed_at
-                    recorded.append(change)
+                    inserted = self.feed.record(change, collector_id=self.collector_id)
+                    self.seen[binding] = change
+                    if inserted is not False:
+                        recorded.append(change)
         # Observation progress cannot certify that every earlier change arrived.
         return tuple(recorded)
