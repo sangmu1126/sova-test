@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "recorded_at": "2026-11-20T10:36:39.691118+00:00",
+  "scope": "Personal AWS account 265233844540 and owned Lima VM only",
+  "run_id": "b0be270e62",
+  "deadline": "2026-11-20T13:20:00+00:00",
+  "source_bridge": {
+    "restart_only_recovered": false,
+    "cause": "The internal CNI network has no host IPv4 by design. Previously added host-only operator bridge address and restrictive host rules were ephemeral and absent after EC2 resume.",
+    "existing_scoped_helper_sha256": "91c3c2ef44de7b7367aeaa1750e13df6809556d1fcec50672f5a09ef5955c4c9",
+    "actual_restoration": "Success",
+    "public_listener_or_default_container_route_added": false,
+    "new_container_to_host_and_forwarded_egress": "DROP",
+    "new_renew_source_embedding": "unit tested; entire updated renewal command not replayed on live source"
+  },
+  "actual_tls_paths": 4,
+  "vpn_denied_ports": [
+    22,
+    6443,
+    5433
+  ],
+  "source_database_identity_preserved": "7709720208587968539",
+  "source_rows": [
+    1,
+    1,
+    1
+  ],
+  "target_rows": [
+    0,
+    0,
+    0
+  ],
+  "ledger": {
+    "migration_hashes_verified": 28,
+    "roles_verified": [
+      "owner",
+      "runtime"
+    ],
+    "plans": 0,
+    "operations": 0,
+    "effects": 0,
+    "schema_or_passwords_changed": false
+  },
+  "entry": {
+    "secret_from": "orders-entry-tls-v3",
+    "secret_to": "orders-entry-tls-v4",
+    "source_and_target_rollouts": true,
+    "images_config_policy_selector_changed": false,
+    "actual_http_sides": [
+      "source_orders",
+      "source_orders",
+      "source_orders"
+    ],
+    "denied_queries": {
+      "secret_read": 403,
+      "other_service_read": 403,
+      "other_namespace": 403
+    }
+  },
+  "witness": {
+    "started_at": "2026-11-20T10:33:26.660296+00:00",
+    "checks": {
+      "original_shell_command_is_replaced_by_forced_protocol": true,
+      "stdio_forward_to_kubernetes_refused": true,
+      "kubeconfig_unreadable": true,
+      "business_pgdata_unreadable": true,
+      "wrong_encrypted_mapper_refused_before_file_access": true,
+      "native_ledger_backend_reads_same_actual_record": true
+    },
+    "passed": true,
+    "business_authority_changed": false,
+    "worm_qualified": false,
+    "completed_at": "2026-11-20T10:33:35.374345+00:00",
+    "implementation_digest": "5ad880ee7a0469357eaddc3315796f18677ade62dc33b41d5df80bdebb9dc89e",
+    "probe_application_id": "witness-boundary-73755cab2439463a813f03f080a3d2b7",
+    "probe_unit_digest": "bac383892ff31d617e1259a2f4c841d6ff5f9307f1558b7ea95a0ba33b47b72a",
+    "driver_sha256": "3169e661dcf5656c78de4a25b5a80ff3504a64f464613509f56b7ea766d5b7fb"
+  },
+  "model_invocation": "DEFERRED_BY_USER",
+  "vm_priority_experiment": "DEFERRED_BY_USER",
+  "other_session_containers_changed": false,
+  "business_migration_admitted": false,
+  "continuity_qualified": false,
+  "raw_receipts": {
+    "resume-1803/source-network-recovery-01/result.json": "0fb9f28defe685c3851a9abd70c9e6c68e4a05474ab9e58fd64bcb6044e0b7de",
+    "resume-1803/source-network-diagnostic-02/result.json": "f01a8536a4e850f13cad27692a99dbdf2d89f7d84938002243759cd9e80c5fec",
+    "resume-1803/source-operator-bridge-restoration-01/result.json": "ccde9d4ed40e54b62fc1e8dda05fcc9637e641742f6a8e41a70604a7958c3d19",
+    "wireguard-connections-v4-02/connections.json": "53e19dc6cd3096f6ddd95db6aa1d14bd15f735145539237028ba9bf762cecbba",
+    "personal-control-db-04/result.json": "485dcb14defe8fdeb69651f49458c86bf452117e2f8cb6b165fbc91bd8316f4b",
+    "entry-tls-renewal-v4-01/result.json": "0f1c86d0844f9c61b33b5dc52d64f9179a39d41889d7c8ee968021adc5721059",
+    "entry-observation-v4-01.json": "222e6a33f70ab2a86b5c3186d9bb86c8996a029699e7113a06a6ac179e30c07c",
+    "physical-vm-witness-verification-04.json": "9a57445a9a8e38fba6de368ab9bfeda8f74418ba10e86202f997fff853dbf947"
+  }
+}

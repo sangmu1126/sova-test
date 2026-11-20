@@ -173,3 +173,16 @@
 - 실제 guest UID 10001, effective capabilities 0, no-new-privileges, Docker socket/클라우드·모델 키 부재, loopback TCP positive control, 외부 활성 링크/IPv4 경로 부재를 확인했다. metadata IP와 외부 HTTPS IP로의 실제 TCP 연결은 ENETUNREACH였다. 악성코드 침투시험이나 VM 격리를 수행했다고 하지 않는다.
 - 별도 verifier는 검토한 패치만 실행하고 10개 동작 시험 통과, Harbor reward 1.0과 exception 없음까지 확인했다. **Oracle의 정해진 패치 시험이며 실제 AI 모델/에이전트 판정은 아니다.** 운영 승격·앱 패치 배포는 수행하지 않았다.
 - 첫 실행의 의존성 경로 누락과, 두 번째 실행에서 DOWN 상태인 커널 터널 placeholder까지 실패로 본 시험 오류를 보존했다. 기존 task 원문은 이전 hash와 대조해 복원했고 새 task 복사본에서 조건을 바로잡았다. CLI exit 0만으로 PASS 처리하지 않았다.
+
+### 19:24 이후 · 재시작 이후 실제 연결과 원장 보존
+
+[실제 갱신 근거](../evidence/personal-window-renewal-20261120.json)
+
+- 개인 EC2 재개 뒤 내부 CNI 브리지에는 의도적으로 host IPv4가 없었다. 이전 시험에서 추가한 host-only 운영 연결 주소와 제한 규칙은 재부팅 후 사라졌다. 컨테이너 정상 종료·기동만으로 해결되지 않은 첫 실패를 보존했다. 전역 라우트나 방화벽 초기화 대신 기존 `source_operator_bridge.py`의 네트워크 ID·두 컨테이너·정확한 subnet/미적용 상태 검사를 재사용해 주소와 발신 차단을 함께 복원했다. DB system ID와 1/1/1행은 보존됐다.
+- 실제 AWS/VM 앱·DB TLS 네 경로와 VPN 미허용 세 포트 거부를 재확인했다. 제어 DB의 기존 두 계정에서 28개 migration 이름·SHA, TLS, 비superuser·RLS 우회 불가, 계획·작업·효과 0건을 확인했다. 비밀번호·스키마를 재설정하지 않고 새 private DSN만 만들었다.
+- 진입점 두 Deployment의 TLS Secret만 v3→v4로 갱신했다. 원본·대상 backend ConfigMap, 이미지, NetworkPolicy, Service UID/selector를 보존했다. 실제 HTTPS 세 번은 모두 source_orders였고 Secret/다른 Service/다른 namespace 조회는 403이었다. 인증서 갱신을 이전 완료로 세지 않는다.
+- 강제 명령 증인은 기존 키·기록을 보존해 재개했다. 실제 기록 추가/조회 외에 셸 대체, API forwarding 거부, kubeconfig·PGDATA 접근 거부, 다른 mapper 거부, 원장에서 같은 기록 조회의 여섯 경계가 통과했다. WORM·VM 장애 생존을 주장하지 않는다.
+- 사후 갱신 코드는 내부 bridge 주소가 없을 때에만 기존 검사 도구를 재사용한다. 기존 주소나 방화벽 상태가 예상과 다르면 거부한다. 전체 갱신 shell은 문법/거부 시험이며, 복구 helper 자체와 후속 TLS는 실환경에서 실행했다. 새 전체 갱신 명령을 운영 자격으로 합치지 않는다.
+- 소유권·세대·Secret 범위·두 Deployment 사전 검사·다른 bridge 주소 거부 시험 10개 통과. 별도 계약 갱신 시험 3개 통과. 기존 도구 경계 19개와 별개 결과다.
+- 기동 전 image 참조 형식 오류와, 기존 Keycloak의 관리자 인증 timeout으로 실패한 실제 브라우저 준비 기록을 보존했다. 후자는 API 미기동이며 실제 승인/등록 성공이 아니다. 해당 실행의 컨테이너·네트워크 정리를 확인했다.
+- 사용자가 보류한 실제 모델 호출과 VM nice/우선순위 변경은 수행하지 않았다. 다른 두 세션 컨테이너는 조회만 했다. 현재 EC2·인증서·VPN의 유효기한은 11/20 22:20 KST이고 자동 연장하지 않는다.
