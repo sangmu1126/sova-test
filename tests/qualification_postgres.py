@@ -209,7 +209,12 @@ def main():
     # The worker regression fixtures leave their many tiny databases for the
     # run-owned container to dispose of. Account for template DBs and WAL, not
     # only business rows; never reset a shared database to make room.
-    data_mib, memory_mib = (1024, 1536) if args.suite in ("worker", "startup", "restore") else (384, 512)
+    if args.suite in ("service", "runtime", "worker", "startup"):
+        # The expanded native handoff/failback regressions retain their many
+        # tiny DBs until owned-container cleanup. The measured 384 MiB filled.
+        data_mib, memory_mib = 2048, 2560
+    else:
+        data_mib, memory_mib = (1024, 1536) if args.suite == "restore" else (384, 512)
     report.update(data_tmpfs_mib=data_mib, container_memory_mib=memory_mib)
     report["source_commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
     report["security_source_commit"] = subprocess.check_output(
@@ -232,10 +237,20 @@ def main():
                       "tests/unit/test_database_writer_credentials.py",
                       "tests/integration/test_service_control_plane.py",
                       "tests/integration/test_order_service_journey.py",
-                      "tests/integration/test_service_worker.py"))
+                      "tests/integration/test_service_worker.py",
+                      "tests/integration/test_verifier_grant_impact.py",
+                      "tests/integration/test_postgres_real_handoff.py",
+                      "tests/integration/test_postgres_change_feed.py",
+                      "tests/security/integration/test_postgres_verifier_registry.py"))
         measured_sources.extend([*sorted((root / "src/sova/service").glob("*.py")),
                                  root / "tests/qualification_service.py",
                                  root / "tests/contract_world.py", root / "tests/control_plane_support.py",
+                                 root / "tests/handoff_support.py", root / "tests/handoff_drive.py",
+                                 root / "tests/qualification_fixture_placement.py", root / "tests/qualification_fixture_clock.py",
+                                 root / "tests/worker_crash_child.py",
+                                 root / "tests/integration/test_postgres_logical_replication.py",
+                                 root / "tests/qualification_worker.py",
+                                 root / "src/sova/adapters/sql/postgres_verifier_grant_impact_v1.sql",
                                  *(root / test for test in tests[2:])])
     if args.suite in ("runtime", "worker", "startup"):
         tests.append("tests/integration/test_service_runtime_journey.py")
