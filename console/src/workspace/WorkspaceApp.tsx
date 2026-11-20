@@ -13,6 +13,8 @@ import {
 import { api, initialize, login, logout, currentConfig } from "./auth";
 import type { Identity } from "./auth";
 import { OperationalPanel } from "./OperationalPanel";
+import { checkedBlockers, PlanBlockers } from "./PlanBlockers";
+import type { PlanBlocker } from "./PlanBlockers";
 import { TrustPanel } from "./TrustPanel";
 import { NativePlanView } from "../features/native/NativePlanPanel";
 import { nativeStatus } from "../features/native/status";
@@ -78,6 +80,11 @@ export function WorkspaceApp() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [compilationHold, setCompilationHold] = useState<{
+    application: string;
+    subject: string;
+    items: PlanBlocker[];
+  } | null>(null);
   const [tab, setTab] = useState("plan");
   const [catalog, setCatalog] = useState<Record<string, Page<Item>>>({});
   const [application, setApplication] = useState("");
@@ -257,6 +264,7 @@ export function WorkspaceApp() {
     setBusy(true);
     setError("");
     setNotice("");
+    setCompilationHold(null);
     try {
       await action();
       setNotice(success);
@@ -455,6 +463,11 @@ export function WorkspaceApp() {
               {notice}
             </div>
           )}
+          {identity &&
+            compilationHold?.subject === identity.subject &&
+            compilationHold.application === application && (
+              <PlanBlockers items={compilationHold.items} />
+            )}
           {!identity ? (
             <section className="native-card">
               <h2>{loading ? "인증 확인 중" : "사용자 로그인"}</h2>
@@ -809,7 +822,14 @@ export function WorkspaceApp() {
                           },
                         );
                         if (result.status !== "COMPILED" || !result.plan_id) {
-                          setNotice(JSON.stringify(result.blockers || result));
+                          const items = checkedBlockers(result.blockers);
+                          if (context.current.application !== application)
+                            return;
+                          setCompilationHold({
+                            application,
+                            subject: identity!.subject,
+                            items,
+                          });
                           throw new Error(
                             "계획 생성이 보류됐습니다. 등록·자격·의존성 근거를 확인하세요.",
                           );

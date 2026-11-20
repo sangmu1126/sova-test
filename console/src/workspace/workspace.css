@@ -170,3 +170,36 @@
   color: #61789a;
   background: #f5f8fe;
 }
+.plan-blockers {
+  margin-bottom: 24px;
+  border-color: #f1c3ab;
+}
+.plan-blockers ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 14px;
+  padding: 0;
+  list-style: none;
+}
+.plan-blockers li {
+  padding: 16px;
+  border: 1px solid #f3d8c9;
+  border-radius: 12px;
+  background: #fffaf6;
+}
+.plan-blockers li strong {
+  color: #8c4829;
+}
+.plan-blockers details {
+  color: #61789a;
+  font-size: 12px;
+}
+.plan-blockers summary {
+  cursor: pointer;
+}
+.plan-blockers pre {
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

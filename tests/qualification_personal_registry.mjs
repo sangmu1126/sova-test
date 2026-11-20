@@ -24,7 +24,7 @@ async function login(user,index){
  await page.getByRole('button',{name:'환경·앱 등록',exact:true}).click();
  return {context,page};
 }
-const registrations=[],attestations=[];
+const registrations=[],attestations=[];let compileRefusal=null;
 try{
  const requester=await login(c.users.planner,0);
  for(const item of c.registrations){
@@ -50,6 +50,27 @@ try{
   attestations.push({status:response.status(),...(await response.json())});
   await requester.page.waitForFunction(()=>![...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='서명 제출')?.disabled);
  }
+ const snapshot=c.registrations.find(r=>r.kind==='dependency_snapshot');
+ if(snapshot){
+  const base=c.origin+'/v1/tenants/'+encodeURIComponent(c.tenant);
+  const read=async path=>{const r=await requester.context.request.get(base+path,{headers:{authorization:tokens[0]}});if(r.status()!==200)throw Error('Existing registry read refused');return r.json();};
+  const manifest=await read('/registrations/capability_manifest/postgres-offline-copy.offline-copy');
+  const profile=await read('/registrations/environment_profile/'+encodeURIComponent(c.source_profile));
+  const catalog=await read('/registrations/strategy_qualification');
+  const qualifications=[];
+  for(const q of catalog.items){const r=await read('/registrations/strategy_qualification/'+encodeURIComponent(q.subject_id));if(r.document.manifest_digest===manifest.digest&&r.document.source_profile_digest===profile.digest&&Date.parse(r.document.expires_at)>Date.now())qualifications.push(r);}
+  if(qualifications.length!==1)throw Error('One current actually measured forward qualification required');
+  await requester.page.getByRole('button',{name:'이전 계획',exact:true}).click();
+  for(const [name,subject] of [['의존성 조사',snapshot.subject],['출발 환경',c.source_profile],['목적지 환경',c.target_profile],['이전 어댑터','postgres-offline-copy.offline-copy'],['방향별 자격',qualifications[0].subject_id]])await requester.page.getByLabel(name,{exact:true}).selectOption(subject);
+  await requester.page.getByLabel('이전 구성 요소',{exact:true}).fill('source-api,source-database,source-batch-authority');
+  await requester.page.getByLabel('행 수 상한',{exact:true}).fill('3');
+  const refused=requester.page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname===new URL(base+'/plans').pathname);
+  await requester.page.getByRole('button',{name:'계획 만들기',exact:true}).click();
+  const result=await refused;compileRefusal={http_status:result.status(),body:await result.json()};
+  const codes=compileRefusal.body.blockers?.map(b=>b.code)||[];
+  if(result.status()!==422||!['WRITER_INVENTORY_INCOMPLETE','CONTROL_INVENTORY_INCOMPLETE','DISCOVERY_COVERAGE_INCOMPLETE'].every(c=>codes.includes(c)))throw Error('Incomplete actual inventory did not block native compilation');
+  await requester.page.getByRole('region',{name:'계획 생성 보류 사유'}).getByText('데이터를 쓸 수 있는 경로의 조사가 끝나지 않았습니다.',{exact:true}).waitFor();
+ }
  const plans=await requester.context.request.get(c.origin+'/v1/tenants/'+encodeURIComponent(c.tenant)+'/applications/'+encodeURIComponent(c.application)+'/plans',{
   headers:{authorization:tokens[0]}});
  if(plans.status()!==200)throw Error('Actual plan catalog unavailable');
@@ -59,6 +80,6 @@ try{
  }
  await requester.page.screenshot({path:join(c.directory,'actual-measured-registry.png'),fullPage:true});
  await writeFile(join(c.directory,'browser.json'),JSON.stringify({pkce,registrations,attestations,
-  non_attestor_denied_status:refused.status(),actual_native_api:true,actual_vm_ledger:true,
+  non_attestor_denied_status:refused.status(),actual_native_api:true,actual_vm_ledger:true,compile_refusal:compileRefusal,
   signatures_generated_in_browser:false,token_persisted:false,execution_admitted:false},null,2),{mode:0o600});
 }finally{for(const context of contexts)await context.close();await browser.close();}
