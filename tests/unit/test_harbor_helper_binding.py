@@ -2,8 +2,18 @@ from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 import pytest
-from harbor_helper_binding import qualified_helper
 from sova.domain.contracts import ContractError
+import importlib.util
+from pathlib import Path
+
+_SPEC = importlib.util.spec_from_file_location(
+    "personal_qualification_harbor_helper_binding",
+    Path(__file__).resolve().parents[2]
+    / "infra/personal-journey/harbor_helper_binding.py",
+)
+_MODULE = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_MODULE)
+qualified_helper = _MODULE.qualified_helper
 
 NOW = datetime(2026, 11, 20, tzinfo=UTC)
 

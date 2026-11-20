@@ -1,8 +1,18 @@
 from datetime import datetime, timezone, timedelta
-import ast, base64
+import ast
+import base64
 from pathlib import Path
 import pytest
-from wireguard_endpoint import expired_archive_suffix
+import importlib.util
+
+_SPEC = importlib.util.spec_from_file_location(
+    "personal_qualification_wireguard_endpoint",
+    Path(__file__).resolve().parents[2]
+    / "infra/personal-journey/wireguard_endpoint.py",
+)
+_MODULE = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_MODULE)
+expired_archive_suffix = _MODULE.expired_archive_suffix
 
 NOW = datetime(2026, 11, 20, 9, tzinfo=timezone.utc)
 
@@ -43,7 +53,10 @@ def test_unsettled_changed_or_still_valid_endpoint_is_not_archivable(change):
 
 
 def test_embedded_operator_programs_parse_without_executing():
-    source = Path("infra/personal-journey/personal_wireguard.py").read_text()
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "infra/personal-journey/personal_wireguard.py"
+    ).read_text()
     tree = ast.parse(source)
     programs = [
         node.value
