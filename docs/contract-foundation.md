@@ -2001,7 +2001,8 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 
 - 객체 저장소: 표의 앞 네 통제를 `ObjectStoreProbes`가 잰다.
 - PostgreSQL·MySQL·Redis·RabbitMQ·Kafka·MongoDB: 기존 probe에 `transport_refusals(side)`가 더해졌다.
-  - 평문 시도는 PostgreSQL 시작 메시지(비밀번호를 묻기 전에 멈춤), MySQL의 비밀번호 없는 로그인(3159면 거부), `PING`, AMQP 헤더, ApiVersions, hello다.
+  - 평문 시도는 PostgreSQL 시작 메시지(비밀번호를 묻기 전에 멈춤), MySQL의 비밀번호 없는 로그인, `PING`, AMQP 헤더, ApiVersions, hello다.
+  - MySQL은 보안 전송 요구(`require_secure_transport`, 계정의 `REQUIRE SSL`)를 인증이 성공한 뒤에 확인한다(실측). 그래서 인증이 진행되면 서버 관점으로 판정한다.
   - MySQL과 PostgreSQL은 평문으로 시작해 TLS로 올라가므로, 핸드셰이크 전에 각자의 SSLRequest를 보낸다.
 - Secret 접근과 네트워크 도달은 저장소와 상관없이 어떤 단위에도 붙는다.
 
