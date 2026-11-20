@@ -1,0 +1,377 @@
+{
+  "version": 1,
+  "started_at": "2026-11-20T13:08:08.572051+00:00",
+  "expires_at": "2026-11-20T13:20:00+00:00",
+  "role": "sj_observe_b0be270e62",
+  "existing_tls_session": true,
+  "clock_changed": false,
+  "committed_probe_writes": 0,
+  "samples": [
+    {
+      "host_at": "2026-11-20T13:08:13.703322+00:00",
+      "database_at": "2026-11-20T13:08:13.658557+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:08:23.951189+00:00",
+      "database_at": "2026-11-20T13:08:23.809647+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:08:34.111650+00:00",
+      "database_at": "2026-11-20T13:08:34.076598+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:08:44.177790+00:00",
+      "database_at": "2026-11-20T13:08:44.219567+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:08:54.238393+00:00",
+      "database_at": "2026-11-20T13:08:54.196017+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:09:04.716385+00:00",
+      "database_at": "2026-11-20T13:09:04.732470+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:09:15.001896+00:00",
+      "database_at": "2026-11-20T13:09:14.693605+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:09:25.112365+00:00",
+      "database_at": "2026-11-20T13:09:25.074662+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:09:35.313341+00:00",
+      "database_at": "2026-11-20T13:09:35.326938+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:09:45.362046+00:00",
+      "database_at": "2026-11-20T13:09:45.413044+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:09:55.588067+00:00",
+      "database_at": "2026-11-20T13:09:55.519435+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:10:05.842345+00:00",
+      "database_at": "2026-11-20T13:10:05.867546+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:10:15.911938+00:00",
+      "database_at": "2026-11-20T13:10:15.953287+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:10:25.932909+00:00",
+      "database_at": "2026-11-20T13:10:26.006574+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:10:35.959857+00:00",
+      "database_at": "2026-11-20T13:10:36.021383+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:10:46.021777+00:00",
+      "database_at": "2026-11-20T13:10:46.076970+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:10:56.198895+00:00",
+      "database_at": "2026-11-20T13:10:56.207355+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:11:06.316124+00:00",
+      "database_at": "2026-11-20T13:11:06.360033+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:11:16.346050+00:00",
+      "database_at": "2026-11-20T13:11:16.400321+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:11:26.745730+00:00",
+      "database_at": "2026-11-20T13:11:26.726292+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:11:37.327718+00:00",
+      "database_at": "2026-11-20T13:11:37.123394+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:11:47.648505+00:00",
+      "database_at": "2026-11-20T13:11:47.624450+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:11:57.914760+00:00",
+      "database_at": "2026-11-20T13:11:57.963413+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:12:08.054549+00:00",
+      "database_at": "2026-11-20T13:12:08.095844+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:12:18.294288+00:00",
+      "database_at": "2026-11-20T13:12:18.311471+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:12:28.418754+00:00",
+      "database_at": "2026-11-20T13:12:28.489102+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:12:38.927039+00:00",
+      "database_at": "2026-11-20T13:12:38.981735+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:12:49.138861+00:00",
+      "database_at": "2026-11-20T13:12:49.139996+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:12:59.487260+00:00",
+      "database_at": "2026-11-20T13:12:59.462945+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:13:10.027264+00:00",
+      "database_at": "2026-11-20T13:13:09.876575+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:13:20.885448+00:00",
+      "database_at": "2026-11-20T13:13:20.730177+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:13:30.992106+00:00",
+      "database_at": "2026-11-20T13:13:31.075291+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:13:41.117636+00:00",
+      "database_at": "2026-11-20T13:13:41.151812+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:13:51.217206+00:00",
+      "database_at": "2026-11-20T13:13:51.232483+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:14:01.244150+00:00",
+      "database_at": "2026-11-20T13:14:01.319240+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:14:11.306199+00:00",
+      "database_at": "2026-11-20T13:14:11.383332+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:14:21.361472+00:00",
+      "database_at": "2026-11-20T13:14:21.484991+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:14:31.414231+00:00",
+      "database_at": "2026-11-20T13:14:31.446589+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:14:41.639127+00:00",
+      "database_at": "2026-11-20T13:14:41.665061+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:14:51.730003+00:00",
+      "database_at": "2026-11-20T13:14:51.771752+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:15:01.757273+00:00",
+      "database_at": "2026-11-20T13:15:01.788900+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:15:11.783940+00:00",
+      "database_at": "2026-11-20T13:15:11.847710+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:15:21.800500+00:00",
+      "database_at": "2026-11-20T13:15:21.877952+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:15:31.830931+00:00",
+      "database_at": "2026-11-20T13:15:31.906949+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:15:41.844735+00:00",
+      "database_at": "2026-11-20T13:15:41.918763+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:15:51.932361+00:00",
+      "database_at": "2026-11-20T13:15:51.990870+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:16:01.957529+00:00",
+      "database_at": "2026-11-20T13:16:02.033211+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:16:11.966317+00:00",
+      "database_at": "2026-11-20T13:16:12.045359+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:16:22.011874+00:00",
+      "database_at": "2026-11-20T13:16:22.092264+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:16:32.029737+00:00",
+      "database_at": "2026-11-20T13:16:32.103132+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:16:42.049053+00:00",
+      "database_at": "2026-11-20T13:16:42.087736+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:16:52.075506+00:00",
+      "database_at": "2026-11-20T13:16:52.091370+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:17:02.139623+00:00",
+      "database_at": "2026-11-20T13:17:02.141672+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:17:12.160174+00:00",
+      "database_at": "2026-11-20T13:17:12.164543+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:17:22.171459+00:00",
+      "database_at": "2026-11-20T13:17:22.173004+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:17:32.189766+00:00",
+      "database_at": "2026-11-20T13:17:32.186989+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:17:42.199781+00:00",
+      "database_at": "2026-11-20T13:17:42.202993+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:17:52.230533+00:00",
+      "database_at": "2026-11-20T13:17:52.231720+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:18:02.247319+00:00",
+      "database_at": "2026-11-20T13:18:02.257887+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:18:12.270493+00:00",
+      "database_at": "2026-11-20T13:18:12.286866+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:18:22.296844+00:00",
+      "database_at": "2026-11-20T13:18:22.314515+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:18:32.310403+00:00",
+      "database_at": "2026-11-20T13:18:32.329460+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:18:42.322061+00:00",
+      "database_at": "2026-11-20T13:18:42.340449+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:18:52.331172+00:00",
+      "database_at": "2026-11-20T13:18:52.350426+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:19:02.339033+00:00",
+      "database_at": "2026-11-20T13:19:02.357877+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:19:12.359136+00:00",
+      "database_at": "2026-11-20T13:19:12.374642+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:19:22.368517+00:00",
+      "database_at": "2026-11-20T13:19:22.385212+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:19:32.382966+00:00",
+      "database_at": "2026-11-20T13:19:32.399162+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:19:42.442224+00:00",
+      "database_at": "2026-11-20T13:19:42.456972+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:19:52.453638+00:00",
+      "database_at": "2026-11-20T13:19:52.488390+00:00",
+      "same_authenticated_session": true
+    },
+    {
+      "host_at": "2026-11-20T13:20:00.036599+00:00",
+      "database_at": "2026-11-20T13:20:00.083303+00:00",
+      "same_authenticated_session": true
+    }
+  ],
+  "checks": {
+    "actual_observation_readable_before_expiry": true,
+    "same_session_after_database_deadline": true,
+    "prior_observations_hidden_after_expiry": true,
+    "matching_scope_append_denied_after_expiry": true,
+    "driver_unchanged": true
+  },
+  "migration_complete": false,
+  "completed_at": "2026-11-20T13:20:00.112387+00:00",
+  "driver_sha256": "3256a929c3131b099d3cdd0855e691ff1470ed6bceff2fd2ac44b4c8eff30034",
+  "passed": true
+}

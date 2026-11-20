@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "run_id": "b0be270e62",
+  "started_at": "2026-11-20T13:20:59.062513+00:00",
+  "deadline": "2026-11-20T13:20:00+00:00",
+  "source_state": "stopped",
+  "scope": "Only exact expired UDP ingress rule; data and resource objects retained",
+  "rules_to_revoke": [
+    "sgr-0168e12cd544e4af6"
+  ],
+  "revoked": [
+    "sgr-0168e12cd544e4af6"
+  ],
+  "instance_started_or_stopped_by_this_command": false,
+  "exact_expired_ingress_absent": true,
+  "retained_volume": {
+    "id": "vol-0cf101c7982064b83",
+    "encrypted": true,
+    "state": "in-use"
+  },
+  "completed_at": "2026-11-20T13:21:01.319135+00:00"
+}
