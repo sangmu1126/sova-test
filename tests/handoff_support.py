@@ -5,6 +5,7 @@ import json
 from uuid import uuid4
 
 from contract_world import build_world
+from qualification_fixture_clock import observed_database_time
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import psycopg
 from witness_support import MemoryAuthorityWitness
@@ -159,8 +160,8 @@ def admitted_handoff(postgres_database, now, *, witness_for=None, adjust=None,
     def prove(obligation_id, result=VerificationResult.PASS, *, revisions=None,
               obligation=None, artifact_digest="a" * 64):
         o = obligation or next(x for x in plan.obligations if x.obligation_id == obligation_id)
-        observed = datetime.now(UTC) - timedelta(seconds=1) + timedelta(
-            microseconds=next(counter))
+        observed = observed_database_time(connect)
+        next(counter)  # preserve the shared fixture's observation sequence counter
         record = EvidenceRecord(
             f"ev-{uuid4().hex[:12]}", o.obligation_id, o.scope, revisions or plan.revisions,
             VERIFIER, observed, observed + timedelta(minutes=10), result,
