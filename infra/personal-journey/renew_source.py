@@ -6,7 +6,9 @@ re-bootstrap storage, replay data mutations or widen network/IAM permissions.
 """
 
 import argparse
+import base64
 from datetime import UTC, datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -21,7 +23,7 @@ RUN = "b0be270e62"
 
 
 def script(version, expires):
-    template = r'''set -euo pipefail
+    template = r"""set -euo pipefail
 export PATH=/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin
 umask 077
 state=/var/lib/sova-journey/workload
@@ -94,12 +96,40 @@ for kind,allowed in {'db':{'ca.pem','server.pem'},'app':{'ca.pem','server.pem','
 RENEW_FILES
 nerdctl --namespace "$namespace" exec orders-db psql -XAt -U postgres -d source_orders -c 'SELECT pg_reload_conf()'
 nerdctl --namespace "$namespace" restart --time 8 orders-app
+python3 - <<'RESTORE_OWNED_BRIDGE'
+import base64,hashlib,json,pathlib,subprocess
+data=base64.b64decode('@BRIDGE_PROGRAM@',validate=True)
+if hashlib.sha256(data).hexdigest()!='@BRIDGE_SHA256@':raise ValueError('Bridge helper changed')
+bridge='br-e727195d35bb';chain='SOVA_b0be270e62_H'
+addresses=json.loads(subprocess.check_output(['ip','-j','address','show','dev',bridge]))
+ipv4=[(a['local'],a['prefixlen']) for a in addresses[0]['addr_info'] if a['family']=='inet']
+if not ipv4:
+ path=pathlib.Path('/var/lib/sova-journey/source-operator-bridge-@BRIDGE_SHA256@.py')
+ if path.exists():
+  if path.is_symlink() or path.read_bytes()!=data:raise ValueError('Existing helper differs')
+ else:path.write_bytes(data);path.chmod(0o600)
+ subprocess.run(['python3',str(path),'--run-id','b0be270e62','--apply'],check=True)
+else:
+ if ipv4!=[('10.246.0.1',24)]:raise ValueError('Unexpected existing bridge IPv4')
+ for args in [
+  ['-C','INPUT','-i',bridge,'-s','10.246.0.0/24','-j',chain],
+  ['-C','FORWARD','-i',bridge,'!','-o',bridge,'-j','DROP'],
+  ['-C',chain,'-m','conntrack','--ctstate','ESTABLISHED,RELATED','-j','ACCEPT'],
+  ['-C',chain,'-j','DROP']]:subprocess.run(['iptables',*args],check=True)
+ print(json.dumps({'existing_operator_bridge_verified':True,'changed':False}))
+RESTORE_OWNED_BRIDGE
 rows_after=$(nerdctl --namespace "$namespace" exec orders-db psql -XAt -U postgres -d source_orders -c "SELECT (SELECT count(*) FROM orders),(SELECT count(*) FROM work_items),(SELECT count(*) FROM idempotency_results)")
 [[ $rows_before == "$rows_after" ]]
 printf 'source_data_preserved=%s\n' "$rows_after"
 systemctl show sova-expiry.timer -p NextElapseUSecRealtime
-'''
-    return template.replace("@VERSION@", version).replace("@CALENDAR@", expires.strftime("%Y-%m-%d %H:%M:%S"))
+"""
+    bridge = Path(__file__).with_name("source_operator_bridge.py").read_bytes()
+    return (
+        template.replace("@VERSION@", version)
+        .replace("@CALENDAR@", expires.strftime("%Y-%m-%d %H:%M:%S"))
+        .replace("@BRIDGE_PROGRAM@", base64.b64encode(bridge).decode())
+        .replace("@BRIDGE_SHA256@", hashlib.sha256(bridge).hexdigest())
+    )
 
 
 def main():
@@ -112,19 +142,32 @@ def main():
     identity = json.loads((args.inputs / "identity.json").read_text())
     expires = datetime.fromisoformat(identity["expires_at"])
     now = datetime.now(UTC)
-    if identity["run_id"] != RUN or not now < expires or (expires - now).total_seconds() > 28800:
+    if (
+        identity["run_id"] != RUN
+        or not now < expires
+        or (expires - now).total_seconds() > 28800
+    ):
         raise ValueError("Explicit new run-owned window within eight hours required")
     session = boto3.Session(profile_name="default", region_name="ap-northeast-2")
     cfg = Config(connect_timeout=5, read_timeout=20, retries={"max_attempts": 1})
-    if session.client("sts", config=cfg).get_caller_identity()["Account"] != "265233844540":
+    if (
+        session.client("sts", config=cfg).get_caller_identity()["Account"]
+        != "265233844540"
+    ):
         raise ValueError("Wrong personal account")
     ec2, ssm = session.client("ec2", config=cfg), session.client("ssm", config=cfg)
-    instance = ec2.describe_instances(InstanceIds=[INSTANCE])["Reservations"][0]["Instances"][0]
+    instance = ec2.describe_instances(InstanceIds=[INSTANCE])["Reservations"][0][
+        "Instances"
+    ][0]
     if {t["Key"]: t["Value"] for t in instance["Tags"]}.get("RunId") != RUN:
         raise ValueError("Source ownership changed")
     secret = session.client("secretsmanager", config=cfg).put_secret_value(
-        SecretId="sova/qualification/b0be270e62/source", SecretString=(args.inputs / "source-secret.json").read_text())
-    (args.artifacts / "secret-version.json").write_text(json.dumps({"version_id": secret["VersionId"], "arn": secret["ARN"]}))
+        SecretId="sova/qualification/b0be270e62/source",
+        SecretString=(args.inputs / "source-secret.json").read_text(),
+    )
+    (args.artifacts / "secret-version.json").write_text(
+        json.dumps({"version_id": secret["VersionId"], "arn": secret["ARN"]})
+    )
     complete = False
     try:
         if instance["State"]["Name"] == "stopped":
@@ -133,7 +176,9 @@ def main():
             raise ValueError("Source is transitioning; refuse competing renewal")
         deadline = time.monotonic() + 180
         while True:
-            rows = ssm.describe_instance_information(Filters=[{"Key": "InstanceIds", "Values": [INSTANCE]}])["InstanceInformationList"]
+            rows = ssm.describe_instance_information(
+                Filters=[{"Key": "InstanceIds", "Values": [INSTANCE]}]
+            )["InstanceInformationList"]
             if rows and rows[0]["PingStatus"] == "Online":
                 break
             if time.monotonic() >= deadline:
@@ -141,10 +186,16 @@ def main():
             time.sleep(3)
         command = script(secret["VersionId"], expires)
         (args.artifacts / "renew-source.sh").write_text(command)
-        result = ssm.send_command(InstanceIds=[INSTANCE], DocumentName="AWS-RunShellScript",
-            Comment="Explicit data-preserving personal qualification window renewal", Parameters={"commands": [command], "executionTimeout": ["120"]})
+        result = ssm.send_command(
+            InstanceIds=[INSTANCE],
+            DocumentName="AWS-RunShellScript",
+            Comment="Explicit data-preserving personal qualification window renewal",
+            Parameters={"commands": [command], "executionTimeout": ["120"]},
+        )
         cid = result["Command"]["CommandId"]
-        (args.artifacts / "command.json").write_text(json.dumps({"command_id": cid, "instance": INSTANCE}))
+        (args.artifacts / "command.json").write_text(
+            json.dumps({"command_id": cid, "instance": INSTANCE})
+        )
         deadline = time.monotonic() + 140
         while True:
             try:
@@ -157,16 +208,34 @@ def main():
                 raise RuntimeError("Bounded renewal command did not settle")
             time.sleep(2)
         (args.artifacts / "invocation.json").write_text(json.dumps(state, default=str))
-        if state["Status"] != "Success" or "source_data_preserved=1|1|1" not in state.get("StandardOutputContent", ""):
+        if state[
+            "Status"
+        ] != "Success" or "source_data_preserved=1|1|1" not in state.get(
+            "StandardOutputContent", ""
+        ):
             raise RuntimeError("Renewal failed; private invocation retained")
-        ec2.create_tags(Resources=[INSTANCE], Tags=[{"Key": "ExpiresAt", "Value": expires.isoformat()}])
+        ec2.create_tags(
+            Resources=[INSTANCE],
+            Tags=[{"Key": "ExpiresAt", "Value": expires.isoformat()}],
+        )
         complete = True
-        print(json.dumps({"instance": INSTANCE, "renewed_until": expires.isoformat(), "data_preserved": True,
-                          "role_passwords_or_image_changed": False, "migration_complete": False}))
+        print(
+            json.dumps(
+                {
+                    "instance": INSTANCE,
+                    "renewed_until": expires.isoformat(),
+                    "data_preserved": True,
+                    "role_passwords_or_image_changed": False,
+                    "migration_complete": False,
+                }
+            )
+        )
     finally:
         if not complete:
             ec2.stop_instances(InstanceIds=[INSTANCE])
-            (args.artifacts / "stopped-after-renewal-failure.json").write_text(json.dumps({"instance": INSTANCE, "stop_requested": True}))
+            (args.artifacts / "stopped-after-renewal-failure.json").write_text(
+                json.dumps({"instance": INSTANCE, "stop_requested": True})
+            )
 
 
 if __name__ == "__main__":
