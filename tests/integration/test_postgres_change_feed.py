@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from contract_world import build_world
 from handoff_support import admitted_handoff
+from qualification_fixture_clock import observed_database_time
 import psycopg
 import pytest
 
@@ -105,10 +106,10 @@ def test_reaffirmed_plan_issues_commands_again(postgres_database, now):
     h["feed"].record(ChangeEvent(
         "ev-db-config", h["tenant"], "another-service", ChangeKind.RESOURCE,
         "synthetic-source", "synthetic-uid-database", None,
-        datetime.now(UTC) - timedelta(milliseconds=20)), collector_id="change-collector-1")
+        observed_database_time(h["connect"])), collector_id="change-collector-1")
     with pytest.raises(PlanReevaluationRequired):
         h["coordinator"].next_command(h["revision"], h["plan"], operation_id="op", epoch=1)
-    at = datetime.now(UTC) - timedelta(milliseconds=5)
+    at = observed_database_time(h["connect"])
     world = build_world(at, contract=h["world"]["contract"])
     world["sign"](world["contract"])
     world["sign"](world["snapshot"])
