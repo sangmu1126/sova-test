@@ -9,7 +9,8 @@ from datetime import UTC, datetime, timedelta
 import time
 
 from adapter_conformance import HandoffAdapterConformance, apply, readback
-from handoff_drive import run_handoff, without_transport_control
+from handoff_drive import without_transport_control
+from qualification_fixture_placement import run_local_handoff as run_handoff
 from postgres_business import (
     SCHEMA,
     TABLES,

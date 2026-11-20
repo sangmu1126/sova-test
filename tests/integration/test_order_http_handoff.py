@@ -18,6 +18,7 @@ from postgres_business import Route
 import psycopg
 from psycopg import sql
 import pytest
+from qualification_fixture_placement import FixturePlacement
 from qualification_orders import application, observe, serve
 
 from sova.domain.handoff_authority import HandoffState
@@ -73,7 +74,8 @@ def migrate(postgres_database, h, business, route, *, before=None):
                              source="src", target="tgt", route=route)
     result, observed = drive(h, h["revision"], h["plan"], adapter=adapter, probes=probes,
                              other_db=business["names"]["other"], scratch_db=business["names"]["scratch"],
-                             operation="http-order-handoff", approval_id="approval-1", before=before)
+                             operation="http-order-handoff", approval_id="approval-1", before=before,
+                             placement=FixturePlacement(h["tenant"], h["app"], control_connect=h["connect"]))
     assert result.state == HandoffState.HANDOFF_COMPLETE, observed
     assert route.get() == business["names"]["tgt"]
 

@@ -15,16 +15,17 @@ from contract_world import build_world
 from handoff_drive import (
     drive,
     pieces,
-    run_handoff,
     without_transport_control,
+    local_budgets,
 )
 from handoff_support import complete_feeds
-from postgres_business import TABLES
+from qualification_fixture_placement import run_local_handoff as run_handoff
+from postgres_business import TABLES, PROBE_INSERT
 import psycopg
 from psycopg import sql
 import pytest
 
-from sova.adapters.postgres_handoff_probes import artifact_digest
+from sova.adapters.postgres_handoff_probes import PostgresHandoffProbes, artifact_digest
 from sova.application.handoff_admission import HandoffAdmission
 from sova.domain.contracts import EffectCommand, EffectStatus, ResourceScope
 from sova.domain.evidence import VerificationResult
@@ -60,36 +61,41 @@ def test_data_really_moves_and_authority_really_changes(postgres_database, now, 
     assert 0 < spent.total_seconds() * 1000 <= 60000  # measured against the budget
 
 
-def test_unencrypted_target_is_refused_before_activation(postgres_database, now, business):
-    """The default contract requires transport encryption; the local server has
-    ssl off. The probe fails at the activation-intent gate, the handoff holds
-    as a contract breach before activation, and the source can be restored."""
+def test_unverified_target_tls_is_refused_before_source_fence(postgres_database, now, business):
+    """Actual TLS without client CA/hostname verification must fail the
+    preparation gate, before writes pause. No production TLS is weakened.
+    """
     names, app = business["names"], business["app"]
-    x = run_handoff(postgres_database, now, business)
+    unverified = PostgresHandoffProbes(
+        connect_as=business["connect_as"],
+        admin_connect=lambda db: psycopg.connect(business["dsn"], dbname=db, sslmode="require"),
+        source_db=names["src"], target_db=names["tgt"], app_role=app, tables=TABLES,
+        probe_insert=PROBE_INSERT, writer_roles=(app, business["batch"]))
+    passed, fact = unverified.transport_encrypted("target")
+    assert not passed and fact["encrypted"] is True and fact["client_verification"] == "require"
+    x = run_handoff(postgres_database, now, business, adjust=local_budgets,
+        measures={"security.verified_transport_encryption": lambda _: unverified.transport_encrypted("target")})
     held = x["record"]
     assert held.state == HandoffState.SAFE_HOLD and held.reason == "CONTRACT_BREACH"
     assert held.activation_possible is False and x["route"].get() == names["src"]
-    assert x["probes"].transport_encrypted("target") == (False, {
-        "probe": "transport_encrypted", "encrypted": False, "tls_version": None,
-        "client_verification": "default"})
-    # Abort: the target never took writes; restore the source and prove it.
-    assert not x["probes"].single_writer()[0]
+    assert x["probes"].transport_encrypted("target")[0] is True  # positive control
+    assert x["probes"].write_denied("source")[0] is False
+    assert x["probes"].write_denied("target")[0] is True
+    assert not {"pause_admission", "fence_source_writes", "activate_target"} & set(x["observed"])
     x["coordinator"].abort(x["revision"], x["plan"], target_inactive_verified=True,
                            actor_id="coordinator")
-    with business["connect"](names["src"]) as conn:
-        conn.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
-            sql.Identifier(names["src"]), sql.Identifier(app)))
-        conn.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "
-                             "public TO {}").format(sql.Identifier(app)))
-    # Restoring starts first; it ends only once a probe shows the source writable.
-    x["coordinator"].source_restored(x["revision"], x["plan"], source_writes_verified=False,
-                                     actor_id="coordinator")
-    restored_writes = not x["probes"].write_denied("source")[0]
-    assert restored_writes
+    restoring = x["coordinator"].source_restored(
+        x["revision"], x["plan"], source_writes_verified=False, actor_id="coordinator")
+    assert restoring.state == HandoffState.RESTORING_SOURCE
     final = x["coordinator"].source_restored(
-        x["revision"], x["plan"], source_writes_verified=restored_writes,
-        actor_id="coordinator")
+        x["revision"], x["plan"], source_writes_verified=True, actor_id="coordinator")
     assert final.state == HandoffState.ABORTED
+
+
+def test_plaintext_startup_is_refused_by_the_actual_tls_test_server(business):
+    with pytest.raises(psycopg.OperationalError):
+        with psycopg.connect(business["dsn"], dbname=business["names"]["tgt"], sslmode="disable"):
+            pytest.fail("The certificate-requiring test server accepted plaintext")
 
 
 def test_failback_brings_back_writes_made_on_the_target(postgres_database, now, business):
@@ -145,7 +151,7 @@ def test_failback_brings_back_writes_made_on_the_target(postgres_database, now, 
                                        source="tgt", target="src", route=x["route"])
     record, observed = drive(x, revision, plan, adapter=back_adapter, probes=back_probes,
                              other_db=names["other"], scratch_db=names["scratch"],
-                             operation="real-failback", approval_id="approval-failback")
+                             operation="real-failback", approval_id="approval-failback", placement=x["placement"])
     assert record.state == HandoffState.HANDOFF_COMPLETE, (
         record.reason, record.held_from, observed.get("uncertain"), observed.get("failed"))
     assert record.owner_environment == "aws-source" and record.predecessor == (

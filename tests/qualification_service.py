@@ -16,6 +16,7 @@ from uuid import uuid4
 from contract_world import build_world
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from handoff_drive import local_budgets
+from qualification_fixture_placement import FixturePlacement
 from postgres_business import PROBE_INSERT, SCHEMA, TABLES, Route
 import httpx
 import psycopg
@@ -108,6 +109,10 @@ class ServiceJourney:
         self.signer = Ed25519EvidenceSigner(Ed25519PrivateKey.generate(),
                                             issuer_id="handoff-producer", key_id="k1")
         self.scopes = set()
+        # Scope-only expansions must not also slide key validity. The bounded
+        # fixture key lifetime is fixed once; a later expiry needs a new key.
+        self.signer_trust_from = self.clock() - timedelta(minutes=1)
+        self.signer_trust_until = self.clock() + timedelta(hours=1)
         self.trust_version = 0
         self.issuer = Issuer()  # generated fixture JWKS, not a real external IdP
         self.authenticate = BearerAuthenticator(issuer=ISSUER, audience=AUDIENCE,
@@ -185,12 +190,11 @@ class ServiceJourney:
         plan = PostgresLifecycleRepository(self.connect, tenant_id=self.tenant).get_plan(
             self.app, compiled["plan_id"])
         self.scopes.update(o.scope for o in plan.obligations)
-        at = self.clock() - timedelta(seconds=1)
         self.trust_version += 1
         self.publish_trust(VerifierTrust(
             self.signer.issuer_id, self.signer.key_id, self.signer.public_key_hex,
             tuple(sorted(self.scopes, key=lambda s: (s.environment_id, s.resource_id))),
-            (self.settings.evidence_verifier,), at - timedelta(minutes=1), at + timedelta(hours=1)),
+            (self.settings.evidence_verifier,), self.signer_trust_from, self.signer_trust_until),
             version=self.trust_version)
         # Synthetic complete-feed fixture, not a real change collector.
         feeds_complete({"connect": self.connect, "tenant": self.tenant}, compiled)
@@ -217,7 +221,7 @@ class ServiceJourney:
                         "scratch_db": names["scratch"], "other_db": names["other"],
                         "app_role": b["app"], "writer_roles": (b["app"], b["batch"]),
                         "tables": TABLES, "schema_sql": SCHEMA, "probe_insert": PROBE_INSERT,
-                        "route": self.route}
+                        "route": self.route, "placement": FixturePlacement(tenant, application, control_connect=self.connect)}
             return for_service
         forward_id = self.world["manifest"].adapter_id
         forward = postgres_factory(forward_id, resolve(False))
@@ -244,7 +248,7 @@ class ServiceJourney:
             with (Path(directory) / (name + ".json")).open("x") as file:
                 json.dump({"case": name, "http_calls": self.trace,
                            "environment": "local service HTTP, existing worker, one PostgreSQL server",
-                           "operational_qualification": False, **data}, file, indent=2, sort_keys=True)
+                           "operational_qualification": False, "fixture_placement": True, **data}, file, indent=2, sort_keys=True)
                 file.write("\n")
 
 

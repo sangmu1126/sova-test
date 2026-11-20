@@ -47,7 +47,7 @@ class LosesResponse:
 
 def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation,
           approval_id, until=None, before=None, lose_response_at=(), events=None,
-          after_effect=None, measures=None):
+          after_effect=None, measures=None, placement=None):
     """Run a compiled plan's steps through the ledger with measured evidence.
 
     ``measures`` maps obligation IDs to measurements for obligations the data
@@ -68,7 +68,6 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
     lease = ownership.acquire(h["app"], operation, "worker", lease_seconds=LEASE_SECONDS)
     journal, engine = executor_for(lease)
     h["coordinator"].open(revision, plan, actor_id="coordinator")
-    contract = h["world"]["contract"].document["spec"]
     doc = json.loads(revision.canonical)
     observed = {}  # step kind -> ledger observation time
 
@@ -77,7 +76,9 @@ def drive(h, revision, plan, *, adapter, probes, other_db, scratch_db, operation
         if measures and oid in measures:
             return measures[oid](obligation)
         if kind == "placement_evidence":
-            return probes.zone("target", set(contract["residency"][oid.split(".", 1)[1]]))
+            if placement is None:
+                return False, {"probe": "placement", "reason": "category_observer_unavailable"}
+            return placement(obligation["category"], frozenset(obligation["allowed_zones"]))
         if kind == "return_target_check":
             return probes.write_denied("target")
         if oid == "fence.source_writes_denied" or kind == "stale_route_probe":
@@ -221,8 +222,10 @@ def pieces(business, adapter_id, *, source, target, route, fenced=None, cdc=Fals
 
 def run_handoff(postgres_database, now, business, *, adjust=None, until=None,
                 strategy="offline-copy", before=None, lose_response_at=(), events=None,
-                fenced=None, watch_catalog=None, measures=None, route=None, cdc=False):
+                fenced=None, watch_catalog=None, measures=None, route=None, cdc=False,
+                placement_factory=None):
     h = admitted_handoff(postgres_database, now, adjust=adjust, strategy=strategy)
+    placement = placement_factory(h) if placement_factory is not None else None
     after_effect = None
     if watch_catalog:
         before, after_effect = watch_catalog(h, before)
@@ -235,9 +238,9 @@ def run_handoff(postgres_database, now, business, *, adjust=None, until=None,
                              other_db=names["other"], scratch_db=names["scratch"],
                              operation=OPERATION, approval_id="approval-1", until=until,
                              before=before, lose_response_at=lose_response_at,
-                             events=events, after_effect=after_effect, measures=measures)
+                             events=events, after_effect=after_effect, measures=measures, placement=placement)
     return dict(h, record=record, adapter=adapter, probes=probes, route=route,
-                business=business, observed=observed)
+                business=business, observed=observed, placement=placement)
 
 
 def local_budgets(data):

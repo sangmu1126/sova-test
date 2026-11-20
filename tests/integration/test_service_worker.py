@@ -15,6 +15,7 @@ from uuid import uuid4
 from contract_world import build_world
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from handoff_drive import without_transport_control
+from qualification_fixture_placement import FixturePlacement
 from postgres_business import PROBE_INSERT, SCHEMA, TABLES, Route
 import psycopg
 import pytest
@@ -98,7 +99,7 @@ def admitted(postgres_database, now, business, *, witness_dir):
                 "app_role": business["app"], "writer_roles": (business["app"],
                                                               business["batch"]),
                 "tables": TABLES, "schema_sql": SCHEMA, "probe_insert": PROBE_INSERT,
-                "route": route}
+                "route": route, "placement": FixturePlacement(tenant_id, application_id, control_connect=connect)}
 
     adapter_id = world["manifest"].adapter_id
     catalog = AdapterCatalog({adapter_id: postgres_factory(adapter_id, resolve)})

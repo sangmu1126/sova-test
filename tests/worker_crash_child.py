@@ -15,6 +15,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
+from qualification_fixture_placement import FixturePlacement  # noqa: E402
 from postgres_business import PROBE_INSERT, SCHEMA, TABLES, Route  # noqa: E402
 import psycopg  # noqa: E402
 
@@ -52,7 +53,8 @@ def main(spec):
                 "app_role": spec["app_role"], "writer_roles": (spec["app_role"],
                                                                spec["batch_role"]),
                 "tables": TABLES, "schema_sql": SCHEMA, "probe_insert": PROBE_INSERT,
-                "route": Route(names["src"])}
+                "route": Route(names["src"]), "placement": FixturePlacement(tenant_id, application_id,
+                    control_connect=lambda: psycopg.connect(spec["dsn"], user=spec["role"]))}
 
     inner = postgres_factory(spec["adapter_id"], resolve)
 

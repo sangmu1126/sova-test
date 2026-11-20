@@ -1,7 +1,7 @@
 """Run-owned worker process fixture; not the deployed Kubernetes CLI/catalog.
 
-Real HandoffWorker.run, leases, effects and PostgreSQL probes are used. Only
-the shared route and the after-apply pause are fixtures. There is deliberately
+Real HandoffWorker.run, leases, effects and PostgreSQL probes are used. The declared category placement, shared route and after-apply pause are
+fixtures. There is deliberately
 no quiescence provider: a dead/expired owner cannot be recovered on a guess.
 """
 
@@ -17,6 +17,7 @@ import time
 from uuid import uuid4
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from qualification_fixture_placement import FixturePlacement
 from postgres_business import PROBE_INSERT, SCHEMA, TABLES
 import psycopg
 
@@ -118,7 +119,7 @@ def child(path):
                 "source_db": names["src"], "target_db": names["tgt"],
                 "scratch_db": names["scratch"], "other_db": names["other"],
                 "app_role": spec["app_role"], "writer_roles": (spec["app_role"], spec["batch_role"]),
-                "tables": TABLES, "schema_sql": SCHEMA, "probe_insert": PROBE_INSERT, "route": route}
+                "tables": TABLES, "schema_sql": SCHEMA, "probe_insert": PROBE_INSERT, "route": route, "placement": FixturePlacement(tenant, app, control_connect=_connect(config))}
 
     factory = postgres_factory(spec["adapter_id"], resolve)
     def wrapped(tenant, app, revision):
