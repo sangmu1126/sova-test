@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "recorded_at": "2026-11-20T14:55:17.101766+00:00",
+  "code_commit": "278f531b9bcdcb20b499d0e3ef4aa1da3d89447a",
+  "tested_run_start_commit": "44bd3515c1a8df1076f3629a5e6614b7e9a81394",
+  "tested_files_match_committed_bytes": true,
+  "files_sha256": {
+    "src/sova/service/change_history.py": "4d35a5e364c6a80a7f4dfb2862d75eb9be7162587b943c19443cd1e66a853da6",
+    "src/sova/service/api.py": "4e3c4e43e8cc472cc8931aaa10c4ef366fbe9580326e79643c280d15e4ac5826",
+    "src/sova/service/control_plane.py": "d6d50af35ac146661db7f6816878913ba1d1749c5635dd52c996af4e97f46938",
+    "console/src/workspace/ChangeHistory.tsx": "8b9e3693db2d6d2f647918386d7b894fa5e72db603f52f21893c3e21721f9d83",
+    "console/src/workspace/WorkspaceApp.tsx": "9ec616d30e24c06d1c8f8644e4ba9d3d57bb51d6f6c3e3fe73f56b7b6d655e8f",
+    "tests/integration/test_workspace_change_history.py": "7d7a3393dfe25d0cc107811280a7863701f2aeb38895fae9a6372df4348c8791",
+    "tests/integration/test_workspace_change_history_browser.py": "0b724e224e87f7c2e1c12881a4a81ccf125ef251f987065e55ca5ecd1a4d3207",
+    "tests/qualification_change_history_browser.mjs": "6fe68db27d2ebe80079ec4a56873e1aa813258ca3a91b2f79f9374541a5a9202",
+    "tests/qualification_postgres.py": "1dca80580e8bb2219543611ed314855fa0749f1e37f50fd57f289ab10e34250c",
+    "tests/qualification_workspace_oidc.py": "e0e550694305791ebe2acf988f04d9355ee87851c2c9b5321966317b44316c88"
+  },
+  "current_native_and_security_implementation_digest": "8f5fb08f63009ccb5f6ecbc23a8ff2e2b3092b90db9f0cc96f5b4ea58cfe7caf",
+  "scope": {
+    "actual_native_postgresql": true,
+    "database_tls_verify_full": true,
+    "missing_client_certificate_denied": true,
+    "fixture_inventory_and_events": true,
+    "actual_keycloak_and_pkce": true,
+    "transport": "loopback HTTP for local browser/IdP; verified TLS for database",
+    "aws_vm_migration": false,
+    "operational_qualification": false,
+    "new_qualification_issued": false,
+    "execution_authorized_by_history": false,
+    "coverage": "UNKNOWN"
+  },
+  "unit_tests": {
+    "total": 1402,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "b0aacbab0dbd53fc985fecd25ebfdb86ebda9881089290aab474ac31a7e6e563"
+  },
+  "console_tests": {
+    "passed": 86,
+    "typecheck": true,
+    "production_build": true,
+    "junit_sha256": "23bf78a54d1e1963037e12df09e2e8417a022435eb4b0545c9c651c79191c9d9"
+  },
+  "native_api_cursor_browser_tests": {
+    "total": 11,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "browser": {
+    "pkce": 1,
+    "token_exchanges": 1,
+    "history_http_status": 200,
+    "private_app_absent": true,
+    "persistent_tokens_absent": true,
+    "logout_cleared": true,
+    "page_errors": 0,
+    "aws_vm_migration": false,
+    "operational_qualification": false,
+    "fixture_events": true,
+    "fixture_inventory": true,
+    "screenshot_sha256": "ca38c39fb4357ae6461387e667024d1af93c5d1f271f3e29802959ff19e6036e"
+  },
+  "identity": {
+    "image_id": "sha256:9ff9180b6120c45f43f3bb4b9706eaf5fc250115581ee7c5cee067500f727e5c",
+    "base_image_id": "sha256:923a431c08971d49727a857e64870d8d63b5bf294a730e5dde729b5138c26c9e",
+    "realm_setup": "realm-import",
+    "pkce_method": "S256",
+    "cold_start_seconds": 127.234,
+    "cold_start_budget_seconds": 300,
+    "administrator_token_issues": 0,
+    "direct_password_grant_for_spa": false,
+    "container_removed": true,
+    "network_removed": true,
+    "bootstrap_environment_removed": true
+  },
+  "database": {
+    "image_id": "sha256:e5f8ac607c7d44a0da3a42712a3e978b75fb1757e9f3e1488cd0cca4dbec76e9",
+    "postgres_version": "17.12",
+    "container_removed": true,
+    "network_removed": true
+  },
+  "database_clock_checks_passed": true,
+  "prior_attempts": {
+    "restricted_unit_run": {
+      "passed": 1394,
+      "failed": 8,
+      "failure": "local socket PermissionError; unchanged rerun with required execution permissions passed"
+    },
+    "browser_01": {
+      "native_api_and_cursor_passed": 10,
+      "browser_passed": false,
+      "failure": "local IdP not ready within explicit 180s startup budget",
+      "database_container_and_network_removed": true,
+      "identity_container_and_network_removed": true
+    },
+    "service_regression": {
+      "baseline_commit": "c9f3d08dc2fe0325e5c523d73edb38ebbcc48c39",
+      "baseline": {
+        "total": 124,
+        "failed": 15,
+        "errors": 0,
+        "skipped": 0
+      },
+      "with_history": {
+        "total": 126,
+        "failed": 15,
+        "errors": 0,
+        "skipped": 0
+      },
+      "same_failed_test_names": true,
+      "failed_tests": [
+        "test_a_gone_pod_without_remote_settlement_cannot_recover_an_inflight_effect",
+        "test_a_handoff_another_worker_holds_is_left_alone",
+        "test_a_handoff_goes_from_registration_to_admission_through_the_service",
+        "test_a_handoff_is_registered_planned_approved_and_admitted_over_http",
+        "test_a_step_longer_than_a_lease_keeps_its_lease_while_it_runs",
+        "test_a_worker_takes_an_admitted_handoff_to_completion",
+        "test_failback_api_rejects_wrong_identity_direction_and_self_approval",
+        "test_failback_rechecks_registered_inputs_after_approval",
+        "test_orders_before_during_and_after_a_real_handoff_are_reconciled",
+        "test_real_commit_response_timeout_then_migration_lookup_and_retry_are_one_order",
+        "test_same_pod_restart_without_remote_settlement_does_not_recover_a_step",
+        "test_service_orders_survive_target_writes_and_separately_approved_failback",
+        "test_terminal_and_not_activated_handoffs_cannot_be_reopened_for_failback",
+        "test_what_each_probe_observed_is_kept_under_its_signed_digest",
+        "test_workspace_does_not_hide_a_broken_registry_head"
+      ],
+      "diagnosis": "14 verifier publication after fixture snapshot blocks stale plans; one old corruption setup is refused by current registry publication barriers",
+      "product_gate_or_database_protection_relaxed": false
+    }
+  },
+  "artifacts_sha256": {
+    "run.json": "9a8c56a3b5d1b5846f23c4214f44aba1d00c4efecd28645a529f754109f5fc9c",
+    "results.xml": "8fc13cacb5f20ede9b95d4fbaa5d92c187e6de9d7ccd69ad82a98fc3b414865c",
+    "workspace-change-history-identity.json": "f2d0179ee543bc334c04fdbb67df91771b096892a75aff5125af92a0958b98ab",
+    "change-history-browser/result.json": "379f48f909e1a6fd48ddd8789b2fb5847ae3469114327f3a2370c0697e2c1346",
+    "change-history-browser/history.png": "ca38c39fb4357ae6461387e667024d1af93c5d1f271f3e29802959ff19e6036e"
+  },
+  "private_evidence_root": "/Users/Sooming_/dev/softbank_2026/local-dev-records/sova-user-journey-20261120",
+  "not_performed": [
+    "AWS restart or trial-window renewal",
+    "VM priority/scheduling change",
+    "actual model call",
+    "real AWS/VM event -> renewed live operator API -> browser acceptance",
+    "fresh directional C3 qualification",
+    "complete change-channel coverage proof",
+    "full original six-stage completion"
+  ],
+  "secret_scan": {
+    "findings": 0,
+    "report_sha256": "f346e7ca3d7b79b846ca2b0e1a9b211a913004ca12337923d8a47aaf0c1e0d87"
+  }
+}
