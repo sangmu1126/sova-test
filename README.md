@@ -9,6 +9,7 @@
 ## 먼저 볼 문서
 
 - [네이티브 사용자 흐름·실제 로그인 E2E](docs/user-journey-workspace.md): 등록 → 계획 → 독립 승인 → 실행 → 검증·보류·별도 승인 복귀. 로컬 실제 IdP·HTTP·PostgreSQL 검증과 AWS→VM 운영 인수의 차이를 명시한다.
+- [신뢰 grant 순환 차단 수정·로컬 이전 회귀 복구](docs/development/verifier-grant-recovery-2026-11-21.md): 키 권한 추가와 구현 변경을 구분하고, 과거 PASS·회수·불명확한 기록의 차단을 유지한다.
 - [앱별 변경 이력 API·콘솔·실제 로그인 검증](docs/development/workspace-change-history-2026-11-20.md): 저장 기록과 수집 완전성을 구분한다. 로컬 native DB·브라우저 시험이며 실제 AWS/VM 운영 연결은 별도다.
 - [최신 실제 관측·권한 분리·만료와 재측정 실패](docs/development/personal-change-feed-integration-2026-11-20.md): 11/20 개인 AWS/VM 증거. 이전 완료 보고가 아니며 현재 시험 창은 종료됐다.
 - [계약·능력 기반 인계 구현 안내](docs/contract-foundation.md): 계약에서 인계 완료·failback·독립성 판정까지의 control plane, 로컬 PostgreSQL 실측 시나리오, 기능별 완료 표현.
