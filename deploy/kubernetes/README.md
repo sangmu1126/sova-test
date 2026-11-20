@@ -153,7 +153,7 @@ rules:
 |---|---|---|
 | `secret_access` | `deny_cross_workload_secret_access` | 앱 namespace의 등록, 앱의 Secret 이름들, 다른 워크로드의 서비스 계정(`[namespace, 이름]`) |
 | `network_reach` | `deny_cross_namespace_network_access` | 앱 namespace와 바깥 namespace들의 등록, 끝점 DNS 이름(`<service>.<namespace>.svc`)·포트, 앱 클라이언트 레이블, digest 고정 이미지, `run_as` |
-| `tls_endpoints`(PostgreSQL) | `refuse_unverified_transport` | DB마다 `host`·`port`·`server_name`·`ca_file` |
+| `tls_endpoints`(PostgreSQL·MySQL) | `refuse_unverified_transport` | DB마다 `host`·`port`·`server_name`·`ca_file` |
 | `plaintext_ports`(Redis·RabbitMQ·Kafka·MongoDB 항목 안) | 같음 | 쪽마다 서비스가 평문으로도 열어 둘 수 있는 포트. TLS로 설정된 쪽의 host·port·CA는 자동으로 등록 끝점이 된다 |
 
 `secret_access`에 필요한 워커 권한은 다음과 같다.

@@ -27,11 +27,11 @@
 | `deny_anonymous_data_access` | IAM-01.1 | `ObjectStoreProbes.anonymous_denied` | 객체 저장소 |
 | `deny_cross_tenant_data_access` | ISO-01.1 | 객체 저장소는 양방향·집합별 읽기·목록·조건부 쓰기 | 기존 단위 + 객체 저장소 |
 | `verified_transport_encryption` | ENC-01.1 | 객체 저장소는 끝점 핸드셰이크(등록 CA·이름) | 기존 단위 + 객체 저장소 |
-| `refuse_unverified_transport` | ENC-01.2·01.3 | `tls_refusal.transport_refusals` | PostgreSQL·객체·Redis·RabbitMQ·Kafka·MongoDB |
+| `refuse_unverified_transport` | ENC-01.2·01.3 | `tls_refusal.transport_refusals` | PostgreSQL·MySQL·객체·Redis·RabbitMQ·Kafka·MongoDB |
 | `deny_cross_workload_secret_access` | SEC-01.1 | `KubernetesSecretProbes` | 실행 파일에 `secret_access`가 있는 모든 단위 |
 | `deny_cross_namespace_network_access` | NET-01.3 | `NetworkReachCheck` | 실행 파일에 `network_reach`가 있는 모든 단위 |
 
-- 평문 시도는 프로토콜의 첫 메시지만 보낸다. HTTP 요청, PostgreSQL 시작 메시지(비밀번호를 묻기 전에 멈춤), Redis `PING`, AMQP 헤더, Kafka ApiVersions, MongoDB hello다. 자격은 보내지 않는다.
+- 평문 시도는 프로토콜의 첫 메시지만 보낸다. HTTP 요청, PostgreSQL 시작 메시지(비밀번호를 묻기 전에 멈춤), MySQL의 비밀번호 없는 로그인, Redis `PING`, AMQP 헤더, Kafka ApiVersions, MongoDB hello다. 자격은 보내지 않는다.
 - 평문 시도는 등록 끝점의 포트와 `plaintext_ports`(서비스가 평문으로도 열어 둘 수 있는 포트)에 한다.
 - Secret 접근은 다른 서비스 계정의 토큰으로 `get`·`list`·Pod 생성 dry run을 해 보고, API 서버의 판단(SubjectAccessReview, 그 계정의 그룹 포함)과 맞춘다.
   - Pod를 만들 수 있으면 같은 namespace의 어떤 Secret이든 마운트할 수 있다.
@@ -68,6 +68,7 @@
 | Redpanda(TLS 리스너만) | PASS |
 | Valkey TLS 포트 | 평문 거부 → PASS. 같은 서버의 6379를 `plaintext_ports`로 등록하면 그 포트가 평문을 받음 → FAIL |
 | MongoDB `preferTLS` | TLS를 제공하지만 같은 포트에서 평문 hello에 답함 → FAIL |
+| MySQL(TLS 제공, 요구하지 않음) | 비밀번호 없는 평문 로그인에 인증을 진행 → FAIL. `require_secure_transport`를 켜면 3159로 거부 → PASS |
 
 모든 끝점이 틀린 CA와 틀린 hostname을 거부했다.
 
@@ -110,7 +111,6 @@
 
 ## 6. 남은 것
 
-- MySQL의 평문 거부는 재지 않는다. MySQL은 TLS 전에 평문으로 인사하고, 거부(`require_secure_transport`)는 인증 응답 뒤에 오기 때문이다.
 - 객체 저장소 단위는 아직 워커 실행 파일 엔진이 아니다. 경로 저장소(앱이 읽는 버킷 위치)를 먼저 설계해야 한다.
 - GCS의 무인증 거부는 서명 없는 GCS 클라이언트가 필요하다. 클라우드를 켜지 않아 재지 않았다.
 - Secret 접근은 Kubernetes Secret만 잰다. Secrets Manager·Secret Manager의 다른 주체 거부(팀 SEC-01.1의 AWS 방식)는 클라우드 실측이 필요하다.

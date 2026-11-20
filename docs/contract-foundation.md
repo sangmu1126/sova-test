@@ -1986,7 +1986,7 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 | `deny_anonymous_data_access` | IAM-01.1 | 객체 저장소: 서명 없는 읽기·목록·조건부 쓰기, 보호 집합마다 |
 | `deny_cross_tenant_data_access` | ISO-01.1 | 기존 단위 probe. 객체 저장소는 양방향·집합마다 |
 | `verified_transport_encryption` | ENC-01.1 | 기존 단위 probe. 객체 저장소는 끝점 핸드셰이크 |
-| `refuse_unverified_transport` | ENC-01.2·01.3 | `tls_refusal`: 틀린 CA, 틀린 hostname, 평문 첫 메시지 |
+| `refuse_unverified_transport` | ENC-01.2·01.3 | `tls_refusal`: 틀린 CA, 틀린 hostname, 평문 첫 메시지(MySQL은 비밀번호 없는 로그인) |
 | `deny_cross_workload_secret_access` | SEC-01.1 | `KubernetesSecretProbes`: 다른 서비스 계정의 토큰 시도 + API 서버 판단 |
 | `deny_cross_namespace_network_access` | NET-01.3 | `NetworkReachCheck`: 바깥 namespace의 클라이언트 Pod 연결 |
 
@@ -2000,14 +2000,15 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 **어떤 단위가 무엇을 재나.**
 
 - 객체 저장소: 표의 앞 네 통제를 `ObjectStoreProbes`가 잰다.
-- PostgreSQL·Redis·RabbitMQ·Kafka·MongoDB: 기존 probe에 `transport_refusals(side)`가 더해졌다.
-  - 평문 시도는 PostgreSQL 시작 메시지(비밀번호를 묻기 전에 멈춤), `PING`, AMQP 헤더, ApiVersions, hello다.
+- PostgreSQL·MySQL·Redis·RabbitMQ·Kafka·MongoDB: 기존 probe에 `transport_refusals(side)`가 더해졌다.
+  - 평문 시도는 PostgreSQL 시작 메시지(비밀번호를 묻기 전에 멈춤), MySQL의 비밀번호 없는 로그인(3159면 거부), `PING`, AMQP 헤더, ApiVersions, hello다.
+  - MySQL과 PostgreSQL은 평문으로 시작해 TLS로 올라가므로, 핸드셰이크 전에 각자의 SSLRequest를 보낸다.
 - Secret 접근과 네트워크 도달은 저장소와 상관없이 어떤 단위에도 붙는다.
 
 **워커 실행 파일.**
 
 - 어떤 엔진의 항목이든 `secret_access`(앱의 Secret, 다른 서비스 계정 목록)와 `network_reach`(앱 namespace·바깥 namespace의 등록, 끝점 DNS 이름·포트, 앱 클라이언트 레이블, 고정 이미지)를 더할 수 있다. 각 항목의 필요 권한은 [배포 안내](../deploy/kubernetes/README.md)에 있다.
-- PostgreSQL은 `tls_endpoints`로 쪽마다 끝점을 등록한다.
+- PostgreSQL·MySQL은 `tls_endpoints`로 쪽마다 끝점을 등록한다.
 - Redis·RabbitMQ·Kafka·MongoDB는 TLS로 설정된 쪽의 host·port·CA가 그대로 등록 끝점이 된다. `plaintext_ports`로 평문 포트를 더한다.
 - 계약이 요구했는데 등록이 없거나 그 단위의 probe가 잴 수 없으면 FAIL이다.
 
@@ -2024,7 +2025,6 @@ MySQL과 달리 서버끼리 복제 채널을 걸 수 없다. 그래서 상태�
 
 **한계.**
 
-- MySQL 평문 거부는 재지 않는다(인증 응답 뒤에 거부됨).
 - 객체 저장소는 아직 워커 엔진이 아니다(경로 저장소 설계 필요).
 - GCS 무인증, 클라우드 비밀 저장소의 다른 주체 거부, 외부 노출(NET-01.1·01.2)은 재지 않는다.
 
