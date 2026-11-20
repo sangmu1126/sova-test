@@ -366,8 +366,17 @@ def test_catalog_changes_by_the_plan_itself_do_not_stop_it(postgres_database, no
     recorded = x["feed"].events(application_id=x["app"],
                                 environments=("synthetic-source", "onprem-target"),
                                 since=now)
-    assert {str(e.kind) for e in recorded} == {"policy"}  # pause, fence, stage, activate
-    assert all(e.cause is not None for e in recorded)
+    assert {str(e.kind) for e in recorded} == {"policy"}
+    # The independently published initial key grant is deliberately NOT
+    # attributed to an application step. Only catalog mutations caused by
+    # pause/fence/stage/activation may carry the plan's own-step attribution.
+    catalog = [e for e in recorded if e.environment_id is not None]
+    grants = [e for e in recorded if e.environment_id is None]
+    assert catalog and all(e.environment_id in {"synthetic-source", "onprem-target"}
+                           and e.cause is not None for e in catalog)
+    published = x["registry"].latest(x["signer"].issuer_id, x["signer"].key_id)
+    assert len(grants) == 1 and grants[0].event_id == "verifier-" + published.fingerprint
+    assert grants[0].cause is None
 
 
 def test_a_foreign_schema_change_mid_handoff_stops_the_next_command(postgres_database, now,
