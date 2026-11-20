@@ -31,7 +31,11 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--inputs", type=Path, required=True)
     p.add_argument("--artifacts", type=Path, required=True)
+    p.add_argument("--previous-generation", type=int, default=2)
+    p.add_argument("--generation", type=int, default=3)
     args = p.parse_args()
+    if not 1 <= args.previous_generation < args.generation <= 32 or args.generation != args.previous_generation + 1:
+        raise ValueError("One explicit consecutive owned credential generation required")
     os.umask(0o077)
     args.artifacts.mkdir(mode=0o700, exist_ok=False)
     identity()
@@ -55,7 +59,7 @@ def main():
         volumes = deployment["spec"]["template"]["spec"]["volumes"]
         index = next(i for i, volume in enumerate(volumes) if volume["name"] == "input")
         old_name = volumes[index]["secret"]["secretName"]
-        if old_name != "orders-" + kind + "-input-v2":
+        if old_name != "orders-" + kind + "-input-v" + str(args.previous_generation):
             raise ValueError("Expected previous input reference changed; do not overwrite")
         old = json.loads(guest(KUBECTL, "--kubeconfig", CONFIG, "-n", NS, "get", "secret", old_name, "-o", "json"))
         directory = args.inputs / ("target-" + kind)
@@ -71,7 +75,7 @@ def main():
                 previous.pop("expires_at")
                 if current.pop("expires_at") != bindings["expires_at"] or previous != current:
                     raise ValueError("App scope or immutable deployment changed")
-        new_name = "orders-" + kind + "-input-v3"
+        new_name = "orders-" + kind + "-input-v" + str(args.generation)
         secret = {"apiVersion": "v1", "kind": "Secret", "metadata": {"name": new_name, "namespace": NS,
             "labels": {"sova.run": RUN, "sova.scope": "personal-qualification"}}, "immutable": True, "type": "Opaque", "data": data}
         mutate(secret, "create", "--dry-run=server", "-f", "-", "-o", "name")
