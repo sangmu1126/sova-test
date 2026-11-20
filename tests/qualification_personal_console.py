@@ -41,11 +41,12 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("inputs", "connections", "control-directory", "artifacts"):
         p.add_argument("--" + name, type=Path, required=True)
-    p.add_argument("--case", choices=("registration", "verifier", "registry", "operational"), default="registration")
+    p.add_argument("--case", choices=("registration", "verifier", "registry", "operational", "inventory", "readiness"), default="registration")
     p.add_argument("--registry-package", type=Path)
     p.add_argument("--operational-read-models", type=Path)
     p.add_argument("--refresh-health-collector", type=Path)
     p.add_argument("--health-artifacts", type=Path)
+    p.add_argument("--cost-artifacts", type=Path)
     p.add_argument("--identity-startup-seconds", type=int, default=300)
     p.add_argument("--witness-installation", type=Path)
     args = p.parse_args()
@@ -124,9 +125,9 @@ def main():
     measured = source_identity()
     frozen = args.artifacts / "api-implementation/src"
     frozen.mkdir(parents=True)
-    for name, source in (("sova", ROOT / "src/sova"),
+    for name, source_dir in (("sova", ROOT / "src/sova"),
                          ("sova_security", Path(import_module("sova_security").__file__).resolve().parent)):
-        shutil.copytree(source, frozen / name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"))
+        shutil.copytree(source_dir, frozen / name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"))
         expected = {k[len(name)+1:]: v for k, v in measured["files"].items() if k.startswith(name+"/")}
         if source_identity(frozen/name)["files"] != expected:
             raise ValueError("API snapshot changed while it was copied")
@@ -141,7 +142,7 @@ def main():
     api = None
     try:
         with identity_provider(harness, startup_seconds=args.identity_startup_seconds,
-                               security_roles=args.case == "verifier") as idp:
+                               security_roles=args.case in ("verifier", "readiness")) as idp:
             with (args.artifacts / "api.log").open("xb") as log:
                 api = subprocess.Popen([sys.executable, "-m", "sova.service.main", "serve-api", "--host", "127.0.0.1", "--port", str(port)],
                     env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -168,8 +169,35 @@ def main():
                 (args.artifacts/"health-refresh.stdout").write_bytes(refreshed.stdout)
                 (args.artifacts/"health-refresh.stderr").write_bytes(refreshed.stderr)
                 refreshed.check_returncode()
+            if args.cost_artifacts:
+                if args.case != "operational" or not args.operational_read_models:
+                    raise ValueError("Cost refresh requires an explicit operational read-model run")
+                refreshed = subprocess.run([sys.executable, str(ROOT/"infra/personal-journey/observe_cost.py"),
+                    "--artifacts",str(args.cost_artifacts)], stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
+                (args.artifacts/"cost-refresh.stdout").write_bytes(refreshed.stdout)
+                (args.artifacts/"cost-refresh.stderr").write_bytes(refreshed.stderr)
+                refreshed.check_returncode()
+            if args.case == "inventory":
+                facts_dir = args.artifacts/"dependency-facts"
+                package_file = args.artifacts/"measured-package.json"
+                commands = [
+                    [sys.executable,str(ROOT/"infra/personal-journey/collect_dependency_facts.py"),
+                     "--inputs",str(args.inputs),"--connections",str(args.connections),"--artifacts",str(facts_dir)],
+                    [sys.executable,str(ROOT/"infra/personal-journey/measured_dependency_snapshot.py"),
+                     "--inputs",str(args.inputs),"--facts",str(facts_dir/"facts.json"),
+                     "--control-directory",str(args.control_directory),"--output",str(package_file)]]
+                for index, command in enumerate(commands):
+                    actual = subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=300)
+                    (args.artifacts/f"inventory-{index}.stdout").write_bytes(actual.stdout)
+                    (args.artifacts/f"inventory-{index}.stderr").write_bytes(actual.stderr)
+                    actual.check_returncode()
+                registry_package=json.loads(package_file.read_text())
+                if registry_package.get("partial_inventory") is not True or registry_package.get("business_plan_admitted") is not False:
+                    raise ValueError("Incomplete actual inventory must remain explicit")
+                expected_heads |= {(r["kind"],r["subject"]) for r in registry_package["registrations"]}
             browser_input = {"origin": origin, "idpOrigin": idp["origin"], "users": idp["users"],
                 "directory": str(args.artifacts), "tools": TOOLS, "executable": CHROME,
+                "requireFreshHealth": bool(args.refresh_health_collector),
                 "tenant": tenant, "application": application, "registrations": registrations,
                 "source_profile": source.profile_id, "target_profile": target.profile_id}
             if registry_package is not None:
@@ -179,13 +207,13 @@ def main():
                 report["observed_implementation_digest"] = registry_package["implementation_digest"]
                 report["partial_inventory"] = registry_package.get("partial_inventory")
                 report["inventory_evaluated"] = any(r["kind"]=="dependency_snapshot" for r in registry_package["registrations"])
-            if args.case == "verifier":
+            if args.case in ("verifier", "readiness"):
                 from qualification_personal_keys import registry_proposal
 
                 proposal = registry_proposal(identity, lambda: psycopg.connect((args.control_directory / "runtime.dsn").read_text()))
                 browser_input["verifier_request"] = proposal
                 report["private_key_reference"] = proposal["private_key_reference"]
-            browser_script = {"verifier":"qualification_personal_verifier.mjs", "registry":"qualification_personal_registry.mjs", "operational":"qualification_personal_operational.mjs"}.get(
+            browser_script = {"verifier":"qualification_personal_verifier.mjs", "readiness":"qualification_personal_verifier.mjs", "registry":"qualification_personal_registry.mjs", "operational":"qualification_personal_operational.mjs", "inventory":"qualification_personal_registry.mjs"}.get(
                 args.case, "qualification_personal_console.mjs")
             run = subprocess.run([NODE, str(ROOT / "tests" / browser_script)],
                 input=json.dumps(browser_input), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
@@ -195,7 +223,7 @@ def main():
                 raise RuntimeError("Actual browser registration failed; inspect private artifacts")
             report["browser"] = json.loads((args.artifacts / "browser.json").read_text())
             report["identity_runtime"] = idp["report"]
-            if args.case == "verifier":
+            if args.case in ("verifier", "readiness"):
                 from sova.adapters.postgres_verifier_registry import PostgresVerifierRegistry
 
                 registry = PostgresVerifierRegistry(lambda: psycopg.connect((args.control_directory / "runtime.dsn").read_text()),
@@ -206,6 +234,13 @@ def main():
                 report["verifier_publication"] = {"revision": published.revision, "digest": published.fingerprint,
                     "requested_by": published.requested_by, "approved_by": published.approved_by}
                 report["approval_scope"] = "Distinct authenticated test subjects; not proof of two independent humans"
+            if args.case == "readiness":
+                from qualification_personal_readiness import qualify_readiness
+
+                new_heads, report["readiness"] = qualify_readiness(args, browser_input, root=ROOT, node=NODE)
+                expected_heads |= new_heads
+                report.update(strategy_qualification_issued=True, preissued_measured_qualifications=2,
+                              inventory_evaluated=True, partial_inventory=True)
             with psycopg.connect((args.control_directory / "runtime.dsn").read_text()) as conn:
                 conn.execute("SELECT set_config('sova.tenant_id', %s, true)", (tenant,))
                 report["registered_rows"] = conn.execute("SELECT count(*) FROM sova_control.registration_heads").fetchone()[0]
@@ -221,9 +256,20 @@ def main():
         if api is not None and api.poll() is None:
             api.terminate()
             api.wait(timeout=30)
+        if api is not None:
+            report["api_stopped"] = api.poll() is not None
+        report["api_started"] = api is not None
+        for receipt in args.artifacts.glob("identity-sova-journey-oidc-*.json"):
+            cleanup = json.loads(receipt.read_text())
+            report["identity_removed"] = cleanup.get("container_removed") is True and cleanup.get("network_removed") is True
+            report["identity_cleanup_receipt_sha256"] = hashlib.sha256(receipt.read_bytes()).hexdigest()
         report["completed_at"] = datetime.now(UTC).isoformat()
         (args.artifacts / "result.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps(report))
+    print(json.dumps({key: report.get(key) for key in (
+        "completed_at", "actual_business_mutations", "migration_complete", "operational_qualification",
+        "api_started", "api_stopped", "identity_removed", "registered_rows", "plan_rows",
+        "strategy_qualification_issued", "partial_inventory",
+    )}))
 
 
 if __name__ == "__main__":

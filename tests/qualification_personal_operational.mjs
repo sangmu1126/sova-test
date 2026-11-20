@@ -31,7 +31,11 @@ try{
  const frame=await response.json();
  if(frame.authorizes_execution!==false||frame.tenant_id!==c.tenant||frame.application_id!==c.application||frame.health.state==='unavailable'||frame.health.samples.length!==6)throw Error('Actual measurement binding missing');
  await page.getByRole('cell',{name:'AWS 출발지',exact:true}).first().waitFor();
- await page.getByText('귀속 금액 미확인 · 0원으로 계산하지 않습니다.',{exact:true}).waitFor();
+ const costText=frame.cost.available===true
+  ? `${frame.cost.currency} ${frame.cost.amount}${frame.cost.estimated?' (추정치)':''}`
+  : '귀속 금액 미확인 · 0원으로 계산하지 않습니다.';
+ await page.getByText(costText,{exact:true}).waitFor();
+ if(c.requireFreshHealth&&frame.health.state!=='fresh')throw Error('New live health samples were not displayed as fresh');
  const other=await context.request.get(c.origin+'/v1/tenants/other/applications/'+encodeURIComponent(c.application)+'/operational-observations',{headers:{authorization}});
  if(other.status()!==403)throw Error('Cross-tenant measurement read allowed');
  const missing=await context.request.get(c.origin+'/v1/tenants/'+encodeURIComponent(c.tenant)+'/applications/not-registered/operational-observations',{headers:{authorization}});
