@@ -77,9 +77,18 @@ def main():
             shlex.join(["sudo", "-n", "python3", "-c", PROGRAM]),
         ],
         capture_output=True,
-        check=True,
         timeout=60,
     )
+    if result.returncode:
+        # Remote stdout could contain a token after a partial response. Never
+        # echo it or include the command text in a raised CalledProcessError.
+        (a.output / "private-projection.stderr").write_bytes(result.stderr)
+        (a.output / "projection-refusal.json").write_text(json.dumps({
+            "phase": "pinned-vm-api-projection", "exit_code": result.returncode,
+            "stderr_sha256": hashlib.sha256(result.stderr).hexdigest(),
+            "stdout_retained": False, "ready": False,
+        }) + "\n")
+        raise RuntimeError("Pinned VM API projection failed; inspect private diagnostic")
     identity = json.loads(result.stdout)
     ca = base64.b64decode(identity.pop("ca"), validate=True)
     (a.output / "ca.pem").write_bytes(ca)
