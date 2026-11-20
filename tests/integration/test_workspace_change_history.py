@@ -68,4 +68,3 @@ def test_change_history_empty_does_not_mean_unchanged(api):
     assert response.json()["items"] == [] and response.json()["next_after"] is None
     assert response.json()["coverage"] == "UNKNOWN"
     assert response.json()["authorizes_execution"] is False
-
