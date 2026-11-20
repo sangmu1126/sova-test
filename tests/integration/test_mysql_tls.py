@@ -11,9 +11,11 @@ from mysql_business import PROBE_INSERT, SCHEMA, TABLES
 from mysql_pair_business import REPLICATION
 from mysql_pair_world import MySqlPairWorld
 import pytest
+from tls_checks import endpoint, identity_held, summary
 
 from sova.adapters.mysql_handoff_probes import MySqlHandoffProbes
 from sova.adapters.mysql_replication import MySqlReplicationAdapter
+from sova.adapters.tls_refusal import mysql_plaintext, transport_refusals
 from sova.domain.contracts import EffectStatus
 
 pytestmark = [pytest.mark.mysql, pytest.mark.kubernetes]
@@ -83,3 +85,29 @@ def test_a_ca_that_does_not_vouch_for_the_source_keeps_the_sync_from_starting(
     assert readback(untrusted, "start_sync") == EffectStatus.UNKNOWN
     assert untrusted._status()["Last_IO_Error"]
     untrusted.release_replication()
+
+
+def test_a_server_offering_tls_takes_plaintext_until_it_requires_secure_transport(
+        mysql_pair_business):
+    """TLS offered is not plaintext refused: the login without TLS goes on to
+    authentication. With ``require_secure_transport`` the server answers 3159
+    before any password is asked for."""
+    b = mysql_pair_business
+    admin = dict(b["admins"]["target"])
+    check = endpoint(admin["port"], b["ca_file"], preamble="mysql")
+    user = b["app"].rsplit("@", 1)[0]
+    passed, observation = transport_refusals(check, plaintext=mysql_plaintext(user))
+    assert not passed and observation["accepted"] == ["plaintext"], summary(observation)
+    assert identity_held(observation), summary(observation)
+    secured = dict(admin, ssl={"ca": b["ca_file"]}, ssl_verify_cert=True,
+                   ssl_verify_identity=True)
+    with b["pymysql"].connect(**admin) as conn, conn.cursor() as cur:
+        cur.execute("SET GLOBAL require_secure_transport = ON")
+    try:
+        passed, observation = transport_refusals(check, plaintext=mysql_plaintext(user))
+    finally:  # only a TLS session may switch it back now
+        with b["pymysql"].connect(**secured) as conn, conn.cursor() as cur:
+            cur.execute("SET GLOBAL require_secure_transport = OFF")
+    assert passed, summary(observation)
+    assert observation["checks"]["plaintext"]["reason"] == "server_requires_tls"
+

@@ -269,10 +269,13 @@ spec:
             - {name: RABBITMQ_DEFAULT_USER, value: sova-admin}
             - {name: RABBITMQ_DEFAULT_PASS, value: sova-rabbit-test-secret}
           ports: [{containerPort: 5672}, {containerPort: 15672}]
+          # A TCP check, not rabbitmq-diagnostics: run by the kubelet as root
+          # before the broker has written its Erlang cookie, the CLI writes one
+          # root-only, and the broker (user rabbitmq) can no longer read it and
+          # stops at boot (eacces). It also started an Erlang VM every 5 s.
           readinessProbe:
-            exec: {command: ["rabbitmq-diagnostics", "-q", "check_port_connectivity"]}
-            periodSeconds: 5
-            timeoutSeconds: 10
+            tcpSocket: {port: 5672}
+            periodSeconds: 2
           resources: {limits: {memory: 512Mi}}
           volumeMounts:
             - {name: plugins, mountPath: /etc/rabbitmq/enabled_plugins, subPath: enabled_plugins}
