@@ -126,6 +126,10 @@ def create_app(plane, authenticate, *, ready=lambda: True, operational_reads=Non
     def operational_observations(application: str, who=Depends(principal)):
         return plane.operational_observations(who, application, operational_reads)
 
+    @app.get("/v1/tenants/{tenant}/applications/{application}/change-history")
+    def change_history(application: str, after: str="", who=Depends(principal)):
+        return plane.change_history(who, application, after)
+
     @app.get("/v1/tenants/{tenant}/applications/{application}/plans")
     def plan_catalog(application: str, after: str="", who=Depends(principal)):
         return plane.plan_catalog(who,application,after)
