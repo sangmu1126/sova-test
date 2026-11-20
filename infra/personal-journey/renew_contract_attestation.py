@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import psycopg
 
 from sova.adapters.ed25519_evidence import Ed25519EvidenceSigner
+from sova.adapters.kubernetes.https import private_text
 from sova.adapters.postgres_registrations import PostgresRegistrations
 from sova.adapters.postgres_verifier_registry import PostgresVerifierRegistry
 from sova.adapters.registration.registry_codec import encode
@@ -61,7 +62,7 @@ def main():
 
     def connect():
         return psycopg.connect(
-            (a.control_directory / "runtime.dsn").read_text(), connect_timeout=5
+            private_text(a.control_directory / "runtime.dsn"), connect_timeout=5
         )
 
     registry = PostgresRegistrations(connect, tenant_id=identity["tenant_id"])
@@ -129,7 +130,8 @@ def main():
         "expired_evidence_reused": False,
         "business_plan_admitted": False,
     }
-    a.output.write_text(canonical_json(package, limit=1 << 20) + "\n")
+    with a.output.open("x") as file:
+        file.write(canonical_json(package, limit=1 << 20) + "\n")
     print(
         json.dumps(
             {
