@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "completed_at": "2026-11-20T10:54:32.880342+00:00",
+  "scope": "Actual personal AWS/VM health gateways, disposable real IdP, native HTTP API and encrypted VM ledger",
+  "implementation_digest": "5ad880ee7a0469357eaddc3315796f18677ade62dc33b41d5df80bdebb9dc89e",
+  "frozen_implementation_files": 471,
+  "console_bundle_sha256": {
+    "index.html": "2400b4bbdba88b1f2abab49605a3516e09e73bde46c93fac9fd8ca3273ec6cef",
+    "workspace/index.html": "b13c361e6554318dec02d364b412ec9e8ce743680f01ee1613a94fa4bd9c694e",
+    "assets/legacy-C_MacO6I.js": "a1bcd664c21d1c39974533c1fa6e1d94907d64531192c5c8e9d013c73dcb6afd",
+    "assets/workspace-Dlj-RtAs.js": "a199b054351609d9c3539ea77f1bab1e307819128ae8ff3ee56b0bde82df0204",
+    "assets/styles-C1_nwRYh.css": "1525befe7b543cc7451859e5ee90df814b03c247d39aef4afb4a7a13d051a88b",
+    "assets/workspace-DjLX5RNL.css": "30f15e9195d5dd3fa31480ec5ce5b8e2e82ce2599d609ad82ede8da367305e08",
+    "assets/styles-qxUa921B.js": "15744959bd4bb83c6479f380ea841114ad6fa5f065492b3a800fd84c1d66084d",
+    "assets/legacy-DLioOiRN.css": "b0cb7bd6fec5951c9c8f5808821438206604b1629a912c96009ac427f38e7d69"
+  },
+  "identity": {
+    "image_id": "sha256:9ff9180b6120c45f43f3bb4b9706eaf5fc250115581ee7c5cee067500f727e5c",
+    "realm_setup": "realm-import",
+    "cold_start_seconds": 108.766,
+    "administrator_token_issues": 0,
+    "pkce_method": "S256"
+  },
+  "browser": {
+    "pkce": 1,
+    "actual_native_api": true,
+    "actual_vm_ledger": true,
+    "frame": {
+      "version": 1,
+      "tenant_id": "personal-qualification",
+      "application_id": "orders-b0be270e62",
+      "read_at": "2026-11-20T10:54:24.180736+00:00",
+      "observational_only": true,
+      "authorizes_execution": false,
+      "health": {
+        "state": "fresh",
+        "observed_at": "2026-11-20T10:53:45.193477+00:00",
+        "valid_until": "2026-11-20T10:58:42.765215+00:00",
+        "record_sha256": "fe6ea4f558b8d7fecad238412c682a77fd75920ec04f9e34397cc4e56966ecf6",
+        "samples": [
+          {
+            "side": "source",
+            "status": 200,
+            "duration_ms": 94.717,
+            "verified_application_https": true
+          },
+          {
+            "side": "source",
+            "status": 200,
+            "duration_ms": 56.994,
+            "verified_application_https": true
+          },
+          {
+            "side": "source",
+            "status": 200,
+            "duration_ms": 59.748,
+            "verified_application_https": true
+          },
+          {
+            "side": "target",
+            "status": 200,
+            "duration_ms": 104.494,
+            "verified_application_https": true
+          },
+          {
+            "side": "target",
+            "status": 200,
+            "duration_ms": 59.735,
+            "verified_application_https": true
+          },
+          {
+            "side": "target",
+            "status": 200,
+            "duration_ms": 19.708,
+            "verified_application_https": true
+          }
+        ],
+        "measurement_scope": "controller_health_gateway",
+        "application_server_instrumented": false,
+        "slo_qualified": false
+      },
+      "cost": {
+        "state": "fresh",
+        "observed_at": "2026-11-20T10:53:47.320458+00:00",
+        "valid_until": "2026-11-20T10:58:47.320458+00:00",
+        "record_sha256": "831c6f55e2c707496edf7281793a82fab647efe3352f14f41cc1af17ba9d2284",
+        "available": true,
+        "amount": "0.0007146056",
+        "currency": "USD",
+        "estimated": true,
+        "reason": null,
+        "complete_tco": false,
+        "comparison_authorized": false
+      }
+    },
+    "cross_tenant_status": 403,
+    "unregistered_application_status": 404,
+    "native_mutations": 0,
+    "token_persisted": false,
+    "execution_admitted": false,
+    "migration_complete": false
+  },
+  "native_registered_rows": 12,
+  "native_plans": 0,
+  "api_stopped": true,
+  "identity_removed": true,
+  "app_internal_instrumentation": false,
+  "full_traffic_or_slo_qualification": false,
+  "complete_tco_or_lowest_cost_recommendation": false,
+  "migration_complete": false,
+  "raw_receipts": {
+    "operational-ui-v4-01/result.json": "37f5510fe9f62139010548536959f2772f7b3b61f889135474ad5de34dbe21f6",
+    "operational-ui-v4-01/browser.json": "0229db322e534d48089c45a6155d6d997733bcf3b294cb8e88af19cf93b1bf37",
+    "actual-health-otel-04/result.json": "fe6ea4f558b8d7fecad238412c682a77fd75920ec04f9e34397cc4e56966ecf6",
+    "aws-cost-observation-06.json": "831c6f55e2c707496edf7281793a82fab647efe3352f14f41cc1af17ba9d2284"
+  }
+}

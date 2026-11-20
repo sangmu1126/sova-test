@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "completed_at": "2026-11-20T10:50:35.449665+00:00",
+  "scope": "Actual personal AWS / owned Lima RKE2; local disposable test IdP, not corporate SSO/MFA",
+  "run_id": "b0be270e62",
+  "executed_native_implementation_digest": "5ad880ee7a0469357eaddc3315796f18677ade62dc33b41d5df80bdebb9dc89e",
+  "measured_implementation_files": 471,
+  "console_bundle_sha256": {
+    "index.html": "2400b4bbdba88b1f2abab49605a3516e09e73bde46c93fac9fd8ca3273ec6cef",
+    "workspace/index.html": "b13c361e6554318dec02d364b412ec9e8ce743680f01ee1613a94fa4bd9c694e",
+    "assets/legacy-C_MacO6I.js": "a1bcd664c21d1c39974533c1fa6e1d94907d64531192c5c8e9d013c73dcb6afd",
+    "assets/workspace-Dlj-RtAs.js": "a199b054351609d9c3539ea77f1bab1e307819128ae8ff3ee56b0bde82df0204",
+    "assets/styles-C1_nwRYh.css": "1525befe7b543cc7451859e5ee90df814b03c247d39aef4afb4a7a13d051a88b",
+    "assets/workspace-DjLX5RNL.css": "30f15e9195d5dd3fa31480ec5ce5b8e2e82ce2599d609ad82ede8da367305e08",
+    "assets/styles-qxUa921B.js": "15744959bd4bb83c6479f380ea841114ad6fa5f065492b3a800fd84c1d66084d",
+    "assets/legacy-DLioOiRN.css": "b0cb7bd6fec5951c9c8f5808821438206604b1629a912c96009ac427f38e7d69"
+  },
+  "test_identity": {
+    "image_id": "sha256:9ff9180b6120c45f43f3bb4b9706eaf5fc250115581ee7c5cee067500f727e5c",
+    "base_image_id": "sha256:923a431c08971d49727a857e64870d8d63b5bf294a730e5dde729b5138c26c9e",
+    "prebuilt_augmentation": true,
+    "realm_setup": "realm-import",
+    "cold_start_seconds": 124.434,
+    "administrator_token_issues": 0,
+    "direct_password_grant_for_spa": false,
+    "pkce_method": "S256",
+    "container_removed": true,
+    "network_removed": true
+  },
+  "verifier_approval": {
+    "revision": 2,
+    "digest": "41004a6106eb8f1ea107235d3d19e7ee35f72b0fbd48e05b1ad359ba7e591fb5",
+    "requested_by": "69618235-d5a5-4b05-a217-d3c4f59929ab",
+    "approved_by": "b4b89552-dfda-4a4d-beb9-ebc648b56b9a",
+    "distinct_subjects_not_independent_humans": true,
+    "self_approval_refusal": 403,
+    "different_digest_refusal": 409
+  },
+  "contract": {
+    "revision": 2,
+    "requirements_changed": false,
+    "previous_evidence_extended": false,
+    "new_native_registration_and_attestation": true
+  },
+  "directional_strategy": {
+    "actual_steps": 15,
+    "forward_steps": 7,
+    "reverse_steps": 8,
+    "passed": true,
+    "checks": {
+      "nologin_is_not_activation": true,
+      "forward_content_and_sequence_equal": true,
+      "new_target_write_preserved_on_failback": true,
+      "single_writer_after_failback": true,
+      "actual_route_returned_to_source": true,
+      "native_and_security_implementation_unchanged": true,
+      "original_app_data_privileges_and_entry_unchanged": true
+    },
+    "scope": {
+      "tables": [
+        [
+          "orders",
+          "id"
+        ],
+        [
+          "work_items",
+          "id"
+        ],
+        [
+          "idempotency_results",
+          "customer"
+        ]
+      ],
+      "schema_sha256": "4339b036b9343646d0100578171a60de991c6cd17656f0eaa37ca39c0f26b957",
+      "writer_paths": 2,
+      "admin_connection_reuse": true,
+      "source_rows": {
+        "orders": 50,
+        "work_items": 50,
+        "idempotency_results": 50
+      },
+      "target_rows_after_new_write": {
+        "orders": 51,
+        "work_items": 51,
+        "idempotency_results": 51
+      },
+      "max_prepared_transactions": 0,
+      "native_catalog_version": 2,
+      "conformance_documents_are_not_admitted_plans": true
+    },
+    "qualifications_issued": 2,
+    "native_ingestion": true,
+    "original_application_migrated": false,
+    "conformance_documents_are_not_admitted_plans": true
+  },
+  "discovery": {
+    "measured_signed_partial_inventory": true,
+    "native_ingestion": true,
+    "native_compile_refusal": {
+      "http_status": 422,
+      "body": {
+        "status": "NEEDS_EVIDENCE",
+        "blockers": [
+          {
+            "stage": "C2",
+            "code": "CONTROL_INVENTORY_INCOMPLETE"
+          },
+          {
+            "stage": "C2",
+            "code": "DISCOVERY_COVERAGE_INCOMPLETE"
+          },
+          {
+            "stage": "C2",
+            "code": "SNAPSHOT_AUTHENTICATION_REQUIRED"
+          },
+          {
+            "stage": "C2",
+            "code": "WRITER_INVENTORY_INCOMPLETE"
+          }
+        ]
+      }
+    },
+    "snapshot_authentication_evaluation": "Not performed by boundary analysis while completeness blockers exist; signed-envelope ingestion alone is not a passed authenticity obligation",
+    "coverage_complete": false
+  },
+  "native_ledger_counts": {
+    "observed_at": "2026-11-20T10:52:04.520201+00:00",
+    "counts": {
+      "plans": 0,
+      "operations": 0,
+      "effects": 0,
+      "registration_heads": 12
+    },
+    "business_plan_admitted": false
+  },
+  "cleanup": {
+    "api_stopped": true,
+    "identity_removed": true,
+    "token_persisted": false
+  },
+  "legacy_aggregate_field_caveat": "Raw harness strategy_qualification_issued remained false because this run loaded the earlier aggregate-report code. The two actual package entries and native ingestion receipts above are authoritative; raw result is retained unchanged. Reporter was fixed for later runs.",
+  "migration_complete": false,
+  "continuity_qualified": false,
+  "raw_receipts": {
+    "readiness-ui-v4-02/result.json": "b3ee66e681f27f5e0f8f7992f8dd0d845e9d4e3f6e75e4ea5ede83abc2e2488d",
+    "readiness-ui-v4-02/browser.json": "d9e2aae875386432f7c8ec93b24c1afc1afae6d9bbbde957a9b98c0361f032ef",
+    "readiness-ui-v4-02/native-count-readback.json": "8685b1fecc3b744b6a519dce06302efcf67074d77ebe5c8cbe5dc1d75fbe3fc9",
+    "readiness-ui-v4-02/readiness/result.json": "843d929605d2e16ef55bbcbf83ad63810f049fc8a10bef62a1dc32abdfa6dbe3",
+    "readiness-ui-v4-02/readiness/strategy-trial/trial.json": "1f468d95e83a282532328e336a3ea1df77594b5530b3c47c6234233c0a6460e1",
+    "readiness-ui-v4-02/readiness/contract-package.json": "0cc6782cbfd83a03bef83f48b246bb2f0f1d87eafe193d31002afd8ff47342fd",
+    "readiness-ui-v4-02/readiness/strategy-package.json": "bdfb3f1fd2885375ad772f947e9b3fcb163e77a138b18a5e65024f03746264c3",
+    "readiness-ui-v4-02/readiness/dependency-package.json": "222af33a9e56ea5b4475fb15ac6baad06d836bfad7adaa96d63ff923dea78f56",
+    "readiness-ui-v4-02/readiness/dependency-ingestion-and-refusal/browser.json": "c749e58bc8efba8740a0eec02a33a229db6ecb44912fb5af1736b3535ff37d4d"
+  },
+  "later_actionable_console": {
+    "completed_at": "2026-11-20T10:58:26.141736+00:00",
+    "bundle_sha256": {
+      "index.html": "2400b4bbdba88b1f2abab49605a3516e09e73bde46c93fac9fd8ca3273ec6cef",
+      "workspace/index.html": "3ed4c25d1617789788767c353a3f45e310a6a272e97140416e4916f59925c104",
+      "assets/workspace-DKA0JAAp.js": "c4a79637f82c24910c4e217a15b6d445fb185f035e4a92a957757eaa1563ccf1",
+      "assets/legacy-C_MacO6I.js": "a1bcd664c21d1c39974533c1fa6e1d94907d64531192c5c8e9d013c73dcb6afd",
+      "assets/styles-C1_nwRYh.css": "1525befe7b543cc7451859e5ee90df814b03c247d39aef4afb4a7a13d051a88b",
+      "assets/workspace-CwBne1qK.css": "9170f520ec1c153a6f3f2f153387bb3125428a801e962d086c2b09a44d029904",
+      "assets/styles-qxUa921B.js": "15744959bd4bb83c6479f380ea841114ad6fa5f065492b3a800fd84c1d66084d",
+      "assets/legacy-DLioOiRN.css": "b0cb7bd6fec5951c9c8f5808821438206604b1629a912c96009ac427f38e7d69"
+    },
+    "implementation_digest": "5ad880ee7a0469357eaddc3315796f18677ade62dc33b41d5df80bdebb9dc89e",
+    "actual_fresh_facts_signed_and_registered": true,
+    "native_compile_refusal": {
+      "http_status": 422,
+      "body": {
+        "status": "NEEDS_EVIDENCE",
+        "blockers": [
+          {
+            "stage": "C2",
+            "code": "CONTROL_INVENTORY_INCOMPLETE"
+          },
+          {
+            "stage": "C2",
+            "code": "DISCOVERY_COVERAGE_INCOMPLETE"
+          },
+          {
+            "stage": "C2",
+            "code": "SNAPSHOT_AUTHENTICATION_REQUIRED"
+          },
+          {
+            "stage": "C2",
+            "code": "WRITER_INVENTORY_INCOMPLETE"
+          }
+        ]
+      }
+    },
+    "native_registration_heads": 13,
+    "native_plans": 0,
+    "api_stopped": true,
+    "identity_removed": true,
+    "token_persisted": false,
+    "readable_korean_reasons_verified": true,
+    "record_sha256": "03a1223dc6026bf409eef85675ed34c76705d976c2f1d18f3168af86107bebfd"
+  },
+  "current_native_worker": {
+    "implementation_digest": "5ad880ee7a0469357eaddc3315796f18677ade62dc33b41d5df80bdebb9dc89e",
+    "startup": {
+      "source_commit": "c8b2f4e8848a1b90c22aea221fdb2ede25284d4b",
+      "driver_sha256": "fddf2c165978ea55d3d342bd43271645af5085fa90725c194d68ecdb08a9d450",
+      "started_at": "2026-11-20T11:24:07.815799+00:00",
+      "checks": {
+        "history_delete_denied": true,
+        "migration_insert_denied": true,
+        "create_schema_denied": true,
+        "runtime_business_data_read_denied": true,
+        "actual_native_host_health": true,
+        "graceful_exit": true,
+        "no_admission_or_external_effects": true
+      },
+      "admitted": false,
+      "migration_complete": false,
+      "operational_qualification": false,
+      "business_denial_mechanism": "database_connect_privilege",
+      "owner": "host.97884.66b7e312d639",
+      "finished_at": "2026-11-20T11:24:14.072701+00:00"
+    },
+    "prepared_route_observation": {
+      "observed_at": "2026-11-20T11:24:43.038883+00:00",
+      "implementation_digest": "5ad880ee7a0469357eaddc3315796f18677ade62dc33b41d5df80bdebb9dc89e",
+      "observation": {
+        "selector_side": "source_orders",
+        "ready_endpoints": 1,
+        "foreign_endpoints": [],
+        "route": "source_orders",
+        "http_sides": [
+          "source_orders",
+          "source_orders",
+          "source_orders"
+        ]
+      },
+      "route_or_application_changed": false,
+      "worker_execution_approved": false
+    },
+    "execution_verifier_key_approved": false,
+    "startup_does_not_qualify_business_execution": true,
+    "startup_receipt_sha256": "de0ea50422cb57273b0f78a77716f92b23af59a8c467cb9ce645826ee2926975",
+    "route_receipt_sha256": "cca39f400e2573cc0aea5969ca7e25378063a4cb5127b1a7319415bff2a91d9b"
+  }
+}

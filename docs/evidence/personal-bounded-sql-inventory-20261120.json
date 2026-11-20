@@ -1,0 +1,218 @@
+{
+  "version": 1,
+  "observed_at": "2026-11-20T11:03:46.791761+00:00",
+  "scope": "Owned AWS EC2 PostgreSQL and local VM PostgreSQL, actual read-only catalog observation",
+  "collector_sha256": "74c59d93d6b92a3a3f0ef85d63daa9894ddae18e130e443efe44a8f55825157b",
+  "source_projection_sha256": "79df619f9554660babc318e68282cbf32b83ebe6e892101e9cdf9974c581625c",
+  "raw_fact_sha256": "831656dbdae3b7f5a0195adc486a5a858ee0c92b7393a577b10f3aac03dbaeea",
+  "databases": {
+    "source": {
+      "system_identifier": "7709720208587968539",
+      "roles": 36,
+      "potential_table_write_roles": [
+        "orders_app",
+        "orders_batch",
+        "pg_write_all_data",
+        "postgres"
+      ],
+      "sequence_authority_rows": 3,
+      "login_set_role_paths": 35,
+      "security_definer_functions": 0,
+      "tls": [
+        true,
+        "TLSv1.3",
+        "TLS_AES_256_GCM_SHA384"
+      ],
+      "collection": {
+        "read_only": true,
+        "isolation": "repeatable_read",
+        "actual_session_settings": {
+          "transaction_read_only": "on",
+          "transaction_isolation": "repeatable read",
+          "statement_timeout": "5s",
+          "lock_timeout": "1s"
+        },
+        "statement_timeout_ms": 5000,
+        "lock_timeout_ms": 1000,
+        "function_hash_algorithm": "sha256",
+        "privileges_are_potential_not_confirmed_writes": true,
+        "external_clients_enumerated": false,
+        "complete_temporal_change_feed": false
+      }
+    },
+    "target": {
+      "system_identifier": "7709723763091251229",
+      "roles": 38,
+      "potential_table_write_roles": [
+        "pg_write_all_data",
+        "postgres"
+      ],
+      "sequence_authority_rows": 2,
+      "login_set_role_paths": 37,
+      "security_definer_functions": 0,
+      "tls": [
+        true,
+        "TLSv1.3",
+        "TLS_AES_256_GCM_SHA384"
+      ],
+      "collection": {
+        "read_only": true,
+        "isolation": "repeatable_read",
+        "actual_session_settings": {
+          "transaction_read_only": "on",
+          "transaction_isolation": "repeatable read",
+          "statement_timeout": "5s",
+          "lock_timeout": "1s"
+        },
+        "statement_timeout_ms": 5000,
+        "lock_timeout_ms": 1000,
+        "function_hash_algorithm": "sha256",
+        "privileges_are_potential_not_confirmed_writes": true,
+        "external_clients_enumerated": false,
+        "complete_temporal_change_feed": false
+      }
+    }
+  },
+  "writer_inventory_complete": false,
+  "control_inventory_complete": false,
+  "external_client_credential_ownership_or_change_feed_proved": false,
+  "signed": false,
+  "business_data_changed": false,
+  "migration_authorized": false,
+  "actual_guard_trial": {
+    "started_at": "2026-11-20T11:10:28.496602+00:00",
+    "sides": {
+      "source": {
+        "database": "q_src_other_105a070396",
+        "checks": {
+          "persistent_ddl_refused": {
+            "sqlstate": "25006",
+            "elapsed_ms": 14.382
+          },
+          "dml_refused": {
+            "sqlstate": "25006",
+            "elapsed_ms": 35.054
+          },
+          "statement_timeout": {
+            "sqlstate": "57014",
+            "elapsed_ms": 5013.787
+          },
+          "lock_timeout": {
+            "sqlstate": "55P03",
+            "elapsed_ms": 1100.669
+          }
+        },
+        "passed": true
+      },
+      "target": {
+        "database": "q_tgt_other_105a070396",
+        "checks": {
+          "persistent_ddl_refused": {
+            "sqlstate": "25006",
+            "elapsed_ms": 2.387
+          },
+          "dml_refused": {
+            "sqlstate": "25006",
+            "elapsed_ms": 5.116
+          },
+          "statement_timeout": {
+            "sqlstate": "57014",
+            "elapsed_ms": 4993.883
+          },
+          "lock_timeout": {
+            "sqlstate": "55P03",
+            "elapsed_ms": 1005.657
+          }
+        },
+        "passed": true
+      }
+    },
+    "passed": true,
+    "business_migration_complete": false,
+    "original_business_data_changed": false,
+    "original_counts_before": {
+      "source": [
+        1,
+        1,
+        1
+      ],
+      "target": [
+        0,
+        0,
+        0
+      ]
+    },
+    "original_counts_after": {
+      "source": [
+        1,
+        1,
+        1
+      ],
+      "target": [
+        0,
+        0,
+        0
+      ]
+    },
+    "completed_at": "2026-11-20T11:10:43.211908+00:00",
+    "raw_sha256": "bd2adf0f4b9068f2e018186a3195fa4038943b62ec2ee531aa7156bbe59b10e8",
+    "scope_note": "Only the prior isolated conformance scratch databases were locked or sent refused mutations; original business data was checked unchanged. No penetration, continuity or production migration claim."
+  },
+  "latest_controller_observation": {
+    "observed_at": "2026-11-20T11:17:38.327305+00:00",
+    "collector_sha256": "f22fd3149996b4339d2ee78274ba6bc3e8001c327632900561409083aff1392f",
+    "source_projection_sha256": "dc8dd4abd89309eb79c8bed0aa1652950fe5fb675a8ac874ecf17de770ee70b4",
+    "raw_fact_sha256": "8dd52528cb4cfd71c7f73b0e46acbb75a20bb831f4ea988d41288d578bd88d15",
+    "source_units": [
+      {
+        "id": "amazon-ssm-agent.service",
+        "active": "active",
+        "fragment_sha256": "0c33fc5bbebb202756169dc3c27a17e679d2d033017f1ca3518cb9c700629aa2"
+      },
+      {
+        "id": "containerd.service",
+        "active": "active",
+        "fragment_sha256": "1941362cbaa89dd591b99c32b050d82c583d3cd2e5fa63085d7017457ec5fca8"
+      },
+      {
+        "id": "sova-expiry.service",
+        "active": "inactive",
+        "fragment_sha256": "e62ef405e8ff5cf0bc9b2d262e8ccffb2c6803617d5d54073bc2bd6d74d674a6"
+      },
+      {
+        "id": "sova-wg-b0be-expiry-1795180800.service",
+        "active": "inactive",
+        "fragment_sha256": "bfe206fe194ccea47a1431de4f57522bd85b82b6cea44ac1fea665dd42c9ef70"
+      },
+      {
+        "id": "sova-expiry.timer",
+        "active": "active",
+        "fragment_sha256": "90af71a5c334777c92438fabe653ad209281c077901fa693674c94d46a04b590"
+      },
+      {
+        "id": "sova-wg-b0be-expiry-1795180800.timer",
+        "active": "active",
+        "fragment_sha256": "7cdad04830cf9f8818502e4009498db9fd27338d88135127f13a84094da67660"
+      }
+    ],
+    "source_ssm_associations": 0,
+    "scope": "Owned source systemd metadata and SSM association status only; not root/session/cron/IAM closure",
+    "complete": false,
+    "rejected_prior_projection": "dependency-facts-v4-bounded-03 rejected an unrecognized /run/systemd/transient fragment before producing facts. Exact owned timer fragment metadata was then observed, and only matching root-owned, non-writable run/unit fragments were allowed."
+  },
+  "local_validation": {
+    "python": "3.12.16",
+    "unit_passed": 1342,
+    "unit_skipped": 22,
+    "warnings": 1,
+    "whole_src_tests_ruff": "PASS",
+    "pinned_specification_integrity": "PASS",
+    "console_passed": 77,
+    "console_types": "PASS",
+    "console_bundle": "PASS",
+    "console_prettier": "PASS",
+    "unit_junit_sha256": "7d3dc4b074db760a35b6584e65ad9781729018f88d69194309b5da5f1f966453",
+    "unit_log_sha256": "6ff44fb51958fd9b6d354dd223500fc4bc7db44c11465ac5f9fa578ae21ad7d6",
+    "previous_sandbox_socket_failures_retained": 8
+  }
+}
