@@ -245,3 +245,13 @@
 
 - 새 lock의 Python 3.12.16 전용 환경에서 전체 단위 **1,365개 통과·제외 0개**, Ruff 통과를 확인했다. 이전 환경의 조건부 제외 22개가 의존성 설치 뒤 실행됐다. Starlette deprecation 경고 1개는 남았다. 이는 이전 실제 브라우저/DB 시험의 의존성을 소급 변경하지 않는다.
 - Trivy 0.76.2의 실제 `uv.lock` 분석에서 전체 심각도 발견 0건·비밀값 0건이다. 사용 DB UpdatedAt은 2026-11-19 19:04:59 UTC이며 NextUpdate 전임을 확인했다. 처음 빈 기본 캐시로 거부된 시도는 보존하고, 기존 검증 DB 경로를 명시했다. 원격 Python 3.11·3.14 결과와는 별도다.
+
+### 20:52 이후 · 종류별 실제 저장 경로 관측
+
+[종류별 관측 근거](../evidence/personal-category-placement-20261120.json)
+
+- 기존 DB 라벨만으로 업무 데이터·백업·감사·AI 위치를 합격시키지 않는다. 별도 읽기 전용 수집기가 실제 원본 컨테이너의 DB mount → 호스트 filesystem → NVMe serial → 정확한 개인 EBS attachment와 암호화를 연결했다. 실제 TLS PostgreSQL system ID와 `data_directory`도 양쪽에서 대조했다.
+- 목적지는 실제 DB Pod의 volumeMount → PVC → PV claim UID → 소유 VM의 LUKS mapper를 연결했다. 별도 보관 백업과 authority witness는 각각 실제 경로·동일 암호화 장치·내용 SHA를 확인했다. 백업은 기존 archive SHA와 동일하며, 이번 관측으로 복원을 다시 수행했다고 하지 않는다.
+- 잘못된 EBS/장치/클러스터/namespace/PVC 상태, 백업 바꿔치기, 감사 기록의 다른 장치, 다른 DB system ID·평문·다른 data directory를 거부하는 단위 시험 21개가 통과했다. 실제 읽기 관측도 완료했다. 코드 SHA와 관측 시각을 보존했다. 앱 데이터·원장·경로·자격은 변경하지 않았다.
+- 이 관측은 등록한 세 종류의 자산 연결을 확인한다. 모든 사본·로그 수신처·국가 위치·AI 처리 경로·보관 기간·운영 복구를 증명하지 않는다. `all_copies_enumerated`, `geographic_residency_verified`, `residency_obligation_satisfied`, `migration_authorized`는 모두 false다. 실행 게이트에 PASS로 주입하거나 계약의 allowed zone을 낮추지 않았다.
+- 원격 CI의 소비자 lock 커밋 `0d1ab6e`는 Python 3.11·3.14 각각 **1,365개 통과·제외 0개**, 콘솔 **77개·타입·빌드·포맷 통과**다. [실제 CI](https://github.com/sangmu1126/sova-test/actions/runs/44730675419). 새 위치 수집기는 뒤 커밋의 CI에서 따로 확인한다.

@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "run_id": "b0be270e62",
+  "observed_at": "2026-11-20T11:52:32.403997+00:00",
+  "collector_sha256": "e65219fc01574f075fc02ff76fda95dc5001cc3e00f7c6793b089fe21d92931b",
+  "source": {
+    "container_id": "98ea47ffd18b79124961a008d3a3754039aacf6ccfba94f16c780a39bcaceb3b",
+    "data_mount": {
+      "Source": "/var/lib/sova-journey/workload/data",
+      "Destination": "/var/lib/postgresql/data",
+      "RW": true,
+      "Type": "bind"
+    },
+    "filesystem": {
+      "target": "/",
+      "source": "/dev/nvme0n1p1",
+      "fstype": "xfs",
+      "options": "rw,noatime,seclabel,inode64,logbufs=8,logbsize=32k,sunit=1024,swidth=1024,noquota"
+    },
+    "devices": [
+      {
+        "name": "nvme0n1",
+        "type": "disk",
+        "pkname": null,
+        "serial": "vol0cf101c7982064b83",
+        "children": [
+          {
+            "name": "nvme0n1p1",
+            "type": "part",
+            "pkname": "nvme0n1",
+            "serial": null
+          },
+          {
+            "name": "nvme0n1p128",
+            "type": "part",
+            "pkname": "nvme0n1",
+            "serial": null
+          }
+        ]
+      }
+    ]
+  },
+  "target": {
+    "machine_id": "a789f623bca040989f282881d9a21654",
+    "cluster_uid": "9de35591-57a3-4759-bd73-6340e2de0b61",
+    "namespace_uid": "565b91c4-4f6e-4d06-94c6-9f8803afa6c9",
+    "pod_uid": "49edfdf9-bfd9-438d-a6d8-9dd16b34e7bb",
+    "runtime_image": "local.sova.invalid/b0be270e62/db@sha256:01f80835db480f8403d638051eff0ace599264a908bad70a214b8952173363c5",
+    "pvc_uid": "825b3745-7814-40e2-ae09-25ad96bc3deb",
+    "pv_uid": "da0e5637-0533-4447-b9df-2e897c07f433",
+    "pv_path": "/var/lib/sova-qualification/user-journey-b0be270e62/mounted",
+    "pvc_phase": "Bound",
+    "filesystem": {
+      "target": "/var/lib/sova-qualification/user-journey-b0be270e62/mounted",
+      "source": "/dev/mapper/sova-b0be270e62",
+      "fstype": "ext4",
+      "options": "rw,nosuid,nodev,noexec,relatime"
+    },
+    "files": [
+      {
+        "category": "backups",
+        "path": "/var/lib/sova-qualification/user-journey-b0be270e62/mounted/backups/dfb52dbac535/source.dump",
+        "bytes": 4546,
+        "sha256": "9261d2f51f6bcca27f66a0fcbd5d568483e10a8ee72eca8abdca723979e70fd8",
+        "device": 64512
+      },
+      {
+        "category": "audit",
+        "path": "/var/lib/sova-qualification/user-journey-b0be270e62/mounted/authority-witness/personal-qualification.log",
+        "bytes": 1581,
+        "sha256": "96dad7bf5151b2c1492b376651b4b98b99f8e4ac6af946a23240c2a117c7860f",
+        "device": 64512
+      }
+    ]
+  },
+  "source_ebs": {
+    "VolumeId": "vol-0cf101c7982064b83",
+    "Encrypted": true,
+    "AvailabilityZone": "ap-northeast-2a",
+    "attachments": [
+      {
+        "InstanceId": "i-04946f0e0c0548c3b",
+        "VolumeId": "vol-0cf101c7982064b83",
+        "State": "attached",
+        "Device": "/dev/xvda"
+      }
+    ]
+  },
+  "databases": {
+    "source": {
+      "system_identifier": "7709720208587968539",
+      "tls": true,
+      "data_directory": "/var/lib/postgresql/data",
+      "database": "source_orders"
+    },
+    "target": {
+      "system_identifier": "7709723763091251229",
+      "tls": true,
+      "data_directory": "/var/lib/postgresql/data/pgdata",
+      "database": "target_orders"
+    }
+  },
+  "summary": {
+    "business_data": {
+      "observed": true,
+      "source_ebs": "vol-0cf101c7982064b83",
+      "target_pvc": "825b3745-7814-40e2-ae09-25ad96bc3deb"
+    },
+    "backups": {
+      "observed": true,
+      "archive_sha256": "9261d2f51f6bcca27f66a0fcbd5d568483e10a8ee72eca8abdca723979e70fd8",
+      "restore_retested": false
+    },
+    "audit": {
+      "observed": true,
+      "witness_sha256": "96dad7bf5151b2c1492b376651b4b98b99f8e4ac6af946a23240c2a117c7860f",
+      "all_audit_sinks_observed": false
+    },
+    "ai_inputs": {
+      "observed": false,
+      "reason": "model_calls_deferred; no data-handling claim"
+    },
+    "all_copies_enumerated": false,
+    "geographic_residency_verified": false,
+    "residency_obligation_satisfied": false,
+    "migration_authorized": false
+  },
+  "business_data_or_route_changed": false
+}
